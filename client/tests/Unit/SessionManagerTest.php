@@ -340,6 +340,84 @@ final class SessionManagerTest extends TestCase
     }
 
     /* ---------------------------------------------------------------------
+     | UDP 通道（P3）：attach_token 与双层回执判别
+     --------------------------------------------------------------------- */
+
+    public function testTransportAckSettlesAuthAndPingButNotData()
+    {
+        $session = $this->makeSession(array('heartbeat' => 0), $transport);
+
+        // auth：UDP 网关对 auth 无业务层回执，传输层 ack（data 空且无 action）即结算
+        $session->connect();
+        $transport->open();
+        $auth = $transport->lastPacket();
+        $transport->receive(array(
+            'cmd'  => Message::CMD_ACK,
+            'seq'  => $auth['seq'],
+            'ts'   => time(),
+            'data' => array(),
+        ));
+        self::assertTrue($session->isReady(), '传输层 ack 应结算 auth');
+
+        // data.echo：传输层 ack 不得结算，须等业务层回执（带 data.action）
+        $settled = null;
+        $seq     = $session->request('echo', array('k' => 'v'), function ($ok, $packet) use (&$settled) {
+            $settled = $ok;
+        });
+        $transport->receive(array(
+            'cmd'  => Message::CMD_ACK,
+            'seq'  => $seq,
+            'ts'   => time(),
+            'data' => array(),
+        ));
+        self::assertNull($settled, '传输层 ack 不得结算业务请求（硬约束⑳）');
+        self::assertSame(1, $session->pendingCount());
+
+        $transport->receive(array(
+            'cmd'  => Message::CMD_ACK,
+            'seq'  => $seq,
+            'ts'   => time(),
+            'data' => array('action' => 'echo', 'echoed' => array('k' => 'v')),
+        ));
+        self::assertTrue($settled);
+        self::assertSame(0, $session->pendingCount());
+    }
+
+    public function testAttachTokenCarriesTokenOnOutgoingPackets()
+    {
+        $session = $this->makeSession(array('heartbeat' => 0, 'attach_token' => true), $transport);
+        $this->connectAndReady($session, $transport);
+
+        $session->request('echo', array(), null);
+        $req = $transport->lastPacket();
+
+        self::assertNotSame('', $req['token'], 'attach_token 开启时业务报文必须携带 Token（硬约束⑲）');
+        self::assertSame(
+            $transport->sentPackets[0]['token'],
+            $req['token'],
+            '业务报文 Token 须与 auth 报文一致'
+        );
+
+        // Token 参与签名：签名须随 Token 附加后重新计算（本地验签通过即证明顺序正确）
+        $packet               = $req;
+        $sign                 = $packet['sign'];
+        $packet['sign']       = '';
+        $expected             = \GatewayPush\Client\Protocol\Signer::sign($packet, 'test-secret');
+        self::assertSame($expected, $sign);
+    }
+
+    public function testAttachTokenDisabledKeepsPacketsTokenFree()
+    {
+        $session = $this->makeSession(array('heartbeat' => 0), $transport);
+        $this->connectAndReady($session, $transport);
+
+        $session->request('echo', array(), null);
+        $req = $transport->lastPacket();
+
+        self::assertArrayNotHasKey('token', $req, '默认（WS）路径不应附加 Token');
+    }
+
+    /* ---------------------------------------------------------------------
      | 超时
      --------------------------------------------------------------------- */
 

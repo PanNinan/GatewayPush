@@ -86,6 +86,13 @@ class SessionManager
     private $lastRtt = 0.0;
 
     /**
+     * 当前会话使用的 Token（auth 时签发；attach_token 开启时随包携带）
+     *
+     * @var string
+     */
+    private $token = '';
+
+    /**
      * 连续重连次数（鉴权成功后清零）
      *
      * @var int
@@ -213,6 +220,7 @@ class SessionManager
             'reconnect_base' => 1.0,      // 退避基数（秒）
             'reconnect_max'  => 15.0,     // 退避封顶（秒）
             'auto_auth'      => true,     // 握手完成后立即自动发 auth（15s 窗口内抢先）
+            'attach_token'   => false,    // 业务报文随包携带 Token（UDP 通道必需，见 sendPacket）
         );
     }
 
@@ -255,6 +263,7 @@ class SessionManager
             'uid'       => $this->config['uid'],
             'device_id' => $this->config['device_id'],
         ));
+        $this->token = $token; // attach_token 开启时供后续业务报文携带
 
         $packet = Message::packet(Message::CMD_AUTH, array('client' => 'gateway-push-client'), array(
             'seq'       => $this->newSeq(),
@@ -527,6 +536,17 @@ class SessionManager
 
             case Message::CMD_PONG:
             case Message::CMD_ACK:
+                // UDP 双层回执（硬约束⑳）：网关收包即回传输层 ack（data 为空且无
+                // action）。业务请求（data.*）的结算必须等业务层回执，传输层 ack
+                // 在此跳过；auth/ping 无业务层回执，以传输层 ack 结算。
+                $ackSeq = (string)(isset($packet['seq']) ? $packet['seq'] : '');
+                if ($packet['cmd'] === Message::CMD_ACK
+                    && Codec::isTransportAck($packet)
+                    && isset($this->pending[$ackSeq])
+                    && strpos($this->pending[$ackSeq]->what, 'data.') === 0
+                ) {
+                    return;
+                }
                 $this->settle($packet, true);
                 return;
 
@@ -682,6 +702,13 @@ class SessionManager
 
     private function sendPacket(array $packet)
     {
+        // UDP 通道（硬约束⑲）：服务端身份只取自 Token 载荷，报文不带 Token 会被
+        // 静默拒绝。attach_token 开启时所有上行报文统一携带（Token 参与签名，
+        // 必须在计算 sign 之前附加）。WS 不校验 Token，携带无副作用。
+        if (!empty($this->config['attach_token']) && $this->token !== '' && !isset($packet['token'])) {
+            $packet['token'] = $this->token;
+        }
+
         $secret = (string)$this->config['secret'];
         if ($secret !== '' && !isset($packet['sign'])) {
             // WS 不校验签名（无副作用）；UDP 通道（P3）必需。统一在发送口计算，

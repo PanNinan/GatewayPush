@@ -431,20 +431,41 @@ cmd_reload() {
     local role="${1:-all}"
     warn_platform || return 1
     if ! role_pid "$role" >/dev/null; then
-        err "服务未在运行，无法平滑重启。"
-        return 1
+        # 单进程部署时只有 workerman_all.pid：按角色 reload 找不到 pid，
+        # 回落为整体平滑重启，避免误报「服务未在运行」。
+        if [ "$role" != "all" ] && role_pid all >/dev/null; then
+            warn "未发现独立角色 $role 的 pid 文件，检测到单进程部署，已转为整体平滑重启。"
+            role=all
+        else
+            err "服务未在运行，无法平滑重启。"
+            return 1
+        fi
     fi
     info "平滑重启（$role）—— 仅重载业务代码，网关长连接不中断"
     php_run reload --role="$role"
 }
 
 cmd_status() {
-    local r pid state mem up addr running=0
+    local r pid state mem up addr running=0 all_pid=''
+
+    # 单进程部署（./bin/start.sh start 不带角色，守护模式）时，
+    # start.php 只写 workerman_all.pid，各角色没有独立 pid 文件。
+    # 不先探测 all，status 会把正在运行的服务全部显示成「已停止」。
+    if pid="$(role_pid all)"; then
+        all_pid="$pid"
+    fi
 
     table_head
     for r in "${ROLES_ALL[@]}"; do
         addr="$(role_listen "$r")"
-        if pid="$(role_pid "$r")"; then
+        if [ -n "$all_pid" ]; then
+            # 单进程模式：所有角色由同一 master 承载，PID 列即该进程
+            pid="$all_pid"
+            state="${C_GREEN}运行中${C_OFF}"
+            mem="$(proc_mem "$pid")"
+            up="$(proc_uptime "$pid")"
+            running=$(( running + 1 ))
+        elif pid="$(role_pid "$r")"; then
             state="${C_GREEN}运行中${C_OFF}"
             mem="$(proc_mem "$pid")"
             up="$(proc_uptime "$pid")"
@@ -458,6 +479,9 @@ cmd_status() {
     printf '\n'
     printf '%s\n' "本机 PID：$$   项目目录：$ROOT_DIR"
     printf '%s\n' "运行中 $running / ${#ROLES_ALL[@]} 个角色"
+    if [ -n "$all_pid" ]; then
+        printf '%s\n' "${C_DIM}部署模式：单进程 —— 全部组件由同一 master 进程（PID $all_pid）承载${C_OFF}"
+    fi
 }
 
 cmd_log() {

@@ -170,12 +170,15 @@ GatewayWorker/
 │       └── UdpProtocol.php           UDP 应用层协议（输入分段 / 编解码）
 ├── client/                            客户端 SDK（独立于服务端进程，详见 client/README.md）
 │   ├── src/Protocol/                  Codec / Signer / TokenIssuer（复用服务端 Message、Auth）
-│   ├── src/Transport/                 TransportInterface / WsTransport（P1）
-│   ├── src/Session/                   SessionManager / PendingRequest（P1：鉴权状态机/心跳/重连）
-│   ├── src/Service/                   7 个动作 API（P2：echo/session/report/subscribe/notify 等）
-│   ├── src/Event/                     PushReceiver（P2：推送接收 + 自动回 ack）
+│   ├── src/Transport/                 TransportInterface / WsTransport / UdpTransport / HttpTransport
+│   ├── src/Session/                   SessionManager / PendingRequest（鉴权状态机/心跳/重连）
+│   ├── src/Service/                   业务动作 API + AdminApi（HTTP /push /stats /health）
+│   ├── src/Event/                     PushReceiver（推送接收 + 自动回 ack）
+│   ├── src/Cli/                       CommandParser / Debugger（P6 调试器引擎）
 │   ├── src/Error/                     错误码与统一异常
+│   ├── bin/gwclient.php               CLI 调试器入口（一次性命令 / shell REPL / listen）
 │   ├── tests/Unit/                    客户端单元测试
+│   ├── tests/E2E/ClientE2E.php        客户端端到端对齐（与服务端 e2e 同口径 A~O）
 │   └── README.md                      客户端使用说明与里程碑
 ├── tests/
 │   ├── E2E/                          端到端用例（Harness + 9 个 Case 模块）
@@ -642,6 +645,7 @@ composer analyse        # phpstan analyse --memory-limit=512M
 composer baseline       # phpstan analyse --memory-limit=512M --generate-baseline
 composer test           # phpunit
 composer test:e2e       # php tests/e2e_check.php
+composer test:client-e2e # php client/tests/E2E/ClientE2E.php（客户端 SDK 同口径 15 用例）
 ```
 
 ---
@@ -1669,8 +1673,9 @@ class OrderQueryAction implements ActionInterface
 
 ```bash
 composer analyse        # PHPStan（level 5，baseline 冻结 11 条存量告警）
-composer test           # PHPUnit（246 tests / 733 assertions；含 client/tests/Unit）
+composer test           # PHPUnit（291 tests / 883 assertions；含 client/tests/Unit）
 composer test:e2e       # 端到端自检（15 个用例）
+composer test:client-e2e # 客户端 SDK 端到端对齐（A~O 共 15 个用例，需五角色 + Redis）
 ```
 
 ### 13.2 静态分析约束
@@ -1750,7 +1755,7 @@ php tests/e2e_check.php <uid> [device_id] [timeout]
 
 ```bash
 composer test
-# OK (246 tests, 733 assertions)
+# OK (291 tests, 883 assertions)
 ```
 
 **只测「纯函数 / 零 IO」组件**：
