@@ -21,6 +21,7 @@ use GatewayWorker\Register as RegisterWorker;
 use GatewayPush\Business\Message;
 use GatewayPush\Business\Monitor;
 use GatewayPush\Common\Logger;
+use GatewayPush\Common\RateLimiter;
 use GatewayPush\Common\RedisClient;
 use GatewayPush\Common\WorkerEvents;
 use Workerman\Connection\ConnectionInterface;
@@ -202,6 +203,7 @@ class Bootstrap
             // 否则 onUdpMessage 会在 rPush 处抛出「未初始化」异常并吞掉 ack 回执
             RedisClient::init(self::$appConfig['redis']);
             Monitor::init(self::$appConfig['monitor']);
+            RateLimiter::init(isset(self::$appConfig['rate_limit']) ? self::$appConfig['rate_limit'] : array());
 
             $out       = isset($conf['out_queue']) ? $conf['out_queue'] : array();
             $outOn     = !empty($out['enable']);
@@ -246,7 +248,7 @@ class Bootstrap
     /**
      * UDP 报文处理入口
      *
-     * 仅执行协议层职责：签名与时效校验 -> 投递 Redis 队列 -> 立即回执。
+     * 仅执行协议层职责：报文级限流 -> 签名与时效校验 -> 投递 Redis 队列 -> 立即回执。
      * 业务处理由 BusinessWorker 异步消费队列完成，网关不感知业务逻辑。
      *
      * @param ConnectionInterface $connection
@@ -257,6 +259,21 @@ class Bootstrap
     {
         try {
             if (!is_array($packet)) {
+                return;
+            }
+
+            // 0. 报文级限流（L1）：每来源 IP 的进程内内存令牌桶。
+            //    置于验签之前 —— 洪水场景下限流器绝不能自身发起 Redis IO；
+            //    超限静默丢弃，不回错误报文以免形成反射放大。
+            $ip = (string)$connection->getRemoteIp();
+            if (!RateLimiter::checkMemory(RateLimiter::DIM_IP, $ip)) {
+                Monitor::incr('msg_fail');
+                Monitor::incr('rate_limit_hit');
+                Monitor::incr('rate_limit_ip');
+                RateLimiter::logReject(RateLimiter::DIM_IP, $ip, array(
+                    'channel'   => 'udp-gateway',
+                    'device_id' => isset($packet['device_id']) ? (string)$packet['device_id'] : '',
+                ));
                 return;
             }
 

@@ -37,6 +37,53 @@ class RedisClient
         . "if ok then return 1 end return 0";
 
     /**
+     * Lua：多桶令牌桶限流（单次往返原子判定 N 个桶）
+     *
+     * 设计说明：
+     *  - 令牌桶相对固定窗口的优势：支持合法突发，且不存在窗口边界「双倍放行」缺陷。
+     *  - 一次判定多个桶（KEYS 可变长），任一桶令牌不足即整单拒绝且**不扣减任何桶**，
+     *    避免「连接桶已扣、用户桶拒绝」造成的配额泄漏。
+     *  - 全部桶在 Redis 单线程内完成读改写，多进程 / 多机天然共享配额。
+     *
+     * 参数布局：
+     *   KEYS[1..n]     各桶键（需已带全局前缀）
+     *   ARGV[1]        now，当前时间戳（毫秒）
+     *   ARGV[2]        cost，本次消耗令牌数
+     *   ARGV[3+2i]     rate_i，第 i 个桶的令牌补充速率（个/秒，i 从 0 起）
+     *   ARGV[4+2i]     burst_i，第 i 个桶的容量上限
+     *
+     * 返回：1 = 放行，0 = 拒绝
+     *
+     * 存储结构（Hash，HMSET 兼容 Redis 3.x，HSET 多字段需 4.0+）：
+     *   tokens  当前剩余令牌（浮点）
+     *   ts      上次结算时间（毫秒）
+     */
+    const LUA_TOKEN_BUCKET = "local n = #KEYS "
+        . "local now = tonumber(ARGV[1]) "
+        . "local cost = tonumber(ARGV[2]) "
+        . "local state = {} "
+        . "local allowed = 1 "
+        . "for i = 1, n do "
+        . "  local d = redis.call('HMGET', KEYS[i], 'tokens', 'ts') "
+        . "  local tokens = tonumber(d[1]) "
+        . "  local ts = tonumber(d[2]) "
+        . "  local rate = tonumber(ARGV[1 + i * 2]) "
+        . "  local burst = tonumber(ARGV[2 + i * 2]) "
+        . "  if tokens == nil then tokens = burst; ts = now end "
+        . "  tokens = math.min(burst, tokens + math.max(0, now - ts) * rate / 1000) "
+        . "  state[i] = {tokens = tokens, rate = rate, burst = burst} "
+        . "  if tokens < cost then allowed = 0 end "
+        . "end "
+        . "if allowed == 1 then "
+        . "  for i = 1, n do state[i].tokens = state[i].tokens - cost end "
+        . "end "
+        . "for i = 1, n do "
+        . "  redis.call('HMSET', KEYS[i], 'tokens', tostring(state[i].tokens), 'ts', tostring(now)) "
+        . "  redis.call('PEXPIRE', KEYS[i], math.ceil(state[i].burst / state[i].rate * 1000) + 1000) "
+        . "end "
+        . "return allowed";
+
+    /**
      * 连接配置
      *
      * @var array
@@ -575,6 +622,68 @@ class RedisClient
                     call_user_func($cb, $first);
                 }
                 return $first;
+            }
+        );
+    }
+
+    /**
+     * 多桶令牌桶限流（原子）
+     *
+     * @param array         $buckets 桶定义列表：[['key'=>string, 'rate'=>int, 'burst'=>int], ...]
+     * @param int           $cost    本次消耗令牌数
+     * @param callable|null $cb      function(bool $allowed)
+     * @return mixed
+     */
+    public static function tokenBuckets(array $buckets, $cost = 1, callable $cb = null)
+    {
+        if (!$buckets) {
+            if ($cb) {
+                call_user_func($cb, true);
+            }
+            return true;
+        }
+
+        $cost  = max(1, (int)$cost);
+        $keys  = array();
+        $rates = array();
+        $sizes = array();
+
+        foreach ($buckets as $bucket) {
+            $rate  = max(1, (int)(isset($bucket['rate']) ? $bucket['rate'] : 1));
+            $burst = max($rate, (int)(isset($bucket['burst']) ? $bucket['burst'] : $rate));
+
+            $keys[]  = self::key($bucket['key']);
+            $rates[] = (string)$rate;
+            $sizes[] = (string)$burst;
+        }
+
+        // 参数顺序：now, cost, 然后按桶顺序 (rate, burst) 两两成对
+        $args = array((string)(int)(microtime(true) * 1000), (string)$cost);
+        $n    = count($keys);
+        for ($i = 0; $i < $n; $i++) {
+            $args[] = $rates[$i];
+            $args[] = $sizes[$i];
+        }
+
+        return self::eval(
+            self::LUA_TOKEN_BUCKET,
+            array_merge($keys, $args),
+            $n,
+            function ($result, $client = null) use ($cb) {
+                $error = ($client && method_exists($client, 'error')) ? $client->error() : '';
+                if ($error !== '') {
+                    // 交由调用方决定降级策略（RateLimiter 采用 fail-open）
+                    Logger::error('Redis 令牌桶执行失败', array('error' => $error));
+                    if ($cb) {
+                        call_user_func($cb, null, $error);
+                    }
+                    return null;
+                }
+                $allowed = (int)$result === 1;
+                if ($cb) {
+                    call_user_func($cb, $allowed, '');
+                }
+                return $allowed;
             }
         );
     }

@@ -270,7 +270,9 @@ function checkEnvironment(array $appConfig, array $gatewayConfig, array $busines
     foreach (array('runtime_path', 'log_path', 'pid_path') as $key) {
         $dir = $runtime[$key];
         if (!is_dir($dir)) {
-            @mkdir($dir, 0755, true);
+            if (! mkdir($dir, 0755, true) && ! is_dir($dir)) {
+                throw new \RuntimeException(sprintf('Directory "%s" was not created', $dir));
+            }
         }
         $writable = is_dir($dir) && is_writable($dir);
         $lines[]  = sprintf('[%-4s] 目录可写 %s', $writable ? 'OK' : 'FAIL', $dir);
@@ -388,6 +390,57 @@ function checkEnvironment(array $appConfig, array $gatewayConfig, array $busines
         }
     } else {
         $lines[] = '[WARN] HTTP 推送接口已关闭（API_ENABLE=false），仅支持队列触发';
+    }
+
+    // 报文级限流
+    if (empty($appConfig['rate_limit']['enable'])) {
+        $lines[] = '[WARN] 报文级限流已关闭（RATE_LIMIT_ENABLE=false）';
+    } else {
+        $rateConf = $appConfig['rate_limit'];
+        $dims     = array('conn' => '连接', 'uid' => '用户', 'ip' => 'IP', 'ping' => '心跳');
+        $active   = 0;
+        $desc     = array();
+        $badBurst = array();
+
+        foreach ($dims as $dim => $label) {
+            $rate  = (int)$rateConf[$dim]['rate'];
+            $burst = (int)$rateConf[$dim]['burst'];
+
+            if ($rate <= 0) {
+                $desc[] = $label . ' 已关闭';
+                continue;
+            }
+            $active++;
+            if ($burst < $rate) {
+                $badBurst[] = $label;
+            }
+            $desc[] = sprintf('%s %d/%d', $label, $rate, $burst);
+        }
+
+        if ($active === 0) {
+            $lines[] = '[FAIL] 报文级限流已开启但全部维度速率均为 0，等同于未限流';
+            $ok      = false;
+        } else {
+            $lines[] = sprintf(
+                '[%-4s] 报文级限流已开启（%s，格式为 维度 速率/突发）',
+                'OK',
+                implode('，', $desc)
+            );
+        }
+
+        if ($badBurst) {
+            $lines[] = sprintf(
+                '[WARN] 维度 %s 的 burst 小于 rate，已按 rate 兜底修正（突发能力被压缩）',
+                implode('/', $badBurst)
+            );
+        }
+
+        if ((int)$rateConf['mem_max_buckets'] < 1000) {
+            $lines[] = sprintf(
+                '[WARN] 限流内存桶上限过低（%d），高并发下会频繁淘汰',
+                (int)$rateConf['mem_max_buckets']
+            );
+        }
     }
 
     // 端口占用探测（仅提示，不阻断：restart 场景下端口被自身占用属正常）

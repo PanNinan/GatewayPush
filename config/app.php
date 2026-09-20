@@ -157,6 +157,46 @@ return [
     ],
 
     /* ---------------------------------------------------------------
+     | 报文级限流
+     |
+     | 算法为令牌桶：rate 为令牌补充速率（个/秒，即长期平均上限），
+     | burst 为桶容量（即允许的瞬时突发条数），burst 不得小于 rate。
+     |
+     | 分层：
+     |   ip    —— L1 网关防护，进程内内存桶（零 IO），仅 UDP 网关使用
+     |   conn  —— L2 业务限流，每连接 clientId（Redis 桶）
+     |   uid   —— L2 业务限流，每用户 uid（Redis 桶）
+     |   ping  —— 心跳指令独立配额（替代 conn 维度，比业务更严）
+     |
+     | rate 置 0 表示关闭该维度限流。
+     | Redis 不可用时 L2 按 fail-open 放行（限流故障不应导致业务中断）。
+     --------------------------------------------------------------- */
+    'rate_limit' => [
+        'enable'          => Env::bool('RATE_LIMIT_ENABLE', true),
+
+        'conn'            => [
+            'rate'  => Env::int('RATE_LIMIT_CONN_RATE', 20),      // 每连接 20 条/秒
+            'burst' => Env::int('RATE_LIMIT_CONN_BURST', 40),     // 瞬时允许 40 条
+        ],
+        'uid'             => [
+            'rate'  => Env::int('RATE_LIMIT_UID_RATE', 50),       // 每用户 50 条/秒
+            'burst' => Env::int('RATE_LIMIT_UID_BURST', 100),
+        ],
+        'ip'              => [
+            'rate'  => Env::int('RATE_LIMIT_IP_RATE', 200),       // 每 IP 200 条/秒（网关层）
+            'burst' => Env::int('RATE_LIMIT_IP_BURST', 400),
+        ],
+        'ping'            => [
+            'rate'  => Env::int('RATE_LIMIT_PING_RATE', 5),       // 心跳 5 条/秒
+            'burst' => Env::int('RATE_LIMIT_PING_BURST', 10),
+        ],
+
+        'close_on_exceed' => Env::bool('RATE_LIMIT_CLOSE', false),   // 超限是否断开连接
+        'notify'          => Env::bool('RATE_LIMIT_NOTIFY', true),   // 超限是否回错误报文（UDP 恒定不回）
+        'mem_max_buckets' => Env::int('RATE_LIMIT_MEM_MAX', 20000),  // L1 内存桶数量上限
+    ],
+
+    /* ---------------------------------------------------------------
      | 监控指标
      --------------------------------------------------------------- */
     'monitor' => [
@@ -175,6 +215,7 @@ return [
             'udp_out_queued', 'udp_out', 'udp_out_fail',
             'conn_error', 'buffer_full', 'buffer_drain',
             'action_echo', 'action_session',
+            'rate_limit_hit', 'rate_limit_ip', 'rate_limit_conn', 'rate_limit_uid', 'rate_limit_ping',
         ],
     ],
 ];

@@ -22,6 +22,7 @@
  *   [I] UDP 定向推送：业务进程 -> UDP 出站队列 -> 网关 sendto
  *   [J] 指令路由表：data.action（echo / session）分发与 4006 / 4007 错误分支
  *   [K] UDP 离线补投：UDP 会话重建时经出站队列补投（offline=1）
+ *   [L] 报文级限流：单连接连发超量报文 -> 部分放行、部分 4008 拒绝
  *
  * 退出码：0 = 全部通过，1 = 存在失败项
  */
@@ -64,12 +65,14 @@ $uidG    = $uid . '-G';
 $uidI    = $uid . '-I';
 $uidJ    = $uid . '-J';
 $uidK    = $uid . '-K';
+$uidL    = $uid . '-L';
 $deviceE = $deviceId . '-E';
 $deviceF = $deviceId . '-F';
 $deviceG = $deviceId . '-G';
 $deviceI = $deviceId . '-I';
 $deviceJ = $deviceId . '-J';
 $deviceK = $deviceId . '-K';
+$deviceL = $deviceId . '-L';
 
 $tokenE = Auth::issue(array('uid' => $uidE, 'device_id' => $deviceE));
 $tokenF = Auth::issue(array('uid' => $uidF, 'device_id' => $deviceF));
@@ -77,6 +80,7 @@ $tokenG = Auth::issue(array('uid' => $uidG, 'device_id' => $deviceG));
 $tokenI = Auth::issue(array('uid' => $uidI, 'device_id' => $deviceI));
 $tokenJ = Auth::issue(array('uid' => $uidJ, 'device_id' => $deviceJ));
 $tokenK = Auth::issue(array('uid' => $uidK, 'device_id' => $deviceK));
+$tokenL = Auth::issue(array('uid' => $uidL, 'device_id' => $deviceL));
 
 $msgIdE = 'e2e-push-' . bin2hex(random_bytes(4));
 $msgIdF = 'e2e-off-' . bin2hex(random_bytes(4));
@@ -99,6 +103,7 @@ $state = array(
     'I' => 'pending', 'I_msg' => '',
     'J' => 'pending', 'J_msg' => '',
     'K' => 'pending', 'K_msg' => '',
+    'L' => 'pending', 'L_msg' => '',
 );
 
 /**
@@ -320,7 +325,8 @@ $worker->onWorkerStart = function () use (
     $wsAddress, $udpAddress, $uid, $deviceId, $token, $secret, $timeout, &$state,
     $appConfig, $uidE, $deviceE, $tokenE, $uidF, $deviceF, $tokenF, $uidG, $deviceG, $tokenG,
     $uidI, $deviceI, $tokenI, $msgIdE, $msgIdF, $msgIdG, $msgIdI,
-    $uidJ, $deviceJ, $tokenJ, $uidK, $deviceK, $tokenK, $msgIdK
+    $uidJ, $deviceJ, $tokenJ, $uidK, $deviceK, $tokenK, $msgIdK,
+    $uidL, $deviceL, $tokenL
 ) {
     RedisClient::init($appConfig['redis']);
 
@@ -355,6 +361,7 @@ $worker->onWorkerStart = function () use (
             'I' => 'UDP 定向推送（业务进程 -> 出站队列 -> 网关 sendto）',
             'J' => '指令路由表（data.action 分发 / 4006 / 4007）',
             'K' => 'UDP 离线补投（会话重建 -> 出站队列 -> offline=1）',
+            'L' => '报文级限流（超量连发 -> 部分放行 / 部分 4008）',
         );
         foreach ($labels as $key => $label) {
             $ok  = $state[$key] === true;
@@ -1012,10 +1019,101 @@ $worker->onWorkerStart = function () use (
 
     $udpK->connect();
 
+    /* ================= 用例 L：报文级限流（令牌桶） ================= */
+    //
+    // 验证思路：单连接在极短时间内连发远超桶容量的报文，期望
+    //   - 桶内报文被正常处理（echo 回执，证明「不误伤」）
+    //   - 超出部分被 4008 拒绝（证明「确实限流」）
+    // 两个条件同时成立才算通过：只拒绝不放行说明配额过严，
+    // 只放行不拒绝说明限流失效。
+    //
+    // 本方使用独立 uid/device，避免污染其它用例的令牌桶。
+    $connL = new AsyncTcpConnection($wsAddress);
+
+    $lSent  = 100;   // 连发条数，需显著超过 conn 维度 burst（默认 40）
+    $lAck   = 0;     // 通过限流的 echo 回执数
+    $lLimit = 0;     // 被 4008 拒绝数
+
+    $connL->onConnect = function ($con) use ($uidL, $deviceL, $tokenL, $secret) {
+        echo "[L] WebSocket 已连接，发送鉴权\n";
+        $con->send(Message::encode(buildPacket(Message::CMD_AUTH, 'L-auth', array(
+            'uid'       => $uidL,
+            'device_id' => $deviceL,
+            'token'     => $tokenL,
+        ), $secret)));
+    };
+
+    $connL->onMessage = function ($con, $raw) use (
+        &$state, &$lAck, &$lLimit, $finish, $lSent, $secret, $uidL, $deviceL, $tokenL
+    ) {
+        $packet = json_decode($raw, true);
+        if (!is_array($packet) || !isset($packet['cmd'])) {
+            return;
+        }
+
+        // 鉴权回执到达后立即连发，制造瞬时突发
+        if ($packet['cmd'] === Message::CMD_ACK && $packet['seq'] === 'L-auth') {
+            echo "[L] 鉴权成功，连发 {$lSent} 条 data 报文以触发限流\n";
+
+            for ($i = 1; $i <= $lSent; $i++) {
+                $con->send(Message::encode(buildPacket(Message::CMD_DATA, 'L-' . $i, array(
+                    'uid'       => $uidL,
+                    'device_id' => $deviceL,
+                    'token'     => $tokenL,
+                    'data'      => array('action' => 'echo', 'params' => array('i' => $i)),
+                ), $secret)));
+            }
+
+            // 限流判定与回执均为异步，留出收集窗口
+            Timer::add(2.5, function () use (&$state, &$lAck, &$lLimit, $finish, $lSent, $con) {
+                if ($lLimit <= 0) {
+                    $state['L_msg'] = "连发 {$lSent} 条未触发任何限流拒绝（通过 {$lAck} 条）";
+                    $state['L']     = false;
+                } elseif ($lAck <= 0) {
+                    $state['L_msg'] = "全部报文被拒绝（拒绝 {$lLimit} 条），配额可能配置过严";
+                    $state['L']     = false;
+                } else {
+                    $state['L'] = true;
+                }
+                echo "[L] 限流统计：放行 {$lAck} 条，拒绝 {$lLimit} 条\n";
+                $con->close();
+                call_user_func($finish);
+            }, array(), false);
+            return;
+        }
+
+        // 业务报文回执（seq 形如 L-<n>）
+        if (!preg_match('/^L-\d+$/', (string)$packet['seq'])) {
+            return;
+        }
+
+        if ($packet['cmd'] === Message::CMD_ACK
+            && isset($packet['data']['action'])
+            && $packet['data']['action'] === 'echo'
+        ) {
+            $lAck++;
+            return;
+        }
+
+        if ($packet['cmd'] === Message::CMD_ERROR
+            && isset($packet['data']['code'])
+            && (int)$packet['data']['code'] === Message::CODE_RATE_LIMIT
+        ) {
+            $lLimit++;
+            return;
+        }
+
+        $state['L_msg'] = '收到非预期回执：' . substr((string)$raw, 0, 120);
+        $state['L']     = false;
+        call_user_func($finish);
+    };
+
+    $connL->connect();
+
     /* ================= 超时保护 ================= */
     Timer::add($timeout, function () use (&$state, $timeout) {
         echo "\n[超时] 用例未在 {$timeout} 秒内全部完成。当前状态：\n";
-        foreach (array('A', 'B', 'C', 'D', 'E', 'F', 'G', 'I', 'J', 'K') as $key) {
+        foreach (array('A', 'B', 'C', 'D', 'E', 'F', 'G', 'I', 'J', 'K', 'L') as $key) {
             echo "  {$key}: " . ($state[$key] === 'pending' ? '未完成' : var_export($state[$key], true)) . "\n";
         }
         exit(1);

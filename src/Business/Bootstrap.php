@@ -16,6 +16,7 @@
 namespace GatewayPush\Business;
 
 use GatewayPush\Common\Logger;
+use GatewayPush\Common\RateLimiter;
 use GatewayPush\Common\RedisClient;
 use GatewayPush\Common\WorkerEvents;
 use GatewayWorker\BusinessWorker;
@@ -40,7 +41,10 @@ class Bootstrap
     protected static $appConfig = array();
 
     /**
-     * 已通过鉴权的 clientId 集合（进程内，随连接生命周期）
+     * 已通过鉴权的连接：clientId => uid（进程内，随连接生命周期）
+     *
+     * 存 uid 而非单纯的 true，是为了让报文级限流的用户维度无需再查一次
+     * Redis 会话（每报文省一次往返）。uid 为空串表示鉴权功能关闭下的直通连接。
      *
      * @var array
      */
@@ -84,6 +88,7 @@ class Bootstrap
         Auth::init($appConfig['auth']);
         Session::init($appConfig['session']);
         Monitor::init($appConfig['monitor']);
+        RateLimiter::init(isset($appConfig['rate_limit']) ? $appConfig['rate_limit'] : array());
 
         // UDP 出站队列 key 与网关进程同源（gateway.udp.out_queue），避免两套真源
         Push::init(
@@ -182,6 +187,10 @@ class Bootstrap
     /**
      * 收到客户端消息
      *
+     * 流程：解码 -> 报文级限流 -> 业务分发。
+     * 限流置于解码之后、业务之前：解码是纯本地计算且已有长度上限保护，
+     * 先解码才能拿到 cmd 以区分心跳与业务指令的配额。
+     *
      * @param string $clientId
      * @param mixed  $rawMessage
      * @return void
@@ -204,6 +213,22 @@ class Bootstrap
             return;
         }
 
+        // 报文级限流（L2）：连接 / 用户双维度，单次 Redis 往返原子判定。
+        // 判定为异步，通过后才进入业务分发，杜绝「未判定即执行处理器」。
+        self::guardRate($clientId, $packet, function () use ($clientId, $packet) {
+            self::dispatch($clientId, $packet);
+        });
+    }
+
+    /**
+     * 业务分发（限流通过后的主链路）
+     *
+     * @param string $clientId
+     * @param array  $packet
+     * @return void
+     */
+    protected static function dispatch($clientId, array $packet)
+    {
         // 鉴权拦截：未鉴权连接仅允许白名单指令
         if (Auth::enabled() && !self::isAuthed($clientId) && !Auth::isAllowedBeforeAuth($packet['cmd'])) {
             Monitor::incr('msg_fail');
@@ -248,6 +273,92 @@ class Bootstrap
                 $packet['cmd']
             ));
         }
+    }
+
+    /* ---------------------------------------------------------------------
+     | 报文级限流
+     --------------------------------------------------------------------- */
+
+    /**
+     * WebSocket 报文限流
+     *
+     * 维度组合：
+     *   连接维度（conn）—— 恒定参与，约束单连接刷报文
+     *   用户维度（uid）  —— 已鉴权时叠加，约束同账号多连接的总量
+     *   心跳维度（ping） —— 替代 conn 参与，配额更严
+     *
+     * 两个桶在一次 Redis 往返内原子判定（任一不足即整单拒绝且均不扣减），
+     * 避免「连接桶已扣、用户桶拒绝」造成的配额泄漏。
+     *
+     * @param string   $clientId
+     * @param array    $packet
+     * @param callable $next 放行后的后续处理
+     * @return void
+     */
+    protected static function guardRate($clientId, array $packet, callable $next)
+    {
+        if (!RateLimiter::enabled()) {
+            call_user_func($next);
+            return;
+        }
+
+        $isPing = in_array($packet['cmd'], array(Message::CMD_PING, Message::CMD_PONG), true);
+        $dim    = $isPing ? RateLimiter::DIM_PING : RateLimiter::DIM_CONN;
+
+        $buckets = array(RateLimiter::bucket($dim, $clientId));
+
+        $uid = self::authedUid($clientId);
+        if ($uid !== '') {
+            $buckets[] = RateLimiter::bucket(RateLimiter::DIM_UID, $uid);
+        }
+
+        RateLimiter::acquire($buckets, 1, function ($allowed) use ($clientId, $packet, $dim, $next) {
+            if ($allowed) {
+                call_user_func($next);
+                return;
+            }
+
+            Monitor::incr('msg_fail');
+            Monitor::incr('rate_limit_hit');
+            Monitor::incr('rate_limit_' . $dim);
+
+            RateLimiter::logReject($dim, $clientId, array(
+                'channel' => 'ws',
+                'cmd'     => $packet['cmd'],
+                'seq'     => $packet['seq'],
+            ));
+
+            self::rejectRateLimited($clientId, $packet);
+        });
+    }
+
+    /**
+     * WebSocket 超限处置
+     *
+     * 默认仅回错误报文、不断开连接：客户端可感知并自行退避，
+     * 而断开会在网络抖动时把限流放大成重连风暴。
+     *
+     * @param string $clientId
+     * @param array  $packet
+     * @return void
+     */
+    protected static function rejectRateLimited($clientId, array $packet)
+    {
+        if (!RateLimiter::shouldNotify()) {
+            return;
+        }
+
+        if (RateLimiter::shouldClose()) {
+            self::closeClient($clientId, Message::CODE_RATE_LIMIT, Message::codeMessage(Message::CODE_RATE_LIMIT));
+            return;
+        }
+
+        self::send($clientId, Message::error(
+            Message::CODE_RATE_LIMIT,
+            '',
+            $packet['seq'],
+            $packet['cmd']
+        ));
     }
 
     /**
@@ -425,7 +536,7 @@ class Bootstrap
                 'connect_at'  => time(),
             ));
 
-            self::markAuthed($clientId);
+            self::markAuthed($clientId, $uid);
             Monitor::incr('auth_success');
 
             // 绑定 Gateway 原生 uid 路由，使 sendToUid 可用（跨进程由 Register 转发）。
@@ -717,6 +828,10 @@ class Bootstrap
     /**
      * 处理单条 UDP 队列任务
      *
+     * 流程：格式校验 -> 报文级限流 -> 业务处理。
+     * 超限采用静默丢弃：UDP 允许丢包，回错误报文会形成反射放大
+     * （攻击者伪造源地址即可借服务端放大流量）。
+     *
      * @param string $raw
      * @return void
      */
@@ -737,6 +852,72 @@ class Bootstrap
         Monitor::incr('msg_in');
         Monitor::incr('udp_msg_in');
 
+        self::guardUdpRate($clientId, $uid, $packet, function () use ($job, $clientId, $uid, $deviceId) {
+            self::processUdpJob($job, $clientId, $uid, $deviceId);
+        });
+    }
+
+    /**
+     * UDP 报文限流
+     *
+     * UDP 无连接实体，连接维度以虚拟 clientId（udp:ip:port）参与；
+     * 报文自带 uid，已上报身份的报文叠加用户维度。
+     *
+     * 注意：网关层已按来源 IP 做过一轮内存桶限流（L1），此处是业务层的
+     * 第二道防线，用于约束单终端 / 单账号，与前者的 IP 维度互补。
+     *
+     * @param string   $clientId
+     * @param string   $uid
+     * @param array    $packet
+     * @param callable $next
+     * @return void
+     */
+    protected static function guardUdpRate($clientId, $uid, array $packet, callable $next)
+    {
+        if (!RateLimiter::enabled()) {
+            call_user_func($next);
+            return;
+        }
+
+        $cmd    = isset($packet['cmd']) ? (string)$packet['cmd'] : '';
+        $isPing = in_array($cmd, array(Message::CMD_PING, Message::CMD_PONG), true);
+        $dim    = $isPing ? RateLimiter::DIM_PING : RateLimiter::DIM_CONN;
+
+        $buckets = array(RateLimiter::bucket($dim, $clientId));
+        if ($uid !== '') {
+            $buckets[] = RateLimiter::bucket(RateLimiter::DIM_UID, $uid);
+        }
+
+        RateLimiter::acquire($buckets, 1, function ($allowed) use ($clientId, $uid, $cmd, $dim, $next) {
+            if ($allowed) {
+                call_user_func($next);
+                return;
+            }
+
+            Monitor::incr('msg_fail');
+            Monitor::incr('rate_limit_hit');
+            Monitor::incr('rate_limit_' . $dim);
+
+            RateLimiter::logReject($dim, $clientId, array(
+                'channel' => 'udp',
+                'cmd'     => $cmd,
+                'uid'     => $uid,
+            ));
+            // 静默丢弃：不回错误报文、不断开连接
+        });
+    }
+
+    /**
+     * UDP 业务处理（限流通过后）
+     *
+     * @param array  $job
+     * @param string $clientId
+     * @param string $uid
+     * @param string $deviceId
+     * @return void
+     */
+    protected static function processUdpJob(array $job, $clientId, $uid, $deviceId)
+    {
         // 应用层会话识别：UDP 以来源地址 + 报文身份建立会话。
         // 先用 EXISTS 探测会话是否已存在 —— UDP 无连接实体，只有在报文到达时
         // 才能判断「会话是否重建」，而该时机正是离线消息补投的触发点
@@ -771,7 +952,7 @@ class Bootstrap
         // P1 扩展点：在此接入 UDP 业务处理（上报数据落库、定向推送等）
         Logger::debug('UDP 业务任务已消费', array(
             'client_id' => $clientId,
-            'cmd'       => isset($packet['cmd']) ? $packet['cmd'] : '',
+            'cmd'       => isset($job['packet']['cmd']) ? (string)$job['packet']['cmd'] : '',
             'uid'       => $uid,
             'device_id' => $deviceId,
         ));
@@ -878,11 +1059,12 @@ class Bootstrap
      * 标记连接已鉴权，并清理鉴权超时定时器
      *
      * @param string $clientId
+     * @param string $uid 鉴权功能关闭时可为空串
      * @return void
      */
-    protected static function markAuthed($clientId)
+    protected static function markAuthed($clientId, $uid = '')
     {
-        self::$authed[$clientId] = true;
+        self::$authed[$clientId] = (string)$uid;
         if (isset(self::$authTimers[$clientId])) {
             Timer::del((int)self::$authTimers[$clientId]);
             unset(self::$authTimers[$clientId]);
@@ -898,6 +1080,17 @@ class Bootstrap
     protected static function isAuthed($clientId)
     {
         return isset(self::$authed[$clientId]);
+    }
+
+    /**
+     * 已鉴权连接的 uid（未鉴权返回空串）
+     *
+     * @param string $clientId
+     * @return string
+     */
+    protected static function authedUid($clientId)
+    {
+        return isset(self::$authed[$clientId]) ? (string)self::$authed[$clientId] : '';
     }
 
     /**
