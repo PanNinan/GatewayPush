@@ -36,6 +36,7 @@ use GatewayPush\Business\Monitor;
 use GatewayPush\Business\Push;
 use GatewayPush\Common\Logger;
 use GatewayPush\Common\RedisClient;
+use GatewayPush\Common\WorkerEvents;
 use Workerman\Protocols\Http\Request;
 use Workerman\Protocols\Http\Response;
 use Workerman\Worker;
@@ -125,6 +126,9 @@ class Bootstrap
             Logger::info('HTTP 推送接口正在停止', array('id' => $worker->id));
             RedisClient::closeAll();
         };
+
+        // HTTP 短连接存在发送缓冲，背压事件一并绑定
+        WorkerEvents::bind($worker, self::$config['name']);
     }
 
     /**

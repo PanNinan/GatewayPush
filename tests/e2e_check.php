@@ -19,6 +19,9 @@
  *   [F] 离线缓存与重连补投：目标离线时入队 -> 上线后自动补投
  *   [G] 推送幂等：同一 msg_id 重复提交 -> 仅投递一次
  *   [H] HTTP 接口：健康探测 / 验签通过 / 验签拒绝
+ *   [I] UDP 定向推送：业务进程 -> UDP 出站队列 -> 网关 sendto
+ *   [J] 指令路由表：data.action（echo / session）分发与 4006 / 4007 错误分支
+ *   [K] UDP 离线补投：UDP 会话重建时经出站队列补投（offline=1）
  *
  * 退出码：0 = 全部通过，1 = 存在失败项
  */
@@ -59,20 +62,27 @@ $uidE    = $uid . '-E';
 $uidF    = $uid . '-F';
 $uidG    = $uid . '-G';
 $uidI    = $uid . '-I';
+$uidJ    = $uid . '-J';
+$uidK    = $uid . '-K';
 $deviceE = $deviceId . '-E';
 $deviceF = $deviceId . '-F';
 $deviceG = $deviceId . '-G';
 $deviceI = $deviceId . '-I';
+$deviceJ = $deviceId . '-J';
+$deviceK = $deviceId . '-K';
 
 $tokenE = Auth::issue(array('uid' => $uidE, 'device_id' => $deviceE));
 $tokenF = Auth::issue(array('uid' => $uidF, 'device_id' => $deviceF));
 $tokenG = Auth::issue(array('uid' => $uidG, 'device_id' => $deviceG));
 $tokenI = Auth::issue(array('uid' => $uidI, 'device_id' => $deviceI));
+$tokenJ = Auth::issue(array('uid' => $uidJ, 'device_id' => $deviceJ));
+$tokenK = Auth::issue(array('uid' => $uidK, 'device_id' => $deviceK));
 
 $msgIdE = 'e2e-push-' . bin2hex(random_bytes(4));
 $msgIdF = 'e2e-off-' . bin2hex(random_bytes(4));
 $msgIdG = 'e2e-idem-' . bin2hex(random_bytes(4));
 $msgIdI = 'e2e-udp-' . bin2hex(random_bytes(4));
+$msgIdK = 'e2e-udpoff-' . bin2hex(random_bytes(4));
 
 /**
  * 用例状态：'pending' 表示未完成，其余为布尔结果
@@ -87,6 +97,8 @@ $state = array(
     'G' => 'pending', 'G_msg' => '',
     'H' => 'pending', 'H_msg' => '',
     'I' => 'pending', 'I_msg' => '',
+    'J' => 'pending', 'J_msg' => '',
+    'K' => 'pending', 'K_msg' => '',
 );
 
 /**
@@ -307,7 +319,8 @@ $worker = new Worker();
 $worker->onWorkerStart = function () use (
     $wsAddress, $udpAddress, $uid, $deviceId, $token, $secret, $timeout, &$state,
     $appConfig, $uidE, $deviceE, $tokenE, $uidF, $deviceF, $tokenF, $uidG, $deviceG, $tokenG,
-    $uidI, $deviceI, $tokenI, $msgIdE, $msgIdF, $msgIdG, $msgIdI
+    $uidI, $deviceI, $tokenI, $msgIdE, $msgIdF, $msgIdG, $msgIdI,
+    $uidJ, $deviceJ, $tokenJ, $uidK, $deviceK, $tokenK, $msgIdK
 ) {
     RedisClient::init($appConfig['redis']);
 
@@ -340,6 +353,8 @@ $worker->onWorkerStart = function () use (
             'G' => '推送幂等去重（同 msg_id 重复提交 -> 仅一次）',
             'H' => 'HTTP 接口（健康探测 / 验签通过 / 验签拒绝）',
             'I' => 'UDP 定向推送（业务进程 -> 出站队列 -> 网关 sendto）',
+            'J' => '指令路由表（data.action 分发 / 4006 / 4007）',
+            'K' => 'UDP 离线补投（会话重建 -> 出站队列 -> offline=1）',
         );
         foreach ($labels as $key => $label) {
             $ok  = $state[$key] === true;
@@ -755,17 +770,23 @@ $worker->onWorkerStart = function () use (
             return;
         }
 
-        // 会话建立后立即提交推送任务，验证 UDP 出站通道
+        // 会话建立后提交推送任务，验证 UDP 出站通道。
+        // 注意时序：ack 由 UDP 网关在收到报文时**立即**回复，而 UDP 应用层会话
+        // 由业务进程消费 queue:udp:in 后**异步**建立，二者存在毫秒级竞态。
+        // 若在 ack 瞬间入队，推送任务可能先于会话绑定被消费，从而被判定为离线。
+        // 此处延迟提交，确保会话已就绪（生产环境下推送由外部系统发起，不存在该竞态）。
         if ($packet['cmd'] === Message::CMD_ACK && !$iReported) {
             $iReported = true;
             echo "[I] <- ack（UDP 应用层会话已建立）\n";
 
-            Push::enqueue('uid', $uidI, array('case' => 'I', 'value' => 'udp-push'), array(
-                'msg_id'       => $msgIdI,
-                'offline_mode' => 'drop',
-                'source'       => 'e2e',
-            ));
-            echo "[I] -> 推送任务已提交（uid 目标，期望经 UDP 出站通道下发）\n";
+            Timer::add(0.6, function () use ($uidI, $msgIdI) {
+                Push::enqueue('uid', $uidI, array('case' => 'I', 'value' => 'udp-push'), array(
+                    'msg_id'       => $msgIdI,
+                    'offline_mode' => 'drop',
+                    'source'       => 'e2e',
+                ));
+                echo "[I] -> 推送任务已提交（uid 目标，期望经 UDP 出站通道下发）\n";
+            }, array(), false);
             return;
         }
 
@@ -785,10 +806,216 @@ $worker->onWorkerStart = function () use (
 
     $udpI->connect();
 
+    /* ================= 用例 J：指令路由表（data.action 分发） ================= */
+    // 验证 handleData 已由「空壳回显」改为按 data.action 查表分发：
+    //   1) action=echo     -> ack，回显 params
+    //   2) action=session  -> ack，返回本连接会话摘要
+    //   3) 未注册 action    -> 4006 未知指令
+    //   4) 缺 action        -> 4007 缺少参数
+    $connJ = new AsyncTcpConnection($wsAddress);
+    $jStep = 0;
+
+    $connJ->onConnect = function ($con) use ($uidJ, $deviceJ, $tokenJ, $secret) {
+        echo "[J] WebSocket 已连接\n";
+        $con->send(Message::encode(buildPacket(Message::CMD_AUTH, 'j-auth-1', array(
+            'uid'       => $uidJ,
+            'device_id' => $deviceJ,
+            'token'     => $tokenJ,
+        ), $secret)));
+        echo "[J] -> auth\n";
+    };
+
+    $connJ->onMessage = function ($con, $raw) use (&$state, &$jStep, $finish, $secret, $uidJ, $deviceJ) {
+        $packet = json_decode($raw, true);
+        if (!is_array($packet) || !isset($packet['cmd'])) {
+            return;
+        }
+
+        $fail = function ($msg) use (&$state, $con, $finish) {
+            $state['J']     = false;
+            $state['J_msg'] = $msg;
+            $con->close();
+            $finish();
+        };
+
+        switch ($jStep) {
+            case 0:   // 等待鉴权 ack
+                if ($packet['cmd'] !== Message::CMD_ACK) {
+                    $fail('鉴权阶段返回 ' . $packet['cmd']);
+                    return;
+                }
+                $jStep = 1;
+                $con->send(Message::encode(buildPacket(Message::CMD_DATA, 'j-echo-1', array(
+                    'uid'       => $uidJ,
+                    'device_id' => $deviceJ,
+                    'data'      => array('action' => 'echo', 'params' => array('k' => 'v', 'n' => 1)),
+                ), $secret)));
+                echo "[J] -> data / action=echo\n";
+                return;
+
+            case 1:   // 期望 echo 回显
+                $action = isset($packet['data']['action']) ? (string)$packet['data']['action'] : '';
+                $params = isset($packet['data']['params']) ? $packet['data']['params'] : array();
+                if ($packet['cmd'] !== Message::CMD_ACK
+                    || $action !== 'echo'
+                    || !is_array($params)
+                    || !isset($params['k']) || (string)$params['k'] !== 'v') {
+                    $fail('echo 回显异常：' . $raw);
+                    return;
+                }
+                $jStep = 2;
+                $con->send(Message::encode(buildPacket(Message::CMD_DATA, 'j-session-1', array(
+                    'uid'       => $uidJ,
+                    'device_id' => $deviceJ,
+                    'data'      => array('action' => 'session'),
+                ), $secret)));
+                echo "[J] -> data / action=session\n";
+                return;
+
+            case 2:   // 期望会话摘要
+                $action = isset($packet['data']['action']) ? (string)$packet['data']['action'] : '';
+                $uidGot = isset($packet['data']['uid']) ? (string)$packet['data']['uid'] : '';
+                $proto  = isset($packet['data']['protocol']) ? (string)$packet['data']['protocol'] : '';
+                if ($packet['cmd'] !== Message::CMD_ACK || $action !== 'session'
+                    || $uidGot !== $uidJ || $proto !== 'ws') {
+                    $fail(sprintf('session 摘要异常：action=%s uid=%s protocol=%s', $action, $uidGot, $proto));
+                    return;
+                }
+                $jStep = 3;
+                $con->send(Message::encode(buildPacket(Message::CMD_DATA, 'j-unknown-1', array(
+                    'uid'       => $uidJ,
+                    'device_id' => $deviceJ,
+                    'data'      => array('action' => 'no_such_action'),
+                ), $secret)));
+                echo "[J] -> data / action=no_such_action（期望 4006）\n";
+                return;
+
+            case 3:   // 期望未注册 action -> 4006
+                $code = isset($packet['data']['code']) ? (int)$packet['data']['code'] : 0;
+                if ($packet['cmd'] !== Message::CMD_ERROR || $code !== Message::CODE_UNKNOWN_CMD) {
+                    $fail(sprintf('未注册 action 未被拒绝（cmd=%s code=%d，期望 error/4006）', $packet['cmd'], $code));
+                    return;
+                }
+                $jStep = 4;
+                $con->send(Message::encode(buildPacket(Message::CMD_DATA, 'j-noaction-1', array(
+                    'uid'       => $uidJ,
+                    'device_id' => $deviceJ,
+                    'data'      => array('params' => array('x' => 1)),
+                ), $secret)));
+                echo "[J] -> data / 缺 action（期望 4007）\n";
+                return;
+
+            case 4:   // 期望缺 action -> 4007
+                $code = isset($packet['data']['code']) ? (int)$packet['data']['code'] : 0;
+                if ($packet['cmd'] !== Message::CMD_ERROR || $code !== Message::CODE_PARAM_MISSING) {
+                    $fail(sprintf('缺 action 未返回 4007（cmd=%s code=%d）', $packet['cmd'], $code));
+                    return;
+                }
+                echo "[J] <- 4006 / 4007 分支均按预期返回\n";
+                $state['J'] = true;
+                $con->close();
+                $finish();
+                return;
+        }
+    };
+
+    $connJ->onClose = function () use (&$state, $finish) {
+        if ($state['J'] === 'pending') {
+            $state['J']     = false;
+            $state['J_msg'] = '流程完成前连接被关闭';
+            $finish();
+        }
+    };
+
+    $connJ->connect();
+
+    /* ================= 用例 K：UDP 离线补投 ================= */
+    // 阶段一：uidK 无任何在线连接时提交，应落入 push:offline:{uidK}
+    Push::enqueue('uid', $uidK, array('case' => 'K', 'value' => 'udp-offline'), array(
+        'msg_id'       => $msgIdK,
+        'offline_mode' => 'queue',
+        'source'       => 'e2e',
+    ));
+    echo "[K] -> UDP 离线推送任务已提交（目标无在线连接，预期落入离线列表）\n";
+
+    $udpK      = new AsyncUdpConnection($udpAddress);
+    $kReported = false;
+    $kAttempt  = 0;
+
+    // 阶段二：UDP 客户端上报 -> 会话重建 -> 业务进程补投（经出站队列 sendto 回客户端）
+    $sendReportK = function () use ($udpK, &$kAttempt, &$kReported, $uidK, $deviceK, $tokenK, $secret) {
+        if ($kAttempt >= 3 || $kReported) {
+            return;
+        }
+        $kAttempt++;
+        $udpK->send(Message::encode(buildPacket(Message::CMD_DATA, 'k-udp-' . $kAttempt, array(
+            'uid'       => $uidK,
+            'device_id' => $deviceK,
+            'token'     => $tokenK,
+            'data'      => array('type' => 'udp-offline-report'),
+        ), $secret)));
+        echo "[K] -> 上报报文（第 {$kAttempt} 次，重建 UDP 会话以触发补投）\n";
+
+        Timer::add(1.0, function () use (&$sendReportK, &$kReported) {
+            if (!$kReported) {
+                $sendReportK();
+            }
+        }, array(), false);
+    };
+
+    $udpK->onConnect = function ($con) use ($sendReportK, &$state, $finish) {
+        echo "[K] UDP 通道已就绪\n";
+
+        // 延迟上报：先留出时间让业务进程把首个推送任务写入离线列表；
+        // 若会话先建立，任务会走在线直投（offline=0），用例即失去意义。
+        Timer::add(1.5, $sendReportK, array(), false);
+
+        Timer::add(9.0, function () use (&$state, $finish) {
+            if ($state['K'] === 'pending') {
+                $state['K']     = false;
+                $state['K_msg'] = 'UDP 离线补投未在 9 秒内到达客户端';
+                $finish();
+            }
+        }, array(), false);
+    };
+
+    $udpK->onMessage = function ($con, $raw) use (&$state, &$kReported, $finish, $msgIdK) {
+        $packet = json_decode($raw, true);
+        if (!is_array($packet) || !isset($packet['cmd'])) {
+            return;
+        }
+
+        if ($packet['cmd'] === Message::CMD_ACK) {
+            $kReported = true;
+            echo "[K] <- ack（UDP 会话已重建，等待离线补投）\n";
+            return;
+        }
+
+        if ($packet['cmd'] === Message::CMD_PUSH) {
+            $receivedId = isset($packet['msg_id']) ? (string)$packet['msg_id'] : '';
+            $isOffline  = isset($packet['offline']) ? (int)$packet['offline'] : 0;
+
+            if ($receivedId !== $msgIdK) {
+                $state['K']     = false;
+                $state['K_msg'] = "补投 msg_id 不一致（期望 {$msgIdK}，实际 {$receivedId}）";
+            } elseif ($isOffline !== 1) {
+                $state['K']     = false;
+                $state['K_msg'] = '补投报文未标记 offline=1';
+            } else {
+                $state['K'] = true;
+                echo "[K] <- push（offline=1，UDP 离线补投通道打通）\n";
+            }
+            $con->close();
+            $finish();
+        }
+    };
+
+    $udpK->connect();
+
     /* ================= 超时保护 ================= */
     Timer::add($timeout, function () use (&$state, $timeout) {
         echo "\n[超时] 用例未在 {$timeout} 秒内全部完成。当前状态：\n";
-        foreach (array('A', 'B', 'C', 'D', 'E', 'F', 'G', 'I') as $key) {
+        foreach (array('A', 'B', 'C', 'D', 'E', 'F', 'G', 'I', 'J', 'K') as $key) {
             echo "  {$key}: " . ($state[$key] === 'pending' ? '未完成' : var_export($state[$key], true)) . "\n";
         }
         exit(1);

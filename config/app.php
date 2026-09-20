@@ -173,6 +173,8 @@ return [
             'heartbeat_timeout', 'memory_bytes',
             'push_in', 'push_out', 'push_fail', 'push_offline', 'push_replay', 'push_dedup', 'push_ack',
             'udp_out_queued', 'udp_out', 'udp_out_fail',
+            'conn_error', 'buffer_full', 'buffer_drain',
+            'action_echo', 'action_session',
         ],
     ],
 ];

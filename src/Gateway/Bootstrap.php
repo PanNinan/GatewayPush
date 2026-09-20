@@ -22,6 +22,7 @@ use GatewayPush\Business\Message;
 use GatewayPush\Business\Monitor;
 use GatewayPush\Common\Logger;
 use GatewayPush\Common\RedisClient;
+use GatewayPush\Common\WorkerEvents;
 use Workerman\Connection\ConnectionInterface;
 use Workerman\Timer;
 use Workerman\Worker;
@@ -95,6 +96,9 @@ class Bootstrap
                 'listen' => $worker->getSocketName(),
             ));
         };
+
+        // 连接级异常与背压观测（注册中心为内部 TCP，无背压压力，仅绑错误事件）
+        WorkerEvents::bind($register, $conf['name'], array('buffer' => false));
     }
 
     /* ---------------------------------------------------------------------
@@ -166,6 +170,9 @@ class Bootstrap
                 'worker_key' => isset($connection->key) ? $connection->key : '',
             ));
         };
+
+        // 长连接网关必须观测背压：客户端消费慢会顶满发送缓冲并触发丢包
+        WorkerEvents::bind($gateway, $conf['name']);
     }
 
     /* ---------------------------------------------------------------------
@@ -231,6 +238,9 @@ class Bootstrap
             Logger::info('UDP 网关正在停止，释放连接资源', array('id' => $worker->id));
             RedisClient::closeAll();
         };
+
+        // UDP 为无连接协议，不存在 TCP 发送缓冲背压，仅绑错误事件
+        WorkerEvents::bind($udp, $conf['name'], array('buffer' => false));
     }
 
     /**

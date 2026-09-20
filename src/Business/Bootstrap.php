@@ -17,6 +17,7 @@ namespace GatewayPush\Business;
 
 use GatewayPush\Common\Logger;
 use GatewayPush\Common\RedisClient;
+use GatewayPush\Common\WorkerEvents;
 use GatewayWorker\BusinessWorker;
 use GatewayWorker\Lib\Context;
 use GatewayWorker\Lib\Gateway as GatewayClient;
@@ -52,6 +53,13 @@ class Bootstrap
      */
     protected static $authTimers = array();
 
+    /**
+     * 指令路由表是否已注册
+     *
+     * @var bool
+     */
+    protected static $routesRegistered = false;
+
     /* ---------------------------------------------------------------------
      | 初始化
      --------------------------------------------------------------------- */
@@ -83,6 +91,9 @@ class Bootstrap
             $businessConfig['push_queue'],
             isset($gatewayConfig['udp']['out_queue']) ? $gatewayConfig['udp']['out_queue'] : array()
         );
+
+        // 注册指令路由表（一级 cmd + 二级 data.action）
+        self::registerDefaultRoutes();
 
         $conf   = $businessConfig['worker'];
         $worker = new BusinessWorker();
@@ -118,6 +129,9 @@ class Bootstrap
             Logger::info('BusinessWorker 正在停止，释放连接资源', array('id' => $worker->id));
             RedisClient::closeAll();
         };
+
+        // 连接级错误与背压观测（业务进程持有与网关的内部连接）
+        WorkerEvents::bind($worker, $conf['name']);
     }
 
     /* ---------------------------------------------------------------------
@@ -207,32 +221,32 @@ class Bootstrap
             return;
         }
 
-        switch ($packet['cmd']) {
-            case Message::CMD_AUTH:
-                self::handleAuth($clientId, $packet);
-                break;
+        // 指令分发统一走路由表（一级 cmd），新增指令无需改动本方法
+        $handler = Router::command($packet['cmd']);
+        if ($handler === null) {
+            Monitor::incr('msg_fail');
+            Logger::warn('收到未知指令', array('client_id' => $clientId, 'cmd' => $packet['cmd']));
+            self::send($clientId, Message::error(
+                Message::CODE_UNKNOWN_CMD,
+                '',
+                $packet['seq'],
+                $packet['cmd']
+            ));
+            return;
+        }
 
-            case Message::CMD_PING:
-                self::handlePing($clientId, $packet);
-                break;
-
-            case Message::CMD_DATA:
-                self::handleData($clientId, $packet);
-                break;
-
-            case Message::CMD_ACK:
-                self::handleClientAck($clientId, $packet);
-                break;
-
-            default:
-                Monitor::incr('msg_fail');
-                Logger::warn('收到未知指令', array('client_id' => $clientId, 'cmd' => $packet['cmd']));
-                self::send($clientId, Message::error(
-                    Message::CODE_UNKNOWN_CMD,
-                    '',
-                    $packet['seq'],
-                    $packet['cmd']
-                ));
+        // 处理器异常在此统一兜底：保证单条报文异常不影响连接与进程
+        try {
+            call_user_func($handler, $clientId, $packet);
+        } catch (\Throwable $e) {
+            Monitor::incr('msg_fail');
+            Logger::exception($e, 'business.route:' . $packet['cmd']);
+            self::send($clientId, Message::error(
+                Message::CODE_SERVER_ERROR,
+                '',
+                $packet['seq'],
+                $packet['cmd']
+            ));
         }
     }
 
@@ -494,10 +508,11 @@ class Bootstrap
     }
 
     /**
-     * 处理业务数据指令
+     * 处理业务数据指令（二级路由入口）
      *
-     * P0/P1 阶段仅完成链路验证与心跳刷新，不承载具体业务。
-     * 扩展点：在此接入业务数据落库、按规则回推（Push::direct）等逻辑。
+     * data 报文约定：{"cmd":"data","data":{"action":"<动作名>","params":{...}}}
+     * 按 data.action 查表分发到已注册的业务动作；本方法只做参数校验与错误兜底，
+     * 具体业务逻辑由各 action 处理器实现，新增动作无需改动此处。
      *
      * @param string $clientId
      * @param array  $packet
@@ -505,12 +520,147 @@ class Bootstrap
      */
     protected static function handleData($clientId, array $packet)
     {
-        Logger::debug('收到业务数据（暂不做业务处理）', array(
-            'client_id' => $clientId,
-            'seq'       => $packet['seq'],
-            'keys'      => array_keys($packet['data']),
+        $action = isset($packet['data']['action']) ? (string)$packet['data']['action'] : '';
+        if ($action === '') {
+            Monitor::incr('msg_fail');
+            Logger::warn('data 指令缺少 action', array('client_id' => $clientId));
+            self::send($clientId, Message::error(
+                Message::CODE_PARAM_MISSING,
+                '缺少 data.action',
+                $packet['seq'],
+                $packet['cmd']
+            ));
+            return;
+        }
+
+        $handler = Router::action($action);
+        if ($handler === null) {
+            Monitor::incr('msg_fail');
+            Logger::warn('未注册的业务动作', array('client_id' => $clientId, 'action' => $action));
+            self::send($clientId, Message::error(
+                Message::CODE_UNKNOWN_CMD,
+                '未知业务动作',
+                $packet['seq'],
+                $packet['cmd']
+            ));
+            return;
+        }
+
+        try {
+            call_user_func($handler, $clientId, $packet);
+        } catch (\Throwable $e) {
+            Monitor::incr('msg_fail');
+            Logger::exception($e, 'business.action:' . $action);
+            self::send($clientId, Message::error(
+                Message::CODE_SERVER_ERROR,
+                '',
+                $packet['seq'],
+                $packet['cmd']
+            ));
+        }
+    }
+
+    /* ---------------------------------------------------------------------
+     | 指令路由表
+     --------------------------------------------------------------------- */
+
+    /**
+     * 注册默认指令路由（幂等）
+     *
+     * 一级（cmd）与二级（data.action）处理器均在此登记。
+     * 处理器以闭包形式注册，闭包在 Bootstrap 类作用域内定义，
+     * 因此可直接调用受保护的 handleXxx / actionXxx 方法。
+     *
+     * 扩展方式：在 init() 之后调用 Router::registerCommand / registerAction，
+     * 或在业务模块中自行注册，无需修改本类。
+     *
+     * @return void
+     */
+    protected static function registerDefaultRoutes()
+    {
+        if (self::$routesRegistered) {
+            return;
+        }
+        self::$routesRegistered = true;
+
+        // 一级：指令 -> 处理器
+        Router::registerCommand(Message::CMD_AUTH, function ($clientId, array $packet) {
+            self::handleAuth($clientId, $packet);
+        });
+        Router::registerCommand(Message::CMD_PING, function ($clientId, array $packet) {
+            self::handlePing($clientId, $packet);
+        });
+        Router::registerCommand(Message::CMD_DATA, function ($clientId, array $packet) {
+            self::handleData($clientId, $packet);
+        });
+        Router::registerCommand(Message::CMD_ACK, function ($clientId, array $packet) {
+            self::handleClientAck($clientId, $packet);
+        });
+
+        // 二级：data.action -> 业务动作
+        Router::registerAction('echo', function ($clientId, array $packet) {
+            self::actionEcho($clientId, $packet);
+        });
+        Router::registerAction('session', function ($clientId, array $packet) {
+            self::actionSession($clientId, $packet);
+        });
+
+        Logger::info('指令路由表注册完成', array(
+            'commands' => Router::commands(),
+            'actions'  => Router::actions(),
         ));
-        self::send($clientId, Message::ack($packet['seq'], array('accepted' => 1)));
+    }
+
+    /**
+     * 业务动作：echo（原样回显）
+     *
+     * 用于客户端联通性验证与压测，不触碰任何业务状态。
+     *
+     * @param string $clientId
+     * @param array  $packet
+     * @return void
+     */
+    protected static function actionEcho($clientId, array $packet)
+    {
+        Monitor::incr('action_echo');
+
+        $params = isset($packet['data']['params']) && is_array($packet['data']['params'])
+            ? $packet['data']['params']
+            : array();
+
+        self::respond($clientId, Message::ack($packet['seq'], array(
+            'action' => 'echo',
+            'params' => $params,
+            'at'     => time(),
+        )));
+    }
+
+    /**
+     * 业务动作：session（返回当前连接的会话摘要）
+     *
+     * 只读取本连接的会话，不接受任意 clientId 入参，避免越权探测他人会话。
+     *
+     * @param string $clientId
+     * @param array  $packet
+     * @return void
+     */
+    protected static function actionSession($clientId, array $packet)
+    {
+        Monitor::incr('action_session');
+
+        Session::get($clientId, function ($session) use ($clientId, $packet) {
+            $connectAt = isset($session['connect_at']) ? (int)$session['connect_at'] : 0;
+
+            self::respond($clientId, Message::ack($packet['seq'], array(
+                'action'      => 'session',
+                'client_id'   => $clientId,
+                'uid'         => isset($session['uid']) ? (string)$session['uid'] : '',
+                'device_id'   => isset($session['device_id']) ? (string)$session['device_id'] : '',
+                'protocol'    => isset($session['protocol']) ? (string)$session['protocol'] : '',
+                'connect_at'  => $connectAt,
+                'online_secs' => $connectAt > 0 ? max(0, time() - $connectAt) : 0,
+            )));
+        });
     }
 
     /* ---------------------------------------------------------------------
@@ -587,16 +737,35 @@ class Bootstrap
         Monitor::incr('msg_in');
         Monitor::incr('udp_msg_in');
 
-        // 应用层会话识别：UDP 以来源地址 + 报文身份建立会话
+        // 应用层会话识别：UDP 以来源地址 + 报文身份建立会话。
+        // 先用 EXISTS 探测会话是否已存在 —— UDP 无连接实体，只有在报文到达时
+        // 才能判断「会话是否重建」，而该时机正是离线消息补投的触发点
+        // （与 WebSocket 在鉴权成功后补投的语义对齐）。
         if ($deviceId !== '' || $uid !== '') {
-            Session::bind($clientId, array(
-                'uid'       => $uid,
-                'device_id' => $deviceId,
-            ), Session::PROTOCOL_UDP, array(
-                'client_ip'   => isset($job['remote_ip']) ? (string)$job['remote_ip'] : '',
-                'client_port' => isset($job['remote_port']) ? (int)$job['remote_port'] : 0,
-                'connect_at'  => time(),
-            ));
+            Session::exists($clientId, function ($existed) use ($clientId, $uid, $deviceId, $job) {
+                Session::bind($clientId, array(
+                    'uid'       => $uid,
+                    'device_id' => $deviceId,
+                ), Session::PROTOCOL_UDP, array(
+                    'client_ip'   => isset($job['remote_ip']) ? (string)$job['remote_ip'] : '',
+                    'client_port' => isset($job['remote_port']) ? (int)$job['remote_port'] : 0,
+                    'connect_at'  => time(),
+                ));
+
+                // 会话此前已被回收/过期（EXISTS=0）说明客户端刚刚恢复连接，补投离线消息；
+                // 会话存在期间不会重复触发，判定天然幂等。
+                if (!$existed && $uid !== '') {
+                    Push::replayOffline($uid, $clientId, function ($count) use ($uid, $clientId) {
+                        if ($count > 0) {
+                            Logger::info('UDP 离线消息已补投', array(
+                                'uid'       => $uid,
+                                'client_id' => $clientId,
+                                'count'     => $count,
+                            ));
+                        }
+                    });
+                }
+            });
         }
 
         // P1 扩展点：在此接入 UDP 业务处理（上报数据落库、定向推送等）
@@ -611,6 +780,36 @@ class Bootstrap
     /* ---------------------------------------------------------------------
      | 内部辅助
      --------------------------------------------------------------------- */
+
+    /**
+     * 向客户端回执报文（供路由处理器调用）
+     *
+     * 与内部 send() 的区别：本方法为公开 API，允许在外部模块注册
+     * Router 处理器时复用统一的回执通道（含指标与异常兜底）。
+     *
+     * @param string $clientId
+     * @param array  $packet 已构造的报文数组
+     * @return void
+     */
+    public static function respond($clientId, array $packet)
+    {
+        self::send($clientId, $packet);
+    }
+
+    /**
+     * 向客户端回执错误报文（供路由处理器调用）
+     *
+     * @param string $clientId
+     * @param int    $code
+     * @param string $msg
+     * @param string $seq
+     * @param string $ref
+     * @return void
+     */
+    public static function respondError($clientId, $code, $msg = '', $seq = '', $ref = '')
+    {
+        self::send($clientId, Message::error($code, $msg, $seq, $ref));
+    }
 
     /**
      * 下发报文

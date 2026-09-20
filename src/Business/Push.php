@@ -624,6 +624,11 @@ class Push
     /**
      * 重连补投：把离线消息投递给刚恢复的连接
      *
+     * 双通道支持：
+     *   WebSocket 直接 Gateway::sendToClient 下发；
+     *   UDP       写入网关出站队列（与在线投递同一通道），由网关进程 sendto。
+     * 因此本方法对两种协议统一适用，调用方无需区分协议。
+     *
      * 使用 Lua 原子取批，避免「取出」与「清理」之间被新消息插入造成丢失。
      *
      * @param string        $uid
@@ -645,8 +650,14 @@ class Push
             }
             return;
         }
-        // UDP 目标无法即时补投（连接由网关持有），本轮仅支持 WebSocket 恢复时补投
-        if (strpos((string)$clientId, self::UDP_PREFIX) === 0) {
+
+        $isUdp = strpos((string)$clientId, self::UDP_PREFIX) === 0;
+        if ($isUdp && empty(self::$udpOutConfig['enable'])) {
+            // UDP 出站通道关闭时无处投递，明确跳过而非静默丢弃
+            Logger::warn('UDP 出站队列未启用，离线消息本轮不补投', array(
+                'uid'       => $uid,
+                'client_id' => $clientId,
+            ));
             if ($cb) {
                 call_user_func($cb, 0);
             }
@@ -656,7 +667,7 @@ class Push
         $key   = self::KEY_OFFLINE . $uid;
         $batch = max(1, (int)self::$config['replay_batch']);
 
-        RedisClient::popBatch($key, $batch, function ($items) use ($uid, $clientId, $cb, $batch) {
+        RedisClient::popBatch($key, $batch, function ($items) use ($uid, $clientId, $cb, $batch, $isUdp) {
             if (!$items) {
                 if ($cb) {
                     call_user_func($cb, 0);
@@ -681,8 +692,17 @@ class Push
                     true
                 );
 
+                $json = Message::encode($frame);
+
+                // UDP：连接由网关进程持有，业务进程无法寻址，走与在线投递一致的出站队列
+                if ($isUdp) {
+                    self::deliverUdp($clientId, $json, $uid, isset($item['msg_id']) ? (string)$item['msg_id'] : '');
+                    $sent++;
+                    continue;
+                }
+
                 try {
-                    GatewayClient::sendToClient($clientId, Message::encode($frame));
+                    GatewayClient::sendToClient($clientId, $json);
                     $sent++;
                 } catch (\Throwable $e) {
                     Logger::exception($e, 'push.replay:' . $clientId);
@@ -694,6 +714,7 @@ class Push
             Logger::info('离线消息补投完成', array(
                 'uid'       => $uid,
                 'client_id' => $clientId,
+                'channel'   => $isUdp ? self::CHANNEL_UDP : self::CHANNEL_WS,
                 'pulled'    => count($items),
                 'delivered' => $sent,
             ));
