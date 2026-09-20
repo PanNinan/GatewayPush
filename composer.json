@@ -16,12 +16,14 @@
     },
     "autoload": {
         "psr-4": {
-            "GatewayPush\\": "src/"
+            "GatewayPush\\": "src/",
+            "GatewayPush\\Client\\": "client/src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "GatewayPush\\Tests\\": "tests/"
+            "GatewayPush\\Tests\\": "tests/",
+            "GatewayPush\\Client\\Tests\\": "client/tests/"
         }
     },
     "config": {
