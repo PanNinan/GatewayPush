@@ -1,0 +1,35 @@
+{
+    "name": "jieyou/gateway-push",
+    "description": "Workerman + GatewayWorker 实时数据推送服务（WebSocket + UDP 双协议，单对一定向推送）",
+    "type": "project",
+    "license": "MIT",
+    "keywords": ["workerman", "gatewayworker", "websocket", "udp", "push"],
+    "require": {
+        "php": ">=8.0",
+        "ext-json": "*",
+        "ext-openssl": "*",
+        "ext-sockets": "*",
+        "vlucas/phpdotenv": "^5.6",
+        "workerman/gateway-worker": "^3.1",
+        "workerman/redis": "^2.0",
+        "workerman/workerman": "^5.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "GatewayPush\\": "src/"
+        }
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    },
+    "scripts": {
+        "start": "php start.php start",
+        "stop": "php start.php stop",
+        "restart": "php start.php restart -d",
+        "reload": "php start.php reload",
+        "svc-status": "php start.php status",
+        "check": "php start.php check",
+        "env-init": "php start.php env:init"
+    }
+}
