@@ -410,7 +410,7 @@ dashboard   已停止      http://127.0.0.1:8291       -         -         -    
 
 | 变量 | 作用 |
 |---|---|
-| `PHP_BIN` | 指定 PHP 可执行文件，默认取 PATH 中的 `php`。例：`PHP_BIN=/www/server/php/82/bin/php ./bin/start.sh check` |
+| `PHP_BIN` | 指定 PHP 可执行文件，默认取 PATH 中的 `php`。**脚本会校验其版本**（低于下限直接拒绝，见 [6.7](#67-php-解释器解析与版本校验两平台)）。例：`PHP_BIN=/www/server/php/82/bin/php ./bin/start.sh check` |
 | `NO_COLOR` | 设为任意值可关闭彩色输出 |
 
 ### 6.3 Windows 脚本命令详解
@@ -573,7 +573,53 @@ bin\start.bat stop udp        :: 停单个角色
 taskkill /F /PID <pid>        :: 兜底手段
 ```
 
-### 6.7 Composer 脚本
+### 6.7 PHP 解释器解析与版本校验（两平台）
+
+两个管理脚本都会在**真正调用 `start.php` 之前**先确定 PHP 解释器并校验版本。这不是可选的防御性代码，
+而是必需的一步：项目的 PHP 下限由**依赖**决定（`workerman/workerman` 5.x 全线 `>= 8.1`），
+Composer 生成的 `vendor/composer/platform_check.php` 会在 `autoload` 阶段直接抛 `RuntimeException`。
+如果不提前拦截，用户看到的是一段 Composer 堆栈，而不是「版本过低」这句人话。
+
+**下限的真源**：`config/app.php` 的 `php_min`（当前 `8.1.0`）。两个脚本都从该文件读取，
+不另立一份；解析失败时回落到 `8.1.0`。
+
+| | Linux（`bin/start.sh`） | Windows（`bin/start.ps1`） |
+|---|---|---|
+| 解释器来源 | `PHP_BIN` 环境变量，缺省取 PATH 中的 `php` | `-PhpPath` 参数，缺省按候选顺序自动解析 |
+| 候选顺序 | 不适用（单值） | ① PATH 中的 `php.exe` / `php`；② **遍历 PATH 的每一个目录**找 `php.exe`；③ `D:\phpstudy_pro\Extensions\php\*\php.exe`、`C:\...`（按名称倒序） |
+| 探测方式 | `$PHP_BIN -r 'echo PHP_VERSION_ID;'` | 同左 |
+| 版本过低 | **硬失败**，提示 `PHP_BIN=...` 用法 | 逐个候选跳过；`-PhpPath` 显式指定时**硬失败**（不回落到别的解释器） |
+| 全部候选不合格 | — | 打印候选清单（含各自版本）+ 退出码 1 |
+| 探测失败（无法取到版本号） | 仅告警，继续执行 | 该候选被跳过；若为 `-PhpPath` 则告警后继续 |
+
+启动时脚本会把**实际选中的解释器**回显一行，便于排查本机多版本共存的情况：
+
+```
+      PHP 8.2.9  D:\phpstudy_pro\Extensions\php\php8.2.9nts\php.exe
+```
+
+被跳过的候选也会明确列出：
+
+```
+[警告]  已跳过不满足版本要求的 PHP：D:\phpstudy_pro\Extensions\php\php8.0.2nts\php.exe  [8.0.2]
+      PHP 8.2.9  D:\phpstudy_pro\Extensions\php\php8.2.9nts\php.exe
+```
+
+> **IDE 会污染 PATH**：PhpStorm 会把「项目默认解释器」注入集成终端的 PATH。
+> 若该解释器低于下限，脚本现在会自动跳过它并选用合格候选；但用 IDE 的 PHP 解释器设置
+> 跑本项目仍会失败 —— 请把 CLI Interpreter 指向 `>= 8.1` 的解释器。
+
+显式指定解释器：
+
+```bash
+PHP_BIN=/www/server/php/82/bin/php ./bin/start.sh check     # Linux
+```
+
+```powershell
+.\bin\start.ps1 check -PhpPath D:\phpstudy_pro\Extensions\php\php8.2.9nts\php.exe   # Windows
+```
+
+### 6.8 Composer 脚本
 
 ```bash
 composer start          # php start.php start
