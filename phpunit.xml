@@ -23,6 +23,12 @@
         <testsuite name="unit">
             <directory>tests/Unit</directory>
             <directory>client/tests/Unit</directory>
+            <!-- 客户端测试共享基建（假传输层 / 假计时器），目录扫描不加载 *Test.php 以外的文件 -->
+            <file>client/tests/Support/FakeTransport.php</file>
+            <file>client/tests/Support/FakeUdpConnection.php</file>
+            <file>client/tests/Support/FakeHttpConnection.php</file>
+            <file>client/tests/Support/FakeTcpConnection.php</file>
+            <file>client/tests/Support/FakeTimers.php</file>
         </testsuite>
     </testsuites>
 

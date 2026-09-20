@@ -17,134 +17,17 @@ use GatewayPush\Business\Message;
 use GatewayPush\Client\Error\ClientException;
 use GatewayPush\Client\Error\ErrorCode;
 use GatewayPush\Client\Session\SessionManager;
-use GatewayPush\Client\Transport\TransportInterface;
+use GatewayPush\Client\Tests\Support\FakeTimers;
+use GatewayPush\Client\Tests\Support\FakeTransport;
 use PHPUnit\Framework\TestCase;
-
-/**
- * 假传输层：记录发出的帧，提供 open/receive/drop/error 模拟服务端行为
- */
-final class FakeTransport implements TransportInterface
-{
-    /** @var array[] 已发出的解码报文 */
-    public $sentPackets = array();
-
-    public $connectCalls = 0;
-
-    public $connected = false;
-
-    private $openCb;
-    private $msgCb;
-    private $closeCb;
-    private $errCb;
-
-    public function connect()
-    {
-        $this->connectCalls++;
-    }
-
-    public function send($frame)
-    {
-        $packet = json_decode((string)$frame, true);
-        $this->sentPackets[] = is_array($packet) ? $packet : array();
-    }
-
-    public function close()
-    {
-        $this->connected = false;
-        if ($this->closeCb !== null) {
-            ($this->closeCb)();
-        }
-    }
-
-    public function isConnected()
-    {
-        return $this->connected;
-    }
-
-    public function onOpen(callable $cb)
-    {
-        $this->openCb = $cb;
-    }
-
-    public function onMessage(callable $cb)
-    {
-        $this->msgCb = $cb;
-    }
-
-    public function onClose(callable $cb)
-    {
-        $this->closeCb = $cb;
-    }
-
-    public function onError(callable $cb)
-    {
-        $this->errCb = $cb;
-    }
-
-    /* ---- 模拟辅助 ---- */
-
-    /** 模拟服务端：握手完成 */
-    public function open()
-    {
-        $this->connected = true;
-        if ($this->openCb !== null) {
-            ($this->openCb)();
-        }
-    }
-
-    /** 模拟服务端：下发报文 */
-    public function receive(array $packet)
-    {
-        ($this->msgCb)(json_encode($packet, JSON_UNESCAPED_UNICODE));
-    }
-
-    /** 模拟服务端：下发原始帧（可构造非法 JSON） */
-    public function receiveRaw($raw)
-    {
-        ($this->msgCb)((string)$raw);
-    }
-
-    /** 模拟服务端：连接断开（非用户主动） */
-    public function drop()
-    {
-        $this->connected = false;
-        if ($this->closeCb !== null) {
-            ($this->closeCb)();
-        }
-    }
-
-    /** 最近发出的报文 */
-    public function lastPacket()
-    {
-        return count($this->sentPackets) > 0 ? $this->sentPackets[count($this->sentPackets) - 1] : null;
-    }
-}
 
 final class SessionManagerTest extends TestCase
 {
-    /** @var array[] 假计时器表 */
-    private $timers = array();
-
-    /** @var callable */
-    private $timerAdd;
-
-    /** @var callable */
-    private $timerDel;
+    use FakeTimers;
 
     private function makeSession(array $overrides = array(), FakeTransport &$transport = null)
     {
-        $this->timers = array();
-        $timers       = &$this->timers;
-
-        $this->timerAdd = function ($interval, $persistent, $fn) use (&$timers) {
-            $timers[] = array('interval' => $interval, 'persistent' => $persistent, 'fn' => $fn, 'deleted' => false);
-            return count($timers);
-        };
-        $this->timerDel = function ($id) use (&$timers) {
-            if (isset($timers[$id - 1])) {
-                $timers[$id - 1]['deleted'] = true;
-            }
-        };
+        $this->makeTimers();
 
         $transport = new FakeTransport();
         $config    = array_merge(array(
@@ -177,42 +60,6 @@ final class SessionManagerTest extends TestCase
             ),
         ));
         self::assertTrue($session->isReady());
-    }
-
-    private function fireTimer($id)
-    {
-        $t = &$this->timers[$id - 1];
-        if ($t['deleted']) {
-            return;
-        }
-        if (!$t['persistent']) {
-            $t['deleted'] = true; // workerman 一次性定时器触发后自动移除
-        }
-        ($t['fn'])();
-    }
-
-    private function persistentTimers()
-    {
-        $out = array();
-        foreach ($this->timers as $t) {
-            if ($t['persistent'] && !$t['deleted']) {
-                $out[] = $t;
-            }
-        }
-
-        return $out;
-    }
-
-    private function nonPersistentTimers()
-    {
-        $out = array();
-        foreach ($this->timers as $t) {
-            if (!$t['persistent'] && !$t['deleted']) {
-                $out[] = $t;
-            }
-        }
-
-        return $out;
     }
 
     /* ---------------------------------------------------------------------
@@ -493,6 +340,84 @@ final class SessionManagerTest extends TestCase
     }
 
     /* ---------------------------------------------------------------------
+     | UDP 通道（P3）：attach_token 与双层回执判别
+     --------------------------------------------------------------------- */
+
+    public function testTransportAckSettlesAuthAndPingButNotData()
+    {
+        $session = $this->makeSession(array('heartbeat' => 0), $transport);
+
+        // auth：UDP 网关对 auth 无业务层回执，传输层 ack（data 空且无 action）即结算
+        $session->connect();
+        $transport->open();
+        $auth = $transport->lastPacket();
+        $transport->receive(array(
+            'cmd'  => Message::CMD_ACK,
+            'seq'  => $auth['seq'],
+            'ts'   => time(),
+            'data' => array(),
+        ));
+        self::assertTrue($session->isReady(), '传输层 ack 应结算 auth');
+
+        // data.echo：传输层 ack 不得结算，须等业务层回执（带 data.action）
+        $settled = null;
+        $seq     = $session->request('echo', array('k' => 'v'), function ($ok, $packet) use (&$settled) {
+            $settled = $ok;
+        });
+        $transport->receive(array(
+            'cmd'  => Message::CMD_ACK,
+            'seq'  => $seq,
+            'ts'   => time(),
+            'data' => array(),
+        ));
+        self::assertNull($settled, '传输层 ack 不得结算业务请求（硬约束⑳）');
+        self::assertSame(1, $session->pendingCount());
+
+        $transport->receive(array(
+            'cmd'  => Message::CMD_ACK,
+            'seq'  => $seq,
+            'ts'   => time(),
+            'data' => array('action' => 'echo', 'echoed' => array('k' => 'v')),
+        ));
+        self::assertTrue($settled);
+        self::assertSame(0, $session->pendingCount());
+    }
+
+    public function testAttachTokenCarriesTokenOnOutgoingPackets()
+    {
+        $session = $this->makeSession(array('heartbeat' => 0, 'attach_token' => true), $transport);
+        $this->connectAndReady($session, $transport);
+
+        $session->request('echo', array(), null);
+        $req = $transport->lastPacket();
+
+        self::assertNotSame('', $req['token'], 'attach_token 开启时业务报文必须携带 Token（硬约束⑲）');
+        self::assertSame(
+            $transport->sentPackets[0]['token'],
+            $req['token'],
+            '业务报文 Token 须与 auth 报文一致'
+        );
+
+        // Token 参与签名：签名须随 Token 附加后重新计算（本地验签通过即证明顺序正确）
+        $packet               = $req;
+        $sign                 = $packet['sign'];
+        $packet['sign']       = '';
+        $expected             = \GatewayPush\Client\Protocol\Signer::sign($packet, 'test-secret');
+        self::assertSame($expected, $sign);
+    }
+
+    public function testAttachTokenDisabledKeepsPacketsTokenFree()
+    {
+        $session = $this->makeSession(array('heartbeat' => 0), $transport);
+        $this->connectAndReady($session, $transport);
+
+        $session->request('echo', array(), null);
+        $req = $transport->lastPacket();
+
+        self::assertArrayNotHasKey('token', $req, '默认（WS）路径不应附加 Token');
+    }
+
+    /* ---------------------------------------------------------------------
      | 超时
      --------------------------------------------------------------------- */
 
@@ -673,15 +598,5 @@ final class SessionManagerTest extends TestCase
         self::assertSame(0, $stats['pending']);
         self::assertArrayHasKey('last_rtt', $stats);
         self::assertArrayHasKey('reconnect_attempts', $stats);
-    }
-
-    /**
-     * 最后一个登记的计时器 id（触发重连定时器的辅助）
-     *
-     * @return int
-     */
-    private function lastTimerId()
-    {
-        return count($this->timers);
     }
 }

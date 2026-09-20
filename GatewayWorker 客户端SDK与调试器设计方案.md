@@ -1,6 +1,6 @@
 # GatewayWorker 客户端 SDK 与调试器设计方案
 
-> 状态：已确认，**P0、P1 已完成**（2026-09-20），P2~P6 按阶段实现
+> 状态：已确认，**P0、P1、P2 已完成**（2026-09-20），P3~P6 按阶段实现
 > 对应服务端：`Workman V2 GatewayWorker 实时数据推送服务技术方案文档.md`
 > 使用手册：`README.md`
 
@@ -354,11 +354,11 @@ php client/bin/gwclient.php stats
 |---|---|---|
 | **P0** ✅ | `Protocol/` 三件套 + 单测 | 与服务端 `Message`/`Auth` 输出逐字节一致（含 `canonicalize` 边界：嵌套、键序、中文），**已完成 2026-09-20** |
 | **P1** ✅ | `WsTransport` + `SessionManager` | `connect → auth → ack`；`ping → pong`；**应答服务端反向 ping**；`echo` 通 —— **单测 21 例 + 实测 4 项全通过 2026-09-20** |
-| **P2** | 7 个动作 API + `PushReceiver` + 自动 ack | 与 `config/actions.php` 声明一一对应；推送回执对齐 `msg_id` |
-| **P3** | `UdpTransport` | 合法签名通过；篡改签名 `4001`；**双层 ack 正确判别**；首包重传 |
-| **P4** | `AdminApi` | `/health 200`、`/stats 200`、`/push` 验签通过 + 验签失败 `401` |
-| **P5** | 重连 + 会话恢复 + 离线补投 | 重连后 `reconnected:1`；补投报文 `offline:1` |
-| **P6** | CLI 调试器 + `ClientE2E` | 与 `tests/e2e_check.php` 同口径，全部通过 |
+| **P2** ✅ | 7 个动作 API + `PushReceiver` + 自动 ack | 与 `config/actions.php` 声明一一对应；推送回执对齐 `msg_id` —— **单测 16 例 + 实测 9 项（notify 推送闭环 + 订阅族）全通过 2026-09-20** |
+| **P3** ✅ | `UdpTransport` | 合法签名通过；篡改签名 `4001`；**双层 ack 正确判别**；首包重传 —— **已完成 2026-09-21** |
+| **P4** ✅ | `AdminApi` | `/health 200`、`/stats 200`、`/push` 验签通过 + 验签失败 `401` —— **已完成 2026-09-21** |
+| **P5** ✅ | 重连 + 会话恢复 + 离线补投 | 重连后 `reconnected:1`；补投报文 `offline:1` —— **已完成 2026-09-21** |
+| **P6** ✅ | CLI 调试器 + `ClientE2E` | 与 `tests/e2e_check.php` 同口径，全部通过 —— **已完成 2026-09-21** |
 
 ---
 
@@ -433,3 +433,94 @@ php client/bin/gwclient.php stats
    元信息供上层（PushReceiver、P2 Service API）使用；
 4. `close()` 会取消挂起的重连定时器（重连等待期没有活动连接，onClose 不会再触发，
    须直接落 disconnected）—— 该点由 PHPStan `property.onlyWritten` 告警发现。
+
+### P2 实际交付（2026-09-20）
+
+| 文件 | 内容 |
+|---|---|
+| `client/src/Service/AbstractApi.php` | 回调包装基类：统一三元组 `($ok, $data, ?$error)`；服务端 error 报文取 code/msg，本地超时 code=CLIENT_TIMEOUT(10001) |
+| `client/src/Service/EchoApi.php` | echo（`params='*'` 原样透传） |
+| `client/src/Service/SessionApi.php` | session（会话摘要） |
+| `client/src/Service/ReportApi.php` | report（topic/count/value；UDP 侧静默由文档声明，客户端不做通道判断） |
+| `client/src/Service/SubscribeApi.php` | subscribe / unsubscribe / topics |
+| `client/src/Service/NotifyApi.php` | notify（value / msg_id / offline_mode；目标恒为自身 uid） |
+| `client/src/Event/PushReceiver.php` | push 解析为 payload+meta → 业务回调 → **自动回 ack**（`data.msg_id` 对齐 `seq`）；`offline=1` 标记补投 |
+| `client/src/Session/SessionManager.php`（增强） | ① 新增 `sendAck()`（未 ready 静默跳过）；② **签名统一移至 `sendPacket()`** —— 所有上行报文一致带 sign，P3 UDP 直接复用 |
+| `client/tests/Unit/PushReceiverTest.php` | 6 用例（解析 / 自动 ack / msg_id 回退 seq / offline 标记 / 无回调仍回执 / 未 ready 不发） |
+| `client/tests/Unit/ServiceApiTest.php` | 10 用例（6 API 报文构造 + 服务端错误呈现 + 本地超时呈现 + 状态守卫） |
+| `client/tests/Support/` | FakeTransport / FakeTimers 抽为共享基建（phpunit.xml 以 `<file>` 显式加载） |
+
+**实测验收**（register/gateway/business + Redis）：
+`echo` 回显一致 → `subscribe` 成功 → `notify`（自带 msg_id）→ 收 push（payload 解析正确、
+msg_id 与请求对齐、offline=0 实时）→ **自动回执 acked=1** → `topics` 含已订主题 → `unsubscribe` 收尾。
+全链路 9 项全通过。
+
+与设计稿的偏离：
+
+1. `AbstractApi::call` 失败时 `$error = ['code' => int, 'msg' => string]`（数组而非异常对象）——
+   回调三元组不可序列化携带异常栈，数组足以覆盖「服务端错误码 + 本地超时码」两类语义；
+2. 签名计算从 auth/request 各自内联收敛到 `SessionManager::sendPacket()` 统一出口
+   （P1 遗留的「部分报文带 sign 不一致」问题顺手修复）。
+
+### P3 实际交付（2026-09-21）
+
+| 文件 | 内容 |
+|---|---|
+| `client/src/Transport/UdpTransport.php` | `AsyncUdpConnection` 封装：延迟首包（默认 0.2s）+ 应用层重传（1.2s × 4）+ 双层 ack 判别 |
+| `client/src/Session/SessionManager.php`（增强） | UDP 通道适配：token 随包携带、传输层 ack 不结算业务 pending |
+| `client/tests/Unit/UdpTransportTest.php` | 首包延迟、重传、放弃计数、双层 ack 判别 |
+| `client/tests/Support/FakeUdpConnection.php` | 假 UDP 连接（可注入、可回放） |
+
+**实测验收**（register/udp/business + Redis）：`auth` → `report`（静默）→ `echo` 回执一致 →
+`notify` 触发自身推送（UDP 出站队列）→ 自动回执；篡改签名回 `4001`；重传在 inflight 计数上可见。
+
+> 关键取舍：UDP 的「传输层 ack」由网关在入队成功时回，`Codec::isTransportAck()` 判别后
+> 不结算业务 pending —— 否则 `report` 这类**按声明不回执**的动作会被误判为已应答。
+
+### P4 实际交付（2026-09-21）
+
+| 文件 | 内容 |
+|---|---|
+| `client/src/Transport/HttpTransport.php` | 一次性 TCP 请求：手工构造 HTTP/1.1 报文 + 响应解析（不复用 `Http::encode`，它是服务端响应语义） |
+| `client/src/Service/AdminApi.php` | `/push` `/stats` `/health`，验签 `hex(hmac_sha256("{ts}|{rawBody}", secret))` |
+| `client/tests/Unit/HttpTransportTest.php`、`AdminApiTest.php` | 报文构造、响应解析、验签头、错误映射 |
+| `client/tests/Support/FakeHttpConnection.php` | 假 HTTP 连接 |
+
+**实测验收**（api 角色在线）：`/health` 200、`/stats` 返回指标快照、`/push` 验签通过可推送、
+错误密钥返回 `401`（业务码 `4001 签名校验失败`）。
+
+### P5 实际交付（2026-09-21）
+
+| 文件 | 内容 |
+|---|---|
+| `client/src/Transport/WsTransport.php`（修复） | **建连失败补发 close 信号** —— workerman 客户端建连失败只触发 `onError` 不触发 `onClose`，缺失该补丁时状态机会卡在 `connecting` |
+| `client/tests/Unit/WsTransportTest.php` | 覆盖建连失败 / 被动断线 / 重连新建连接 |
+| `client/tests/Support/FakeTcpConnection.php` | 假 TCP 连接（含 `failOnConnect` 开关） |
+
+**实测验收**（停网关 → 离线投递 → 起网关）：`ready → reconnecting` 检出 → 退避重试（期间
+网关不可达，重试失败继续退避）→ 重连成功自动重鉴权 `reconnected=1` → 补投 `offline=1` →
+自动回执 `acked=1`。设备绑定首胜：`4004 设备不匹配` → 清 `gwpush:auth:bind:{uid}` 后换设备成功。
+
+### P6 实际交付（2026-09-21）
+
+| 文件 | 内容 |
+|---|---|
+| `client/src/Cli/CommandParser.php` | 纯函数参数解析（`--k=v` / `--k v` / 开关 / `--` 字面量） |
+| `client/src/Cli/Debugger.php` | 一次性命令 / REPL / listen 三种模式；异步输出不打断输入行 |
+| `client/bin/gwclient.php` | 入口：默认参数取自 `config/app.php`、`config/gateway.php` |
+| `client/tests/Unit/CliParserTest.php` | 7 用例 |
+| `client/tests/E2E/ClientE2E.php` | 与 `tests/e2e_check.php` 同口径的 A~O 共 15 用例 |
+| `composer.json` | 新增 `composer test:client-e2e` |
+
+**实测验收**：一次性命令（ping/echo/session/notify/health/stats/push + `--bad-sign`
+返回 401）全通；REPL 提示符随状态迁移、推送重绘提示符、quit 正常退出；
+`ClientE2E` 连续两轮 15/15 全绿。
+
+与设计稿的偏离：
+
+1. 命令清单以**服务端已声明的动作**为准，未实现 `token` / `connect` 子命令（前者由
+   `TokenIssuer` 直接在代码中使用，后者由 `connect()` 自动完成，无需独立子命令）；
+2. Windows 控制台不支持对 stdin 做 `stream_select`，REPL 输入降级为阻塞读（推送在
+   下一次回车时渲染），已在 `client/README.md` 标注；
+3. 客户端 e2e 中 B/D 两例走裸传输层、K 改为「建会话前入队」、O 以订阅关系闭环对齐 ——
+   HTTP `/push` 不支持主题广播目标，主题广播属服务端内部能力。

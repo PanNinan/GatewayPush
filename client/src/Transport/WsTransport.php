@@ -28,9 +28,16 @@ final class WsTransport implements TransportInterface
     private $url;
 
     /**
+     * 连接工厂 function (string $url): object（单测注入假连接）
+     *
+     * @var callable|null
+     */
+    private $connFactory;
+
+    /**
      * 底层连接（断开后置 null，重连时新建）
      *
-     * @var AsyncTcpConnection|null
+     * @var AsyncTcpConnection|object|null
      */
     private $conn;
 
@@ -54,10 +61,11 @@ final class WsTransport implements TransportInterface
     private $onErrorCb;
 
     /**
-     * @param string $url ws://host:port 或 wss://host:port
+     * @param string        $url         ws://host:port 或 wss://host:port
+     * @param callable|null $connFactory 连接工厂（单测注入假连接）
      * @throws ClientException URL 非法
      */
-    public function __construct($url)
+    public function __construct($url, callable $connFactory = null)
     {
         $url    = (string)$url;
         $scheme = parse_url($url, PHP_URL_SCHEME);
@@ -66,7 +74,8 @@ final class WsTransport implements TransportInterface
             throw ClientException::config('ws_url 必须以 ws:// 或 wss:// 开头，当前为：' . $url);
         }
 
-        $this->url = $url;
+        $this->url         = $url;
+        $this->connFactory = $connFactory;
     }
 
     /**
@@ -78,7 +87,9 @@ final class WsTransport implements TransportInterface
             return; // 幂等：已在建连/已连接，重复调用无副作用
         }
 
-        $conn = new AsyncTcpConnection($this->url);
+        $conn = $this->connFactory !== null
+            ? call_user_func($this->connFactory, $this->url)
+            : new AsyncTcpConnection($this->url);
 
         $conn->onConnect = function () {
             $this->connected = true;
@@ -105,6 +116,13 @@ final class WsTransport implements TransportInterface
         $conn->onError = function ($con, $code, $msg) {
             if ($this->onErrorCb !== null) {
                 call_user_func($this->onErrorCb, (int)$code, (string)$msg);
+            }
+            // 建连失败（网关暂不可达等）时 workerman 只触发 onError、不触发 onClose
+            // （见 AsyncTcpConnection::checkConnection 失败分支）。若不补发 close 信号，
+            // SessionManager 会卡在 connecting 态、重连退避链路中断。destroy() 会
+            // 同步触发本连接的 onClose。已建连后的错误不在此处理（真实 onClose 随后到达）。
+            if (!$this->connected) {
+                $con->destroy();
             }
         };
 
