@@ -1,0 +1,409 @@
+# GatewayWorker 客户端 SDK 与调试器设计方案
+
+> 状态：已确认，**P0 已完成**（2026-09-20），P1~P6 按阶段实现
+> 对应服务端：`Workman V2 GatewayWorker 实时数据推送服务技术方案文档.md`
+> 使用手册：`README.md`
+
+---
+
+## 0. 决策记录
+
+| 项 | 决策 | 说明 |
+|---|---|---|
+| 客户端形态 | **SDK + 调试器** | 先做可复用库，再基于同库做 CLI 调试器 |
+| 语言栈 | **PHP** | 可复用服务端 `Message` / `Auth` 协议类，协议零漂移 |
+| 通道覆盖 | **WS + UDP + HTTP 全量** | 一次对齐「对接服务端所有功能」的目标 |
+| 交付位置 | 本仓库 `client/` 目录 | 单仓库单机阶段的最小代价方案 |
+| 调试器交互模式 | **REPL + 一次性命令（两者都做）** | 一次性命令适合脚本化单步验证；REPL 适合多步联调，避免反复重连与重复签发 Token |
+
+---
+
+## 1. 目标与范围
+
+### 1.1 目标
+
+交付一套 PHP 客户端，把服务端四类对外入口的全部能力封装为可复用 SDK，并提供基于同一套 SDK 的 CLI 调试器。交付后应能：
+
+- **作为库被业务系统引入**：完成连接、鉴权、心跳、业务动作、接收推送、断线重连、离线补投；
+- **作为调试器人工联调**：在无业务代码的情况下走通全部链路，验收口径与 `tests/e2e_check.php` 对齐。
+
+### 1.2 范围边界（明确不做）
+
+| 不做 | 原因 |
+|---|---|
+| 监控面板页面 | 服务端 `dashboard` 角色已提供（`resources/dashboard/index.html`） |
+| 集群部署相关 | 保持单机，集群方案已归档 |
+| Token 的持久化存储 | 客户端只持有/签发 Token，不做账号体系 |
+| 服务端改造 | 本方案为纯新增，不改动 `src/`、`start.php`、`config/` |
+
+---
+
+## 2. 关键决策：复用服务端协议类（协议零漂移）
+
+服务端的 `Message` 与 `Auth` 是**纯计算、无 IO 依赖**的类，客户端直接复用而非重新实现：
+
+| 复用的服务端类 | 客户端用途 | 收益 |
+|---|---|---|
+| `Message::encode` / `decode` | 报文编解码与字段归一化 | 与服务端逐字节一致 |
+| `Message::sign` / `canonicalize` | UDP 报文签名 | `canonicalize`（递归键名升序 + 紧凑 JSON）不会出现跨实现偏差 |
+| `Message::error` / `packet` / `ack` | 报文构造 | 字段结构天然对齐 |
+| `Auth::issue` | 调试用 Token 签发 | 签名算法、载荷字段与服务端完全一致 |
+| `Auth::verifyLocal` | Token 本地预校验 | 连接前即可发现过期/篡改 |
+
+**实现方式**：客户端命名空间 `GatewayPush\Client\`，在 `Protocol/` 层做**薄适配**（`Codec` / `Signer` / `TokenIssuer` 内部调用服务端类）。将来若要把客户端抽成独立 composer 包，只需替换适配层实现。
+
+> **取舍**：客户端因此依赖服务端仓库的 `src/Business/Message.php` 与 `src/Business/Auth.php`。
+> 当前单仓库、单机阶段这是最小代价。若后续要独立分发，再把这两个类抽到共享包
+> （如 `gateway-push/protocol`），服务端与客户端同步引用。
+
+**composer 自动加载新增一行**：
+
+```json
+"autoload": {
+    "psr-4": {
+        "GatewayPush\\": "src/",
+        "GatewayPush\\Client\\": "client/src/"
+    }
+}
+```
+
+---
+
+## 3. 总体架构
+
+```
+┌─ 应用层   App / CLI ──────────────────────────────────┐
+│   client/bin/gwclient.php（调试器命令）                │
+├─ 服务层   Service ────────────────────────────────────┤
+│   EchoApi SessionApi ReportApi SubscribeApi           │
+│   NotifyApi AdminApi                                   │
+├─ 事件层   Event ──────────────────────────────────────┤
+│   PushReceiver（收推送 → 回调 → 自动回 ack）           │
+├─ 会话层   Session ────────────────────────────────────┤
+│   SessionManager：鉴权状态机 / seq 生成 / 心跳 /       │
+│   重连退避 / pending 请求表（seq → 回调 + 超时）       │
+├─ 协议层   Protocol ───────────────────────────────────┤
+│   Codec │ Signer │ TokenIssuer  （薄适配服务端类）     │
+├─ 传输层   Transport ──────────────────────────────────┤
+│   WsTransport │ UdpTransport │ HttpTransport           │
+└───────────────────────────────────────────────────────┘
+```
+
+数据流（上行）：`Service → Session(pending 登记 + seq) → Protocol 编码/签名 → Transport 发送`
+数据流（下行）：`Transport 收包 → Protocol 解码 → Session 按 cmd 路由 → Pending 回调 / PushReceiver`
+
+---
+
+## 4. 目录结构
+
+```
+client/
+├── README.md                      客户端使用说明
+├── src/
+│   ├── Client.php                 门面：统一入口
+│   ├── Config.php                 客户端配置（含校验与默认值）
+│   ├── Transport/
+│   │   ├── TransportInterface.php 统一传输接口
+│   │   ├── WsTransport.php        ws:// （workerman AsyncTcpConnection）
+│   │   ├── UdpTransport.php       udp://（workerman AsyncUdpConnection，延迟首包+重传）
+│   │   └── HttpTransport.php      http://（管理端，自动补 X-Timestamp/X-Sign）
+│   ├── Protocol/
+│   │   ├── Codec.php              编解码适配（→ Message）
+│   │   ├── Signer.php             签名适配（→ Message::sign）
+│   │   └── TokenIssuer.php        Token 签发/解析（→ Auth）
+│   ├── Session/
+│   │   ├── SessionManager.php     鉴权态/seq/心跳/重连/pending
+│   │   └── PendingRequest.php     单次请求上下文
+│   ├── Service/
+│   │   ├── EchoApi.php
+│   │   ├── SessionApi.php
+│   │   ├── ReportApi.php
+│   │   ├── SubscribeApi.php       subscribe / unsubscribe / topics
+│   │   ├── NotifyApi.php
+│   │   └── AdminApi.php           /push /stats /health
+│   ├── Event/
+│   │   └── PushReceiver.php
+│   └── Error/
+│       ├── ErrorCode.php          4000-4008 / 5000 常量与文案
+│       └── ClientException.php    错误/超时统一异常
+├── bin/
+│   └── gwclient.php               调试器入口
+└── tests/
+    ├── Unit/                      Protocol / Session 单测
+    └── ClientE2E.php              客户端侧端到端自检（对齐服务端 15 用例）
+```
+
+---
+
+## 5. 逐层设计
+
+### 5.1 Transport 传输层
+
+| 类 | 底层 | 关键点 |
+|---|---|---|
+| `WsTransport` | `Workerman\Connection\AsyncTcpConnection('ws://...')` | 事件 `onConnect` / `onMessage` / `onClose` / `onError` 向上抛给 `SessionManager` |
+| `UdpTransport` | `AsyncUdpConnection('udp://...')` | **延迟首包 + 应用层重传**（`send()` 返回 true 不代表送达，首包在 `onConnect` 中立即发会静默丢失） |
+| `HttpTransport` | `AsyncTcpConnection('http://...')` | 自动计算 `X-Timestamp` / `X-Sign = hex(hmac_sha256("ts|rawBody", api_secret))`；按 `Content-Length` 精确读取（避免 keep-alive 阻塞） |
+
+统一接口：
+
+```php
+interface TransportInterface {
+    public function connect(): void;
+    public function send(string $frame): void;
+    public function close(): void;
+    public function isConnected(): bool;
+    public function onMessage(callable $cb): void;
+    public function onClose(callable $cb): void;
+    public function onError(callable $cb): void;
+}
+```
+
+### 5.2 Protocol 协议层
+
+| 类 | 方法 | 内部调用 |
+|---|---|---|
+| `Codec` | `encode(array $packet): string` / `decode(string $raw): ?array` | `Message::encode` / `Message::decode` |
+| `Signer` | `sign(array $packet, string $secret): string` / `canonicalize(mixed): string` | `Message::sign` / `Message::canonicalize` |
+| `TokenIssuer` | `issue(array $claims, int $ttl): string` / `inspect(string $token): array` | `Auth::issue` / `Auth::verifyLocal` |
+
+> `TokenIssuer` 需先 `Auth::init(['secret' => $secret, 'token_ttl' => $ttl])`。
+
+### 5.3 Session 会话层
+
+**`SessionManager` 职责**
+
+- **鉴权状态机**：`disconnected → connecting → connected → authenticating → ready`
+- **seq 生成**：单调递增，字符串类型（服务端原样回传）
+- **pending 请求表**：`seq → PendingRequest`（回调 + 超时定时器）
+- **心跳**：
+  - 主动 `ping`（可配间隔，用于 RTT 与存活探测）
+  - **应答服务端反向心跳**：收到 `{"cmd":"ping","ts":0}` 必须回 `pong`（网关心跳 25s/次、漏 2 次断开）
+- **重连**：指数退避；重连后自动重发 `auth`（同 `device_id` → 服务端恢复会话并补投离线消息）
+- **下行分发**：按 `cmd` 路由 → `ack`/`pong` 回 pending，`push` 交 `PushReceiver`，`error` 触发 `onError`
+
+**`PendingRequest`**
+
+```php
+final class PendingRequest {
+    public string $seq;
+    public float  $sentAt;
+    public int    $timerId;
+    public $onReply;    // function (array $packet): void
+    public $onTimeout;  // function (): void
+}
+```
+
+### 5.4 Service 业务动作层
+
+| 客户端 API | 报文 | 备注 |
+|---|---|---|
+| `echo(array $params, callable $cb)` | `{cmd:data, data:{action:echo, params}}` | `params` 透传（服务端 `params='*'`） |
+| `session(callable $cb)` | `action=session` | 无参 |
+| `report(string $topic, int $count, $value, callable $cb)` | `action=report` | **UDP 下服务端静默不回执**，`cb` 仅本地超时 |
+| `subscribe(string $topic, callable $cb)` | `action=subscribe` | |
+| `unsubscribe(string $topic, callable $cb)` | `action=unsubscribe` | |
+| `topics(callable $cb)` | `action=topics` | |
+| `notify($value, string $msgId, string $offlineMode, callable $cb)` | `action=notify` | 目标恒为自身 uid |
+
+回调统一签名：`function (bool $ok, array $data, ?array $error): void`。
+
+### 5.5 Event 事件层
+
+**`PushReceiver`**
+
+- 识别下行 `cmd=push`，解析 `payload` / `msg_id` / `source` / `offline` / `pushed_at`；
+- 回调业务 `onPush(payload, meta)`；
+- **自动回 `cmd=ack`**（`data.msg_id` 对齐，服务端据此统计投递质量）；
+- `offline=1` 标记为「重连补投」，业务可据此区分实时/补投。
+
+### 5.6 AdminApi HTTP 管理端
+
+| 方法 | 服务端接口 | 说明 |
+|---|---|---|
+| `push(string $targetType, string $target, array $payload, array $opts, callable $cb)` | `POST /push` | `targetType` ∈ `uid`/`device`/`client`；`opts` 支持 `msg_id` / `offline_mode` |
+| `stats(callable $cb)` | `GET /stats` | 返回指标快照 |
+| `health(callable $cb)` | `GET /health` | 免鉴权 |
+
+### 5.7 Error 错误层
+
+- `ErrorCode`：与服务端 `Message::$codeMessages` 对齐的常量与文案
+  （`4000` 报文格式 / `4001` 签名 / `4002` 时间戳 / `4003` 未鉴权 / `4004` 鉴权失败 /
+  `4005` Token 过期 / `4006` 未知指令 / `4007` 缺参 / `4008` 限流 / `5000` 服务端错误）。
+- `ClientException`：封装 error 报文、传输错误、请求超时三类。
+
+---
+
+## 6. 客户端门面 API（草案）
+
+```php
+use GatewayPush\Client\Client;
+
+$client = new Client([
+    'ws_url'     => 'ws://127.0.0.1:8282',
+    'udp_url'    => 'udp://127.0.0.1:8283',
+    'api_url'    => 'http://127.0.0.1:8290',
+    'channel'    => 'ws',                 // ws | udp
+    'uid'        => 'u1',
+    'device_id'  => 'd1',
+    'secret'     => '<AUTH_SECRET>',      // 报文签名 / Token
+    'api_secret' => '<API_SECRET>',       // HTTP 管理端（留空回退 AUTH_SECRET）
+    'token_ttl'  => 7200,
+    'reconnect'  => true,
+    'heartbeat'  => 20,                   // 主动 ping 间隔（秒），0 = 关闭
+    'timeout'    => 5,                    // 单次请求超时（秒）
+]);
+
+$client->onPush(function (array $payload, array $meta) { /* ... */ });
+$client->onError(function (int $code, string $msg, array $packet) { /* ... */ });
+$client->onStateChange(function (string $state) { /* ... */ });
+
+$client->connect();
+$client->auth(function (bool $ok, array $data) { /* data: uid/device_id/protocol/reconnected */ });
+
+$client->echo(['hello' => 'world'], fn($ok, $data) => null);
+$client->subscribe('topic.a', fn($ok, $data) => null);
+$client->notify(['x' => 1], 'msg-1', null, fn($ok, $data) => null);
+
+$client->admin()->push('uid', 'u1', ['title' => 'hi'], ['msg_id' => 'm-1'], fn($ok, $data) => null);
+
+$client->close();
+```
+
+---
+
+## 7. 协议对接矩阵（服务端 → 客户端）
+
+| 服务端标准 | 入口 | 客户端落点 |
+|---|---|---|
+| `cmd=auth` | WS / UDP | `Client::auth()` |
+| `cmd=ping` / `cmd=pong` | WS / UDP | `SessionManager` 心跳（主动发 + 应答反向） |
+| `cmd=data` + 7 动作 | WS / UDP | `Service/*Api` |
+| `cmd=push` | WS / UDP | `PushReceiver` |
+| `cmd=ack` | WS / UDP | `PushReceiver` 自动回执 |
+| `cmd=error` | WS / UDP | `Client::onError` |
+| `POST /push` | HTTP | `AdminApi::push()` |
+| `GET /stats` | HTTP | `AdminApi::stats()` |
+| `GET /health` | HTTP | `AdminApi::health()` |
+| `GET /metrics.json` | Dashboard | 客户端不实现（服务端页面已有） |
+| Token 签发 | CLI / `Auth::issue` | `TokenIssuer::issue()` |
+
+---
+
+## 8. 调试器 CLI（`client/bin/gwclient.php`）
+
+**两种模式（均已确认实现）**
+
+- **一次性**：`gwclient.php <cmd> [opts]` —— 建连 → 鉴权 → 执行 → 退出
+- **交互（REPL）**：`gwclient.php shell` —— 保持连接，逐条输入命令
+
+REPL 行为约定：
+
+| 项 | 约定 |
+|---|---|
+| 连接生命周期 | 进 shell 时建连 + 鉴权一次，全程复用；**不随命令断开** |
+| 命令语法 | 与一次性模式完全一致（同一个解析器），仅省去 `php gwclient.php` 前缀 |
+| 提示符 | `gw[ws:ready] uid=alice> ` —— 实时反映通道与连接状态，避免「以为连着其实断了」 |
+| 内置命令 | `help`（命令清单）/ `status`（连接、鉴权、pending、RTT）/ `clear` / `exit`（同 `quit` / Ctrl-D） |
+| 断线 | 按 `reconnect` 配置自动重连并重发 `auth`，提示符转 `gw[ws:reconnect]`；重连期间输入的命令进入等待 |
+| 异步输出 | 推送（`cmd=push`）与错误回执**不打断输入行**，独立成行输出并保留提示符 |
+| 历史 | 不引入 readline 扩展依赖；由终端自身的历史能力承担（Windows 下即 CMD/PowerShell 的行编辑） |
+
+**命令清单**
+
+| 命令 | 说明 |
+|---|---|
+| `token --uid --device [--ttl]` | 本地签发 Token（调 `Auth::issue`）并打印 |
+| `connect [--channel=ws\|udp]` | 建连 + 鉴权，打印结果后退出 |
+| `echo --data='{"k":"v"}'` | 回显 |
+| `session` | 会话查询 |
+| `report --topic --count [--value]` | 数据上报 |
+| `subscribe --topic` / `unsubscribe --topic` / `topics` | 订阅关系 |
+| `notify [--value] [--msg-id] [--offline]` | 触发对自身推送 |
+| `listen [--seconds=N]` | 长驻接收推送（含离线补投），自动回 ack |
+| `push --type=uid\|device\|client --target --payload [--msg-id] [--offline]` | HTTP 管理端推送 |
+| `stats` / `health` | HTTP 指标 / 健康 |
+| `e2e [--uid --device]` | 客户端侧端到端自检（对齐服务端 15 用例） |
+
+**示例**
+
+```bash
+php client/bin/gwclient.php token --uid=demo --device=dev01 --ttl=3600
+php client/bin/gwclient.php connect --channel=ws
+php client/bin/gwclient.php listen --seconds=60
+php client/bin/gwclient.php push --type=device --target=dev01 --payload='{"title":"hi"}'
+php client/bin/gwclient.php stats
+```
+
+---
+
+## 9. 运行与依赖
+
+- **依赖**：复用项目 `vendor/` 中的 `workerman/workerman`（`AsyncTcpConnection` / `AsyncUdpConnection`），无需新增 composer 依赖。
+- **入口**：`client/bin/gwclient.php` 自行 `require` 项目 `vendor/autoload.php`。
+- **平台**：
+  - Windows 下交互式调试建议前台运行；长驻 `listen` 建议放独立窗口。
+  - 事件驱动（`Worker::runAll()`）承载，与 `tests/e2e_check.php` 同构。
+
+---
+
+## 10. 里程碑与验收
+
+| 阶段 | 交付 | 验收标准 |
+|---|---|---|
+| **P0** ✅ | `Protocol/` 三件套 + 单测 | 与服务端 `Message`/`Auth` 输出逐字节一致（含 `canonicalize` 边界：嵌套、键序、中文），**已完成 2026-09-20** |
+| **P1** | `WsTransport` + `SessionManager` | `connect → auth → ack`；`ping → pong`；**应答服务端反向 ping**；`echo` 通 |
+| **P2** | 7 个动作 API + `PushReceiver` + 自动 ack | 与 `config/actions.php` 声明一一对应；推送回执对齐 `msg_id` |
+| **P3** | `UdpTransport` | 合法签名通过；篡改签名 `4001`；**双层 ack 正确判别**；首包重传 |
+| **P4** | `AdminApi` | `/health 200`、`/stats 200`、`/push` 验签通过 + 验签失败 `401` |
+| **P5** | 重连 + 会话恢复 + 离线补投 | 重连后 `reconnected:1`；补投报文 `offline:1` |
+| **P6** | CLI 调试器 + `ClientE2E` | 与 `tests/e2e_check.php` 同口径，全部通过 |
+
+---
+
+## 11. 风险与边界
+
+| # | 风险 | 应对 |
+|---|---|---|
+| 1 | 复用服务端类造成耦合 | §2 已给出后续抽包路径；适配层隔离，替换成本低 |
+| 2 | UDP 首包静默丢失 | 延迟首包 + 应用层重传（复用 e2e 已有做法） |
+| 3 | **15s 鉴权窗口** | 调试器与 SDK 建连后自动抢先发 `auth` |
+| 4 | 同 uid+device 重复连接互踢 | 调试时用不同 `device_id`；或先清 `auth:bind:{uid}` |
+| 5 | 服务端反向心跳未应答会被判死 | `SessionManager` 默认开启应答 |
+| 6 | 限流配额（conn 20/s、uid 50/s、ping 5/s） | 调试器命令间留间隔；超限回 `4008` 且不断连 |
+| 7 | `msg_id` 幂等去重（600s） | 调试重复推送时换 `msg_id` |
+| 8 | UDP 动作错误静默 | 排障必须对照服务端 `runtime/logs/`，不能只看客户端超时 |
+
+---
+
+## 12. 确认结论与 P0 交付清单
+
+**三项待确认均已裁定（2026-09-20）**：
+
+1. 进入 **P0** —— 先交付 `Protocol/` 层 + 单测；
+2. 交付位置为**本仓库 `client/`**；
+3. 调试器**两种模式都实现**（REPL 交互 + 一次性命令）。
+
+### P0 实际交付
+
+| 文件 | 内容 |
+|---|---|
+| `client/src/Protocol/Codec.php` | 编解码 / 报文构造 / `data` 业务信封 / UDP 双层 ack 判别 |
+| `client/src/Protocol/Signer.php` | `sign` / `canonicalize` / `baseString`（排障）/ 本地验签 |
+| `client/src/Protocol/TokenIssuer.php` | Token 签发 / `inspect` / `claims` / `peek`（不验签） |
+| `client/src/Error/ErrorCode.php` | 报文码 + HTTP 业务码 + 客户端本地码（10001+） |
+| `client/src/Error/ClientException.php` | 统一异常（报文 / 超时 / 传输 / 配置 / 状态 / 内部） |
+| `client/tests/Unit/*.php` | 4 个测试类，87 用例 / 247 断言 |
+| `client/README.md` | 客户端使用说明（含协议要点速查） |
+
+改动的基础设施（非新增文件）：
+
+- `composer.json`：新增 PSR-4 前缀 `GatewayPush\Client\` → `client/src/`，
+  `GatewayPush\Client\Tests\` → `client/tests/`（最长前缀优先，与 `GatewayPush\` 无冲突）；
+- `phpunit.xml`：`unit` 测试套件增加 `client/tests/Unit`，覆盖率范围增加 `client/src`；
+- `phpstan.neon`：`paths` 增加 `client/src`，新代码同样零容忍。
+
+> 与设计稿的两处偏离（均为落地时的必要修正）：
+> ① 增加 `Error/` 层（`TokenIssuer` 需要自有异常类型，且错误码分层是 P1 的前置）；
+> ② `TokenIssuer` 在**每次调用前**把配置写回静态类 `Auth` ——
+> 否则「后建实例改了密钥、先建实例跟着用错密钥」会静默发生。

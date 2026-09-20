@@ -168,6 +168,11 @@ GatewayWorker/
 │   └── Gateway/
 │       ├── Bootstrap.php             网关层入口 + UDP 报文处理 + 出站队列消费
 │       └── UdpProtocol.php           UDP 应用层协议（输入分段 / 编解码）
+├── client/                            客户端 SDK（独立于服务端进程，详见 client/README.md）
+│   ├── src/Protocol/                  Codec / Signer / TokenIssuer（复用服务端 Message、Auth）
+│   ├── src/Error/                     错误码与统一异常
+│   ├── tests/Unit/                    客户端单元测试
+│   └── README.md                      客户端使用说明与里程碑
 ├── tests/
 │   ├── E2E/                          端到端用例（Harness + 9 个 Case 模块）
 │   ├── Unit/                         单元测试（6 个纯函数/零 IO 组件）
@@ -1660,7 +1665,7 @@ class OrderQueryAction implements ActionInterface
 
 ```bash
 composer analyse        # PHPStan（level 5，baseline 冻结 11 条存量告警）
-composer test           # PHPUnit（119 tests / 304 assertions）
+composer test           # PHPUnit（206 tests / 551 assertions；含 client/tests/Unit）
 composer test:e2e       # 端到端自检（15 个用例）
 ```
 
@@ -1670,7 +1675,7 @@ composer test:e2e       # 端到端自检（15 个用例）
 |---|---|
 | PHPStan 版本 | `^2.0` |
 | 内存 | **必须带 `--memory-limit=512M`**（本机 php.ini 仅 128M，否则子进程崩溃）；已写入 composer 脚本 |
-| 分析范围 | `paths` 只含 `src` 与 `start.php`，**不含 `tests/`** |
+| 分析范围 | `paths` 只含 `src`、`client/src` 与 `start.php`，**不含 `tests/`** |
 | 分析口径 | `phpVersion: 80100` —— 刻意设置用于**拦截 8.2+ 语法误用**，保证 8.1 兼容性 |
 | 收敛策略 | baseline 冻结存量告警 + 新代码零容忍；**不为让工具通过而改业务代码** |
 
@@ -1741,7 +1746,7 @@ php tests/e2e_check.php <uid> [device_id] [timeout]
 
 ```bash
 composer test
-# OK (119 tests, 304 assertions)
+# OK (206 tests, 551 assertions)
 ```
 
 **只测「纯函数 / 零 IO」组件**：

@@ -19,6 +19,7 @@ parameters:
 
     paths:
         - src
+        - client/src
         - start.php
 
     # 分析器缓存置于 runtime（已在 .gitignore 中排除）
