@@ -354,7 +354,7 @@ class ActionRunner
      */
     protected static function channelOf($clientId)
     {
-        return strpos((string)$clientId, Push::UDP_PREFIX) === 0
+        return str_starts_with((string)$clientId, Push::UDP_PREFIX)
             ? ActionContext::CHANNEL_UDP
             : ActionContext::CHANNEL_WS;
     }

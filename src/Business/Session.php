@@ -450,7 +450,7 @@ class Session
      */
     protected static function forceClose($clientId)
     {
-        $isUdp = strpos((string)$clientId, 'udp:') === 0;
+        $isUdp = str_starts_with((string)$clientId, 'udp:');
 
         if (!$isUdp) {
             try {

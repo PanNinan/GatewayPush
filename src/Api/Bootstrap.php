@@ -428,11 +428,15 @@ class Bootstrap
     /**
      * 判断当前启动角色是否包含接口进程
      *
+     * 与 Business / Gateway 两处同名方法保持一致：角色名由调用方给出，
+     * 不得硬编码 —— 否则他处误传角色名会静默返回错误结果。
+     *
+     * @param string $role
      * @return bool
      */
-    protected static function roleEnabled()
+    protected static function roleEnabled($role)
     {
         $current = defined('APP_ROLE') ? APP_ROLE : 'all';
-        return $current === 'all' || $current === 'api';
+        return $current === 'all' || $current === $role;
     }
 }

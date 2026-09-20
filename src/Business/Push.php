@@ -263,7 +263,7 @@ class Push
      */
     public static function sendToUdpClient($clientId, array $packet, $uid = '', $msgId = '')
     {
-        if (strpos((string)$clientId, self::UDP_PREFIX) !== 0) {
+        if (! str_starts_with((string)$clientId, self::UDP_PREFIX)) {
             Logger::warn('非 UDP 连接不可经出站队列投递', array('client_id' => $clientId));
             return false;
         }
@@ -737,7 +737,7 @@ class Push
             return;
         }
 
-        $isUdp = strpos((string)$clientId, self::UDP_PREFIX) === 0;
+        $isUdp = str_starts_with((string)$clientId, self::UDP_PREFIX);
         if ($isUdp && empty(self::$udpOutConfig['enable'])) {
             // UDP 出站通道关闭时无处投递，明确跳过而非静默丢弃
             Logger::warn('UDP 出站队列未启用，离线消息本轮不补投', array(
@@ -833,7 +833,7 @@ class Push
     protected static function target($clientId, $channel = '', $via = 'session')
     {
         if ($channel === '') {
-            $channel = strpos((string)$clientId, self::UDP_PREFIX) === 0 ? self::CHANNEL_UDP : self::CHANNEL_WS;
+            $channel = str_starts_with((string)$clientId, self::UDP_PREFIX) ? self::CHANNEL_UDP : self::CHANNEL_WS;
         }
         return array(
             'client_id' => (string)$clientId,
@@ -854,14 +854,16 @@ class Push
      */
     protected static function isOnline($clientId, array $session)
     {
-        if (strpos((string)$clientId, self::UDP_PREFIX) === 0) {
+        if (str_starts_with((string)$clientId, self::UDP_PREFIX)) {
             return !empty($session) && empty($session['offline_at']);
         }
         if (empty($session)) {
             return false;
         }
         try {
-            return GatewayClient::isOnline($clientId);
+            // GatewayClient::isOnline() 实际返回 int（1 / 0），与本方法声明的
+            // bool 不一致。强制转换使返回类型恒为 bool，调用方可安全使用 === 比较。
+            return (bool)GatewayClient::isOnline($clientId);
         } catch (\Throwable $e) {
             Logger::exception($e, 'push.is_online:' . $clientId);
             return false;

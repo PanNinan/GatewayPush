@@ -66,7 +66,7 @@ $role     = 'all';
 // 提取 --role=xxx 并从 argv 中剔除，避免干扰 workerman 自身的命令解析
 $cleanArgv = array();
 foreach ($argvList as $item) {
-    if (strpos($item, '--role=') === 0) {
+    if (str_starts_with($item, '--role=')) {
         $role = substr($item, 7);
         continue;
     }

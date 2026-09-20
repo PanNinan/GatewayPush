@@ -1120,7 +1120,7 @@ class Bootstrap
      */
     protected static function protocolOf($clientId)
     {
-        return strpos((string)$clientId, 'udp:') === 0 ? Session::PROTOCOL_UDP : Session::PROTOCOL_WS;
+        return str_starts_with((string)$clientId, 'udp:') ? Session::PROTOCOL_UDP : Session::PROTOCOL_WS;
     }
 
     /**

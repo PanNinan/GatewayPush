@@ -468,7 +468,7 @@ class Bootstrap
      */
     protected static function parseUdpAddress($clientId)
     {
-        if (strpos((string)$clientId, 'udp:') !== 0) {
+        if (! str_starts_with((string)$clientId, 'udp:')) {
             return '';
         }
         $rest = substr((string)$clientId, 4);
@@ -498,7 +498,7 @@ class Bootstrap
         }
 
         // 裸 IPv6（含多个冒号）需补方括号，否则 sendto 会解析失败
-        return strpos($ip, ':') !== false ? '[' . $ip . ']:' . $port : $ip . ':' . $port;
+        return str_contains($ip, ':') ? '[' . $ip . ']:' . $port : $ip . ':' . $port;
     }
 
     /* ---------------------------------------------------------------------
