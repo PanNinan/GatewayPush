@@ -11,7 +11,7 @@
  *   all / register / gateway / udp / business
  * Windows 下 workerman 单启动文件仅支持 1 个 Worker 实例，需按角色分别启动。
  *
- * 兼容 PHP 8.0 ~ 8.5
+ * 兼容 PHP 8.1 ~ 8.5
  */
 
 namespace GatewayPush\Gateway;
@@ -19,9 +19,13 @@ namespace GatewayPush\Gateway;
 use GatewayWorker\Gateway as WsGateway;
 use GatewayWorker\Register as RegisterWorker;
 use GatewayPush\Business\Message;
+use GatewayPush\Business\Monitor;
 use GatewayPush\Common\Logger;
+use GatewayPush\Common\RateLimiter;
 use GatewayPush\Common\RedisClient;
+use GatewayPush\Common\WorkerEvents;
 use Workerman\Connection\ConnectionInterface;
+use Workerman\Timer;
 use Workerman\Worker;
 
 class Bootstrap
@@ -93,6 +97,9 @@ class Bootstrap
                 'listen' => $worker->getSocketName(),
             ));
         };
+
+        // 连接级异常与背压观测（注册中心为内部 TCP，无背压压力，仅绑错误事件）
+        WorkerEvents::bind($register, $conf['name'], array('buffer' => false));
     }
 
     /* ---------------------------------------------------------------------
@@ -164,6 +171,9 @@ class Bootstrap
                 'worker_key' => isset($connection->key) ? $connection->key : '',
             ));
         };
+
+        // 长连接网关必须观测背压：客户端消费慢会顶满发送缓冲并触发丢包
+        WorkerEvents::bind($gateway, $conf['name']);
     }
 
     /* ---------------------------------------------------------------------
@@ -189,13 +199,39 @@ class Bootstrap
         $udp->onMessage = array(self::class, 'onUdpMessage');
 
         $udp->onWorkerStart = function ($worker) use ($conf) {
-            // UDP 网关需要写业务队列，此处必须初始化 Redis 客户端，
+            // UDP 网关需要写业务队列、读推送出站队列，此处必须初始化 Redis 客户端，
             // 否则 onUdpMessage 会在 rPush 处抛出「未初始化」异常并吞掉 ack 回执
             RedisClient::init(self::$appConfig['redis']);
+            Monitor::init(self::$appConfig['monitor']);
+            RateLimiter::init(isset(self::$appConfig['rate_limit']) ? self::$appConfig['rate_limit'] : array());
+
+            $out       = isset($conf['out_queue']) ? $conf['out_queue'] : array();
+            $outOn     = !empty($out['enable']);
+            $outPeriod = $outOn ? max(0.01, (float)$out['interval']) : 0;
+
+            // 出站队列消费：业务进程写入的定向推送任务由此进程 sendto 发出。
+            // UDP 的 client_id 不在 Gateway 连接表内，无法复用 sendToClient 通道。
+            // 多进程（UDP_COUNT > 1）并发消费安全，取批由 Lua 保证原子性。
+            if ($outOn) {
+                Timer::add($outPeriod, function () use ($worker, $out) {
+                    self::consumeUdpOutQueue($worker, $out);
+                }, array(), true);
+            }
+
+            // 指标上报：网关进程只产出站维度指标，跳过在线数采集（其归属业务进程）
+            $monitorInterval = (float)(isset(self::$appConfig['monitor']['interval'])
+                ? self::$appConfig['monitor']['interval'] : 60);
+            if (!empty(self::$appConfig['monitor']['enable']) && $monitorInterval > 0) {
+                Timer::add($monitorInterval, function () {
+                    Monitor::report(false);
+                }, array(), true);
+            }
 
             Logger::info('UDP 网关已启动', array(
-                'listen'  => $worker->getSocketName(),
-                'queue'   => !empty($conf['queue']['enable']) ? $conf['queue']['key'] : 'disabled',
+                'listen'     => $worker->getSocketName(),
+                'queue'      => !empty($conf['queue']['enable']) ? $conf['queue']['key'] : 'disabled',
+                'out_queue'  => $outOn ? $out['key'] : 'disabled',
+                'out_period' => $outOn ? $outPeriod : 0,
                 'max_packet_size' => UdpProtocol::$maxPacketSize,
             ));
         };
@@ -204,12 +240,15 @@ class Bootstrap
             Logger::info('UDP 网关正在停止，释放连接资源', array('id' => $worker->id));
             RedisClient::closeAll();
         };
+
+        // UDP 为无连接协议，不存在 TCP 发送缓冲背压，仅绑错误事件
+        WorkerEvents::bind($udp, $conf['name'], array('buffer' => false));
     }
 
     /**
      * UDP 报文处理入口
      *
-     * 仅执行协议层职责：签名与时效校验 -> 投递 Redis 队列 -> 立即回执。
+     * 仅执行协议层职责：报文级限流 -> 签名与时效校验 -> 投递 Redis 队列 -> 立即回执。
      * 业务处理由 BusinessWorker 异步消费队列完成，网关不感知业务逻辑。
      *
      * @param ConnectionInterface $connection
@@ -220,6 +259,21 @@ class Bootstrap
     {
         try {
             if (!is_array($packet)) {
+                return;
+            }
+
+            // 0. 报文级限流（L1）：每来源 IP 的进程内内存令牌桶。
+            //    置于验签之前 —— 洪水场景下限流器绝不能自身发起 Redis IO；
+            //    超限静默丢弃，不回错误报文以免形成反射放大。
+            $ip = (string)$connection->getRemoteIp();
+            if (!RateLimiter::checkMemory(RateLimiter::DIM_IP, $ip)) {
+                Monitor::incr('msg_fail');
+                Monitor::incr('rate_limit_hit');
+                Monitor::incr('rate_limit_ip');
+                RateLimiter::logReject(RateLimiter::DIM_IP, $ip, array(
+                    'channel'   => 'udp-gateway',
+                    'device_id' => isset($packet['device_id']) ? (string)$packet['device_id'] : '',
+                ));
                 return;
             }
 
@@ -303,6 +357,148 @@ class Bootstrap
     public static function udpClientId(ConnectionInterface $connection)
     {
         return 'udp:' . $connection->getRemoteIp() . ':' . $connection->getRemotePort();
+    }
+
+    /* ---------------------------------------------------------------------
+     | UDP 出站（服务端定向推送）
+     --------------------------------------------------------------------- */
+
+    /**
+     * 消费 UDP 出站队列并发送
+     *
+     * 通道设计说明：
+     *   UDP 客户端的 client_id 形如 udp:ip:port，仅存在于本进程的 socket 上下文，
+     *   不在 GatewayWorker 的连接表内，因此业务进程的 Gateway::sendToClient 对其无效。
+     *   出站改由「业务进程写队列 -> 网关进程 sendto」闭环，与入站的解耦方式对称。
+     *
+     * @param Worker $worker
+     * @param array  $conf gateway.udp.out_queue
+     * @return void
+     */
+    public static function consumeUdpOutQueue($worker, array $conf)
+    {
+        try {
+            $key   = $conf['key'];
+            $batch = max(1, (int)(isset($conf['batch']) ? $conf['batch'] : 200));
+
+            RedisClient::popBatch($key, $batch, function ($items) use ($worker) {
+                foreach ($items as $raw) {
+                    $task = json_decode($raw, true);
+                    if (!is_array($task) || empty($task['client_id']) || empty($task['frame'])) {
+                        Monitor::incr('udp_out_fail');
+                        Logger::warn('UDP 出站任务格式非法，已丢弃', array('raw' => substr((string)$raw, 0, 200)));
+                        continue;
+                    }
+                    self::sendUdp($worker, (string)$task['client_id'], (string)$task['frame'], $task);
+                }
+            });
+        } catch (\Throwable $e) {
+            Logger::exception($e, 'gateway.udp.out_queue');
+        }
+    }
+
+    /**
+     * 向指定 UDP 地址发送报文
+     *
+     * 直接复用网关自身的 UDP socket（unconnected），以 stream_socket_sendto 指定目标地址。
+     * 相比每次新建 AsyncUdpConnection，此方式无建连竞态、无额外 fd 开销，
+     * 且与 UdpConnection::send() 的底层实现路径完全一致。
+     *
+     * @param Worker $worker
+     * @param string $clientId
+     * @param string $frame
+     * @param array  $task
+     * @return void
+     */
+    protected static function sendUdp($worker, $clientId, $frame, array $task = array())
+    {
+        $address = self::parseUdpAddress($clientId);
+        if ($address === '') {
+            Monitor::incr('udp_out_fail');
+            Logger::warn('UDP 出站目标地址无法解析', array('client_id' => $clientId));
+            return;
+        }
+
+        // workerman 5.x 将 Worker::getSocket() 重命名为 getMainSocket()，
+        // 4.x 及以下仍为 getSocket()，此处按版本择优取值，避免版本升级后静默失效。
+        if (method_exists($worker, 'getMainSocket')) {
+            $socket = $worker->getMainSocket();
+        } elseif (method_exists($worker, 'getSocket')) {
+            $socket = $worker->getSocket();
+        } else {
+            $socket = null;
+        }
+
+        if (!$socket) {
+            Monitor::incr('udp_out_fail');
+            Logger::error('UDP 网关 socket 不可用，出站报文丢弃', array('client_id' => $clientId));
+            return;
+        }
+
+        $written = @stream_socket_sendto($socket, $frame, 0, $address);
+        if ($written === false || $written !== strlen($frame)) {
+            Monitor::incr('udp_out_fail');
+            Logger::error('UDP 出站发送失败', array(
+                'client_id' => $clientId,
+                'address'   => $address,
+                'size'      => strlen($frame),
+                'written'   => $written === false ? -1 : $written,
+            ));
+            return;
+        }
+
+        Monitor::incr('udp_out');
+        Logger::info('UDP 推送已下发', array(
+            'client_id' => $clientId,
+            'address'   => $address,
+            'uid'       => isset($task['uid']) ? (string)$task['uid'] : '',
+            'msg_id'    => isset($task['msg_id']) ? (string)$task['msg_id'] : '',
+            'size'      => strlen($frame),
+        ));
+    }
+
+    /**
+     * 解析 UDP client_id 为可发送地址
+     *
+     * 输入形如 udp:127.0.0.1:52344 或 udp:[::1]:52344
+     * 输出 stream_socket_sendto 所需的 ip:port（IPv6 需带方括号）
+     *
+     * @param string $clientId
+     * @return string 解析失败返回空串
+     */
+    protected static function parseUdpAddress($clientId)
+    {
+        if (! str_starts_with((string)$clientId, 'udp:')) {
+            return '';
+        }
+        $rest = substr((string)$clientId, 4);
+        if ($rest === '') {
+            return '';
+        }
+
+        // 已带方括号的 IPv6 形式：udp:[::1]:52344
+        if ($rest[0] === '[') {
+            $end = strpos($rest, ']');
+            if ($end === false) {
+                return '';
+            }
+            $ip   = substr($rest, 1, $end - 1);
+            $port = (int)substr($rest, $end + 2);
+            return ($ip !== '' && $port > 0) ? '[' . $ip . ']:' . $port : '';
+        }
+
+        $pos = strrpos($rest, ':');
+        if ($pos === false) {
+            return '';
+        }
+        $ip   = substr($rest, 0, $pos);
+        $port = (int)substr($rest, $pos + 1);
+        if ($ip === '' || $port <= 0) {
+            return '';
+        }
+
+        // 裸 IPv6（含多个冒号）需补方括号，否则 sendto 会解析失败
+        return str_contains($ip, ':') ? '[' . $ip . ']:' . $port : $ip . ':' . $port;
     }
 
     /* ---------------------------------------------------------------------

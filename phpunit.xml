@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    PHPUnit 配置
+
+    版本约束：phpunit/phpunit ^9.6。
+    10.x 要求 PHP >= 8.1、11.x 要求 >= 8.2；项目声明 php >= 8.1，均在满足范围内。
+    当前锁 9.6 是沿用既有基线，非受版本约束所致——升级 10.x 属独立事项。
+
+    测试边界：仅覆盖「纯函数 / 无 IO」的组件。
+    依赖 Redis 或 workerman 生命周期的路径不做单元测试（静态类 + 异步回调，
+    mock 成本高于收益），继续由 tests/e2e_check.php 端到端覆盖。
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="tests/bootstrap.php"
+         colors="true"
+         cacheResultFile=".phpunit.result.cache"
+         failOnWarning="true"
+         failOnRisky="true"
+         beStrictAboutOutputDuringTests="true">
+
+    <testsuites>
+        <testsuite name="unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+    </testsuites>
+
+    <coverage>
+        <include>
+            <directory suffix=".php">src</directory>
+        </include>
+    </coverage>
+</phpunit>

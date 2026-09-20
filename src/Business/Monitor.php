@@ -18,7 +18,7 @@
  *   metrics:counter:{YYYYMMDD}   Hash  当日累加型指标，保留 7 天
  *   metrics:gauge               Hash  当前瞬时指标，TTL 由配置决定
  *
- * 兼容 PHP 8.0 ~ 8.5
+ * 兼容 PHP 8.1 ~ 8.5
  */
 
 namespace GatewayPush\Business;
@@ -111,9 +111,12 @@ class Monitor
     /**
      * 上报指标（定时任务调用）
      *
+     * @param bool $withOnline 是否采集在线连接数。
+     *                         UDP 网关进程仅有连接数以外的指标（出站收发），
+     *                         且进程内无 Session/业务上下文，故传 false 跳过。
      * @return void
      */
-    public static function report()
+    public static function report($withOnline = true)
     {
         if (empty(self::$config['enable'])) {
             return;
@@ -127,8 +130,19 @@ class Monitor
         $gaugeKey = self::KEY_GAUGE;
 
         RedisClient::hSet($gaugeKey, 'memory_bytes:' . $pid, Logger::memoryUsage());
+
+        // 进程元信息：pid_at 用于判定进程存活（gauge TTL 远长于上报周期，
+        // 进程退出后其字段仍会残留，面板必须靠时间戳识别幽灵进程）；
+        // tasks 为定时任务健康度 —— 纯进程内状态，跨进程读不到，必须随指标落库。
+        // 二者按 PID 独立成字段（与 memory_bytes:{pid} 同一命名风格），多 worker 不会互相覆盖。
+        self::flushProcessMeta($gaugeKey, $pid);
+
         RedisClient::hSet($gaugeKey, 'report_at', time());
         RedisClient::expire($gaugeKey, $ttl);
+
+        if (!$withOnline) {
+            return;
+        }
 
         // 在线连接数仅在 worker 0 采集，避免多进程重复写入
         if (Task::workerId() !== 0) {
@@ -157,7 +171,7 @@ class Monitor
     {
         RedisClient::hGetAll(self::KEY_GAUGE, function ($gauge) use ($cb) {
             RedisClient::hGetAll(self::counterKey(), function ($counter) use ($gauge, $cb) {
-                call_user_func($cb, array(
+                $cb(array(
                     'gauge'   => is_array($gauge) ? $gauge : array(),
                     'counter' => is_array($counter) ? $counter : array(),
                     'task'    => Task::stats(),
@@ -204,6 +218,49 @@ class Monitor
             RedisClient::hIncrBy($key, $metric, $value);
         }
         RedisClient::expire($key, self::COUNTER_KEEP_DAYS * 86400);
+    }
+
+    /**
+     * 上报本进程的元信息（身份 + 存活时间戳 + 定时任务健康度）
+     *
+     * 三者都是纯进程内状态，跨进程无法读取，面板进程要展示「这个 PID 是谁」
+     * 与「定时任务是否卡住」就必须依赖这里的落库。
+     *
+     * 均按 PID 独立成字段（与 memory_bytes:{pid} 同一命名风格）：
+     * 一是多 worker 各写各的、不会互相覆盖；二是进程退出后其字段仍会随 gauge
+     * 存活到 TTL 结束，调用方需凭 pid_at 判断该 PID 是否仍在线。
+     *
+     * @param string $gaugeKey
+     * @param int    $pid
+     * @return void
+     */
+    protected static function flushProcessMeta($gaugeKey, $pid)
+    {
+        $workerId = Task::workerId();
+        $role     = defined('APP_ROLE') ? APP_ROLE : 'all';
+
+        RedisClient::hSet($gaugeKey, 'pid_at:' . $pid, time());
+
+        // 进程身份：光有 PID 无法判断它是什么进程 —— PID 会被系统回收复用，
+        // 同一角色下的多个 worker 也肉眼不可分。APP_ROLE 由 start.php 定义，
+        // 是进程唯一的权威身份来源。
+        $proc = json_encode(array(
+            'role'      => $role,
+            'worker_id' => $workerId,
+        ), JSON_UNESCAPED_UNICODE);
+
+        if ($proc !== false) {
+            RedisClient::hSet($gaugeKey, 'proc:' . $pid, $proc);
+        }
+
+        $payload = json_encode(array(
+            'worker_id' => $workerId,
+            'jobs'      => Task::stats(),
+        ), JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+
+        if ($payload !== false) {
+            RedisClient::hSet($gaugeKey, 'tasks:' . $pid, $payload);
+        }
     }
 
     /**

@@ -12,7 +12,7 @@
  *
  *   变量清单与说明见 .env.example，加载逻辑见 src/Common/Env.php
  *
- * 兼容：PHP 8.0 ~ 8.5
+ * 兼容：PHP 8.1 ~ 8.5（下限由 workerman 5.x 的 require 决定，非本文件约束）
  */
 
 use GatewayPush\Common\Env;
@@ -41,7 +41,7 @@ return [
      | optional_ext       建议安装，缺失仅告警
      --------------------------------------------------------------- */
     'runtime' => [
-        'php_min'           => '8.0.0',
+        'php_min'           => '8.1.0',
         'php_max_warn'      => '8.5.99',   // 超出该版本仅告警，不阻断启动
         'require_ext'       => ['json', 'openssl', 'sockets'],
         'require_ext_linux' => ['pcntl', 'posix'],
@@ -124,6 +124,111 @@ return [
     ],
 
     /* ---------------------------------------------------------------
+     | 单对一定向推送（文档 4.3 的推送侧实现）
+     |
+     | offline_mode = drop  : 目标不在线时直接丢弃，仅计指标
+     | offline_mode = queue : 写入 push:offline:{uid} 列表，设备重连后投递
+     --------------------------------------------------------------- */
+    'push' => [
+        'enable'          => Env::bool('PUSH_ENABLE', true),
+        'offline_mode'    => Env::str('PUSH_OFFLINE_MODE', 'queue'),   // drop | queue
+        'offline_ttl'     => Env::int('PUSH_OFFLINE_TTL', 86400),      // 离线消息保留时长（秒）
+        'offline_max'     => Env::int('PUSH_OFFLINE_MAX', 100),        // 单用户离线消息条数上限
+        'replay_batch'    => Env::int('PUSH_REPLAY_BATCH', 50),        // 重连补投单批条数
+        'idempotent'      => Env::bool('PUSH_IDEMPOTENT', true),       // 按 msg_id 去重
+        'idempotent_ttl'  => Env::int('PUSH_IDEMPOTENT_TTL', 600),     // 去重窗口（秒）
+        'payload_max'     => Env::int('PUSH_PAYLOAD_MAX', 4096),       // 单条业务数据体上限（字节）
+    ],
+
+    /* ---------------------------------------------------------------
+     | HTTP 推送接口（独立进程，仅受理推送入队）
+     |
+     | 鉴权：HMAC-SHA256(timestamp|rawBody, api.secret)，时间戳用于防重放
+     | 权限分离：API 进程只写队列，不直接持有 Gateway 连接与业务密钥
+     --------------------------------------------------------------- */
+    'api' => [
+        'enable'    => Env::bool('API_ENABLE', true),
+        'listen'    => Env::str('API_LISTEN', 'http://127.0.0.1:8290'),
+        'name'      => 'GW-API',                                 // 进程名，结构性
+        'secret'    => Env::str('API_SECRET', ''),
+        'sign_ttl'  => Env::int('API_SIGN_TTL', 300),            // 请求时间戳有效窗口（秒）
+        'rate'      => Env::int('API_RATE_LIMIT', 600),          // 单 IP 每分钟请求上限，0 = 不限
+        'body_max'  => Env::int('API_BODY_MAX', 65536),          // 请求体上限（字节）
+    ],
+
+    /* ---------------------------------------------------------------
+     | 监控面板（独立只读进程）
+     |
+     | 与 HTTP 推送接口严格分离：面板进程只读 Redis 中的指标数据，
+     | 不接触推送链路、不持有业务密钥，因此读写权限与故障域都不交叉。
+     |
+     | 默认仅监听 127.0.0.1 —— 运维数据不应直接暴露到公网；
+     | 需要远程访问时经 Nginx 反代（附加 Basic Auth）或 SSH 隧道。
+     --------------------------------------------------------------- */
+    'dashboard' => [
+        'enable'    => Env::bool('DASHBOARD_ENABLE', true),
+        'listen'    => Env::str('DASHBOARD_LISTEN', 'http://127.0.0.1:8291'),
+        'name'      => 'GW-DASH',                                // 进程名，结构性
+        'view_path' => $basePath . '/resources/dashboard',       // 页面模板目录，结构性
+        'refresh'   => Env::int('DASHBOARD_REFRESH', 5),         // 页面轮询间隔（秒），0 = 不自动刷新
+    ],
+
+    /* ---------------------------------------------------------------
+     | 报文级限流
+     |
+     | 算法为令牌桶：rate 为令牌补充速率（个/秒，即长期平均上限），
+     | burst 为桶容量（即允许的瞬时突发条数），burst 不得小于 rate。
+     |
+     | 分层：
+     |   ip    —— L1 网关防护，进程内内存桶（零 IO），仅 UDP 网关使用
+     |   conn  —— L2 业务限流，每连接 clientId（Redis 桶）
+     |   uid   —— L2 业务限流，每用户 uid（Redis 桶）
+     |   ping  —— 心跳指令独立配额（替代 conn 维度，比业务更严）
+     |
+     | rate 置 0 表示关闭该维度限流。
+     | Redis 不可用时 L2 按 fail-open 放行（限流故障不应导致业务中断）。
+     --------------------------------------------------------------- */
+    'rate_limit' => [
+        'enable'          => Env::bool('RATE_LIMIT_ENABLE', true),
+
+        'conn'            => [
+            'rate'  => Env::int('RATE_LIMIT_CONN_RATE', 20),      // 每连接 20 条/秒
+            'burst' => Env::int('RATE_LIMIT_CONN_BURST', 40),     // 瞬时允许 40 条
+        ],
+        'uid'             => [
+            'rate'  => Env::int('RATE_LIMIT_UID_RATE', 50),       // 每用户 50 条/秒
+            'burst' => Env::int('RATE_LIMIT_UID_BURST', 100),
+        ],
+        'ip'              => [
+            'rate'  => Env::int('RATE_LIMIT_IP_RATE', 200),       // 每 IP 200 条/秒（网关层）
+            'burst' => Env::int('RATE_LIMIT_IP_BURST', 400),
+        ],
+        'ping'            => [
+            'rate'  => Env::int('RATE_LIMIT_PING_RATE', 5),       // 心跳 5 条/秒
+            'burst' => Env::int('RATE_LIMIT_PING_BURST', 10),
+        ],
+
+        'close_on_exceed' => Env::bool('RATE_LIMIT_CLOSE', false),   // 超限是否断开连接
+        'notify'          => Env::bool('RATE_LIMIT_NOTIFY', true),   // 超限是否回错误报文（UDP 恒定不回）
+        'mem_max_buckets' => Env::int('RATE_LIMIT_MEM_MAX', 20000),  // L1 内存桶数量上限
+    ],
+
+    /* ---------------------------------------------------------------
+     | 订阅关系
+     |
+     | 主题 <-> 用户 的双向索引存于 Redis（Subscribe 类维护），
+     | 按主题广播的投递入口为 Push::enqueueTopic()。
+     |
+     | 注意：业务动作清单本身是结构性配置，声明在 config/actions.php，
+     | 不在此处重复；本节仅承载随环境变化的行为参数。
+     --------------------------------------------------------------- */
+    'subscribe' => [
+        'enable'             => Env::bool('SUBSCRIBE_ENABLE', true),
+        'ttl'                => Env::int('SUBSCRIBE_TTL', 0),            // 订阅关系过期时间（秒），0 = 永不过期
+        'max_topics_per_uid' => Env::int('SUBSCRIBE_MAX_TOPICS', 100),   // 单用户订阅主题数上限，0 = 不限
+    ],
+
+    /* ---------------------------------------------------------------
      | 监控指标
      --------------------------------------------------------------- */
     'monitor' => [
@@ -138,6 +243,16 @@ return [
             'msg_in', 'msg_out', 'msg_fail',
             'auth_success', 'auth_fail',
             'heartbeat_timeout', 'memory_bytes',
+            'push_in', 'push_out', 'push_fail', 'push_offline', 'push_replay', 'push_dedup', 'push_ack',
+            'push_topic', 'push_topic_targets',
+            'udp_out_queued', 'udp_out', 'udp_out_fail',
+            'conn_error', 'buffer_full', 'buffer_drain',
+            // 业务动作：前四项由 ActionRunner 统一采集（与具体动作无关），
+            // 其余为各处理器内部自采，新增动作时需同步追加
+            'action_in', 'action_ok', 'action_fail', 'action_timeout',
+            'action_echo', 'action_session', 'action_report',
+            'action_subscribe', 'action_unsubscribe', 'action_topics', 'action_notify',
+            'rate_limit_hit', 'rate_limit_ip', 'rate_limit_conn', 'rate_limit_uid', 'rate_limit_ping',
         ],
     ],
 ];

@@ -14,7 +14,7 @@
  *
  * 所有操作均为异步回调，不阻塞事件循环。
  *
- * 兼容 PHP 8.0 ~ 8.5
+ * 兼容 PHP 8.1 ~ 8.5
  */
 
 namespace GatewayPush\Business;
@@ -251,6 +251,23 @@ class Session
     }
 
     /**
+     * 会话是否存在
+     *
+     * 用 EXISTS 代替 HGETALL 做存在性判定，供高频路径使用
+     * （如 UDP 每次报文前的「会话是否重建」探测，避免整表读取）。
+     *
+     * @param string   $clientId
+     * @param callable $cb function(bool $exists)
+     * @return void
+     */
+    public static function exists($clientId, callable $cb)
+    {
+        RedisClient::exists(self::KEY_SESSION . $clientId, function ($result) use ($cb) {
+            call_user_func($cb, !empty($result));
+        });
+    }
+
+    /**
      * 按设备查当前活跃 clientId
      *
      * @param string   $deviceId
@@ -433,7 +450,7 @@ class Session
      */
     protected static function forceClose($clientId)
     {
-        $isUdp = strpos((string)$clientId, 'udp:') === 0;
+        $isUdp = str_starts_with((string)$clientId, 'udp:');
 
         if (!$isUdp) {
             try {

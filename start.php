@@ -13,24 +13,26 @@
 *   php start.php check                 仅执行环境自检
 *   php start.php env:init              生成 .env 配置（首次部署必执行）
 *   php start.php token <uid> [device_id] [ttl]    生成调试用 Token
+*   php start.php push <target_type> <target> [payload] [msg_id] [offline_mode]   提交一条定向推送任务
 *
 * 环境配置：
 *   端口、地址、密钥、Redis 连接等均从 .env 读取，不硬编码在代码中。
 *   变量清单见 .env.example，加载优先级见 src/Common/Env.php。
 *   首次部署：php start.php env:init
 *
- * 启动角色（APP_ROLE，通过 --role=xxx 指定）：
- *   all（默认）  一次创建全部组件，供 Linux 生产环境使用
- *   register / gateway / udp / business
- *
- * Windows 注意：workerman 限制「单个启动文件只能初始化 1 个 Worker 实例」，
- * 因此 Windows 开发环境必须开 4 个终端按角色分别启动：
- *   php start.php start --role=register
- *   php start.php start --role=gateway
- *   php start.php start --role=udp
- *   php start.php start --role=business
- *
- * 兼容 PHP 8.0 ~ 8.5
+* 启动角色（APP_ROLE，通过 --role=xxx 指定）：
+*   all（默认）  一次创建全部组件，供 Linux 生产环境使用
+*   register / gateway / udp / business / api
+*
+* Windows 注意：workerman 限制「单个启动文件只能初始化 1 个 Worker 实例」，
+* 因此 Windows 开发环境必须开多个终端按角色分别启动：
+*   php start.php start --role=register
+*   php start.php start --role=gateway
+*   php start.php start --role=udp
+*   php start.php start --role=business
+*   php start.php start --role=api
+*
+ * 兼容 PHP 8.1 ~ 8.5
  */
 
 define('BASE_PATH', __DIR__);
@@ -47,8 +49,11 @@ if (!is_file($autoload)) {
 require $autoload;
 
 use GatewayPush\Business\Auth;
+use GatewayPush\Business\Push;
 use GatewayPush\Common\Env;
 use GatewayPush\Common\Logger;
+use GatewayPush\Common\RedisClient;
+use Workerman\Timer;
 use Workerman\Worker;
 
 /* ---------------------------------------------------------------------
@@ -61,7 +66,7 @@ $role     = 'all';
 // 提取 --role=xxx 并从 argv 中剔除，避免干扰 workerman 自身的命令解析
 $cleanArgv = array();
 foreach ($argvList as $item) {
-    if (strpos($item, '--role=') === 0) {
+    if (str_starts_with($item, '--role=')) {
         $role = substr($item, 7);
         continue;
     }
@@ -72,7 +77,7 @@ if (isset($_SERVER['argv'])) {
     $_SERVER['argv'] = $cleanArgv;
 }
 
-$validRoles = array('all', 'register', 'gateway', 'udp', 'business');
+$validRoles = array('all', 'register', 'gateway', 'udp', 'business', 'api', 'dashboard');
 if (!in_array($role, $validRoles, true)) {
     fwrite(STDERR, '[FATAL] 非法启动角色：' . $role . '，可选值：' . implode(' / ', $validRoles) . "\n");
     exit(1);
@@ -90,6 +95,7 @@ Env::load(BASE_PATH);
 $appConfig      = require BASE_PATH . '/config/app.php';
 $gatewayConfig  = require BASE_PATH . '/config/gateway.php';
 $businessConfig = require BASE_PATH . '/config/business.php';
+$actionConfig   = require BASE_PATH . '/config/actions.php';
 
 date_default_timezone_set($appConfig['app']['timezone']);
 Logger::init($appConfig['log']);
@@ -143,8 +149,12 @@ if ($command === 'token') {
     exit(0);
 }
 
+if ($command === 'push') {
+    exit(commandPush($appConfig, $gatewayConfig, $businessConfig, $cleanArgv));
+}
+
 if ($command === 'check') {
-    $result = checkEnvironment($appConfig, $gatewayConfig, $businessConfig, false);
+    $result = checkEnvironment($appConfig, $gatewayConfig, $businessConfig, $actionConfig, false);
     echo $result['text'];
     exit($result['ok'] ? 0 : 1);
 }
@@ -152,7 +162,7 @@ if ($command === 'check') {
 /* ---------------------------------------------------------------------
  | 6. 环境自检（所有 workerman 命令前强制执行）
  --------------------------------------------------------------------- */
-$envResult = checkEnvironment($appConfig, $gatewayConfig, $businessConfig, true);
+$envResult = checkEnvironment($appConfig, $gatewayConfig, $businessConfig, $actionConfig, true);
 if (!$envResult['ok']) {
     echo $envResult['text'];
     fwrite(STDERR, "\n[FATAL] 环境自检未通过，启动终止。修正后可用 php start.php check 复检。\n");
@@ -187,7 +197,9 @@ if (DIRECTORY_SEPARATOR !== '/' && $role === 'all') {
  | 10. 启动
  --------------------------------------------------------------------- */
 GatewayPush\Gateway\Bootstrap::init($gatewayConfig, $appConfig);
-GatewayPush\Business\Bootstrap::init($businessConfig, $appConfig);
+GatewayPush\Business\Bootstrap::init($businessConfig, $appConfig, $gatewayConfig, $actionConfig);
+GatewayPush\Api\Bootstrap::init($appConfig, $businessConfig);
+GatewayPush\Dashboard\Bootstrap::init($appConfig);
 
 Worker::runAll();
 
@@ -201,10 +213,11 @@ Worker::runAll();
  * @param array $appConfig
  * @param array $gatewayConfig
  * @param array $businessConfig
- * @param bool  $verbose 是否输出完整报告
+ * @param array $actionConfig   config/actions.php
+ * @param bool  $verbose        是否输出完整报告
  * @return array ['ok' => bool, 'text' => string]
  */
-function checkEnvironment(array $appConfig, array $gatewayConfig, array $businessConfig, $verbose = true)
+function checkEnvironment(array $appConfig, array $gatewayConfig, array $businessConfig, array $actionConfig = array(), $verbose = true)
 {
     $runtime = $appConfig['runtime'];
     $lines   = array();
@@ -260,7 +273,9 @@ function checkEnvironment(array $appConfig, array $gatewayConfig, array $busines
     foreach (array('runtime_path', 'log_path', 'pid_path') as $key) {
         $dir = $runtime[$key];
         if (!is_dir($dir)) {
-            @mkdir($dir, 0755, true);
+            if (! mkdir($dir, 0755, true) && ! is_dir($dir)) {
+                throw new \RuntimeException(sprintf('Directory "%s" was not created', $dir));
+            }
         }
         $writable = is_dir($dir) && is_writable($dir);
         $lines[]  = sprintf('[%-4s] 目录可写 %s', $writable ? 'OK' : 'FAIL', $dir);
@@ -333,6 +348,181 @@ function checkEnvironment(array $appConfig, array $gatewayConfig, array $busines
         $lines[] = '[OK  ] 报文签名校验已开启';
     }
 
+    // 定向推送
+    if (empty($appConfig['push']['enable'])) {
+        $lines[] = '[WARN] 定向推送已关闭（PUSH_ENABLE=false）';
+    } else {
+        $mode    = (string)$appConfig['push']['offline_mode'];
+        $modeOk  = in_array($mode, array('drop', 'queue'), true);
+        $lines[] = sprintf(
+            '[%-4s] 定向推送已开启（离线策略 %s，指令队列 %s）',
+            $modeOk ? 'OK' : 'FAIL',
+            $mode,
+            $businessConfig['push_queue']['key']
+        );
+        $ok = $ok && $modeOk;
+
+        $outKey = isset($gatewayConfig['udp']['out_queue']['key']) ? $gatewayConfig['udp']['out_queue']['key'] : '';
+        if (!empty($gatewayConfig['udp']['enable']) && $outKey !== '') {
+            $lines[] = sprintf('[%-4s] UDP 出站队列 %s', 'OK', $outKey);
+        }
+    }
+
+    // HTTP 推送接口
+    if (!empty($appConfig['api']['enable'])) {
+        $apiOwnSecret = (string)$appConfig['api']['secret'];
+        $apiSecret    = $apiOwnSecret !== '' ? $apiOwnSecret : (string)$appConfig['auth']['secret'];
+
+        if ($apiSecret === '') {
+            $lines[] = '[FAIL] HTTP 接口密钥为空（API_SECRET 未配置，且 AUTH_SECRET 亦为空）';
+            $ok      = false;
+        } elseif ($apiOwnSecret === '' && isPlaceholderSecret($apiSecret)) {
+            $lines[] = '[FAIL] HTTP 接口复用 AUTH_SECRET，但该密钥为占位值';
+            $ok      = false;
+        } else {
+            $lines[] = sprintf(
+                '[%-4s] HTTP 接口密钥已配置（%s）',
+                'OK',
+                $apiOwnSecret !== '' ? 'API_SECRET 独立配置' : '复用 AUTH_SECRET'
+            );
+        }
+
+        $signTtl = (int)$appConfig['api']['sign_ttl'];
+        if ($signTtl <= 0) {
+            $lines[] = '[WARN] 接口时间戳窗口为 0（关闭防重放校验），生产环境不建议';
+        }
+    } else {
+        $lines[] = '[WARN] HTTP 推送接口已关闭（API_ENABLE=false），仅支持队列触发';
+    }
+
+    // 报文级限流
+    if (empty($appConfig['rate_limit']['enable'])) {
+        $lines[] = '[WARN] 报文级限流已关闭（RATE_LIMIT_ENABLE=false）';
+    } else {
+        $rateConf = $appConfig['rate_limit'];
+        $dims     = array('conn' => '连接', 'uid' => '用户', 'ip' => 'IP', 'ping' => '心跳');
+        $active   = 0;
+        $desc     = array();
+        $badBurst = array();
+
+        foreach ($dims as $dim => $label) {
+            $rate  = (int)$rateConf[$dim]['rate'];
+            $burst = (int)$rateConf[$dim]['burst'];
+
+            if ($rate <= 0) {
+                $desc[] = $label . ' 已关闭';
+                continue;
+            }
+            $active++;
+            if ($burst < $rate) {
+                $badBurst[] = $label;
+            }
+            $desc[] = sprintf('%s %d/%d', $label, $rate, $burst);
+        }
+
+        if ($active === 0) {
+            $lines[] = '[FAIL] 报文级限流已开启但全部维度速率均为 0，等同于未限流';
+            $ok      = false;
+        } else {
+            $lines[] = sprintf(
+                '[%-4s] 报文级限流已开启（%s，格式为 维度 速率/突发）',
+                'OK',
+                implode('，', $desc)
+            );
+        }
+
+        if ($badBurst) {
+            $lines[] = sprintf(
+                '[WARN] 维度 %s 的 burst 小于 rate，已按 rate 兜底修正（突发能力被压缩）',
+                implode('/', $badBurst)
+            );
+        }
+
+        if ((int)$rateConf['mem_max_buckets'] < 1000) {
+            $lines[] = sprintf(
+                '[WARN] 限流内存桶上限过低（%d），高并发下会频繁淘汰',
+                (int)$rateConf['mem_max_buckets']
+            );
+        }
+    }
+
+    // 业务动作清单（config/actions.php）
+    $actionList = isset($actionConfig['actions']) && is_array($actionConfig['actions'])
+        ? $actionConfig['actions']
+        : array();
+
+    if (!$actionList) {
+        $lines[] = '[FAIL] 业务动作清单为空（config/actions.php 的 actions 段未配置任何动作）';
+        $ok      = false;
+    } else {
+        $invalid  = array();
+        $silent   = array();
+        $noAuth   = array();
+        $noTimeout = array();
+
+        foreach ($actionList as $name => $decl) {
+            $handler = is_array($decl) && isset($decl['handler']) ? (string)$decl['handler'] : '';
+            if ($handler === '' || !class_exists($handler)
+                || !in_array('GatewayPush\\Business\\ActionInterface', class_implements($handler), true)) {
+                $invalid[] = $name;
+                continue;
+            }
+
+            // 回执方式：数组为按通道分别声明，字符串为两通道共用
+            $reply    = is_array($decl) && array_key_exists('reply', $decl) ? $decl['reply'] : null;
+            $udpReply = is_array($reply)
+                ? (isset($reply['udp']) ? (string)$reply['udp'] : 'sync')
+                : (is_string($reply) ? $reply : 'sync');
+            if ($udpReply === 'none') {
+                $silent[] = $name;
+            }
+
+            if (is_array($decl) && array_key_exists('auth', $decl) && empty($decl['auth'])) {
+                $noAuth[] = $name;
+            }
+
+            if (is_array($decl) && array_key_exists('timeout', $decl) && (int)$decl['timeout'] === 0) {
+                $noTimeout[] = $name;
+            }
+        }
+
+        if ($invalid) {
+            $lines[] = sprintf(
+                '[FAIL] 业务动作处理器不可用：%s（类不存在或未实现 ActionInterface）',
+                implode('/', $invalid)
+            );
+            $ok = false;
+        } else {
+            $lines[] = sprintf(
+                '[%-4s] 业务动作清单共 %d 个（%s）',
+                'OK',
+                count($actionList),
+                implode('/', array_keys($actionList))
+            );
+        }
+
+        if ($silent) {
+            $lines[] = sprintf(
+                '[%-4s] UDP 通道静默回执的动作：%s（处理但不下发，避免双向流量放大）',
+                'OK',
+                implode('/', $silent)
+            );
+        }
+        if ($noTimeout) {
+            $lines[] = sprintf(
+                '[WARN] 以下动作关闭了回执超时保护（timeout=0），异步回执丢失时客户端会永久等待：%s',
+                implode('/', $noTimeout)
+            );
+        }
+        if ($noAuth) {
+            $lines[] = sprintf(
+                '[WARN] 以下动作声明为无需鉴权（auth=false）：%s —— UDP 通道没有连接级鉴权闸门，'
+                . '该声明即为其唯一身份校验，请确认确属公开动作',
+                implode('/', $noAuth)
+            );
+        }
+    }
+
     // 端口占用探测（仅提示，不阻断：restart 场景下端口被自身占用属正常）
     $ports = array();
     if (!empty($gatewayConfig['websocket']['enable'])) {
@@ -343,6 +533,9 @@ function checkEnvironment(array $appConfig, array $gatewayConfig, array $busines
     }
     if (!empty($gatewayConfig['register']['enable'])) {
         $ports['Register'] = 'tcp://' . $gatewayConfig['register']['listen'];
+    }
+    if (!empty($appConfig['api']['enable'])) {
+        $ports['HTTP-API'] = $appConfig['api']['listen'];
     }
     foreach ($ports as $label => $listen) {
         $probe = probePort($listen);
@@ -493,6 +686,87 @@ function commandEnvInit($basePath)
 }
 
 /**
+ * 提交一条定向推送任务（调试 / 运维用）
+ *
+ * 与 HTTP 接口一致，只负责把任务写入队列，真实投递由业务进程消费后完成。
+ * 因此本命令可在服务未启动时执行，任务会在服务起来后补投。
+ *
+ * @param array $appConfig
+ * @param array $gatewayConfig
+ * @param array $businessConfig
+ * @param array $argvList 原始参数列表
+ * @return int 退出码
+ */
+function commandPush(array $appConfig, array $gatewayConfig, array $businessConfig, array $argvList)
+{
+    $targetType  = isset($argvList[2]) ? strtolower(trim((string)$argvList[2])) : '';
+    $target      = isset($argvList[3]) ? trim((string)$argvList[3]) : '';
+    $payloadRaw  = isset($argvList[4]) ? (string)$argvList[4] : '{}';
+    $msgId       = isset($argvList[5]) ? (string)$argvList[5] : '';
+    $offlineMode = isset($argvList[6]) ? (string)$argvList[6] : '';
+
+    if ($targetType === '' || $target === '') {
+        fwrite(STDERR, "用法：php start.php push <uid|device|client> <target> [payload-json] [msg_id] [offline_mode]\n");
+        fwrite(STDERR, "示例：php start.php push uid 1001 '{\"title\":\"hi\"}' msg-1\n");
+        return 1;
+    }
+
+    $payload = json_decode($payloadRaw, true);
+    if (!is_array($payload)) {
+        fwrite(STDERR, '[FATAL] payload 不是合法 JSON 对象：' . $payloadRaw . "\n");
+        return 1;
+    }
+
+    Push::init(
+        $appConfig['push'],
+        $businessConfig['push_queue'],
+        isset($gatewayConfig['udp']['out_queue']) ? $gatewayConfig['udp']['out_queue'] : array()
+    );
+
+    $exitCode = 0;
+    $worker   = new Worker();
+    $worker->count = 1;
+
+    $worker->onWorkerStart = function () use ($appConfig, $businessConfig, $targetType, $target, $payload, $msgId, $offlineMode, &$exitCode) {
+        RedisClient::init($appConfig['redis']);
+
+        $queueKey = $businessConfig['push_queue']['key'];
+
+        // 入队是异步操作，需事件循环驱动；超时保护避免网络异常时命令挂死
+        Timer::add(5, function () use (&$exitCode) {
+            fwrite(STDERR, "[FATAL] 入队操作超时，请检查 Redis 连通性\n");
+            $exitCode = 1;
+            Worker::stopAll();
+        }, array(), false);
+
+        Push::enqueue($targetType, $target, $payload, array(
+            'msg_id'       => $msgId,
+            'offline_mode' => $offlineMode,
+            'source'       => 'cli',
+        ), function ($ok) use ($targetType, $target, $msgId, $offlineMode, $queueKey, &$exitCode) {
+            if (!$ok) {
+                fwrite(STDERR, "[FATAL] 推送任务入队失败\n");
+                $exitCode = 1;
+                Worker::stopAll();
+                return;
+            }
+
+            echo "推送任务已入队，等待业务进程消费\n";
+            echo "  target_type  : {$targetType}\n";
+            echo "  target       : {$target}\n";
+            echo '  msg_id       : ' . ($msgId !== '' ? $msgId : '(未指定，不参与幂等去重)') . "\n";
+            echo '  offline_mode : ' . ($offlineMode !== '' ? $offlineMode : Push::offlineMode()) . "\n";
+            echo "  queue        : {$queueKey}\n";
+            Worker::stopAll();
+        });
+    };
+
+    Worker::runAll();
+
+    return $exitCode;
+}
+
+/**
  * 使用说明
  *
  * @return string
@@ -516,17 +790,22 @@ function usageText()
     $text[]  = '  check         仅执行环境自检';
     $text[]  = '  env:init      生成 .env 配置（不存在则从模板创建并注入随机密钥）';
     $text[]  = '  token <uid> [device_id] [ttl]   生成调试用 Token';
+    $text[]  = '  push <uid|device|client> <target> [payload-json] [msg_id] [offline_mode]';
+    $text[]  = '                提交一条定向推送任务（只入队，由业务进程消费后投递）';
     $text[]  = '';
-    $text[]  = '角色（--role）：all / register / gateway / udp / business';
+    $text[]  = '角色（--role）：all / register / gateway / udp / business / api / dashboard';
+    $text[]  = '  dashboard 为只读监控面板，默认监听 ' . Env::str('DASHBOARD_LISTEN', 'http://127.0.0.1:8291');
     $text[]  = '';
     if ($isLinux) {
         $text[] = 'Linux 单机部署：php start.php start -d';
     } else {
-        $text[] = 'Windows 开发环境需按角色分别启动（4 个终端）：';
+        $text[] = 'Windows 开发环境需按角色分别启动（6 个终端）：';
         $text[] = '  php start.php start --role=register';
         $text[] = '  php start.php start --role=gateway';
         $text[] = '  php start.php start --role=udp';
         $text[] = '  php start.php start --role=business';
+        $text[] = '  php start.php start --role=api';
+        $text[] = '  php start.php start --role=dashboard   # 可选的监控面板';
     }
     $text[] = '';
     return implode("\n", $text) . "\n";

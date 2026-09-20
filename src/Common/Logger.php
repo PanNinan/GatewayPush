@@ -8,7 +8,7 @@
  *  - 兜底：注册 error / exception / shutdown 处理器，避免异常导致进程静默退出
  *  - 清理：cleanup() 删除超过 keep_days 的历史日志，由定时任务调用
  *
- * 兼容 PHP 8.0 ~ 8.5（不使用 8.1+ 独有语法）
+ * 兼容 PHP 8.1 ~ 8.5（不使用 8.2+ 独有语法）
  */
 
 namespace GatewayPush\Common;

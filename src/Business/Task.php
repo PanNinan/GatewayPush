@@ -13,7 +13,7 @@
  *  - first：仅在 worker id = 0 的进程注册（全局唯一任务，如会话巡检）
  *  - all  ：每个进程都注册（需要分进程独立统计的任务，如指标上报）
  *
- * 兼容 PHP 8.0 ~ 8.5
+ * 兼容 PHP 8.1 ~ 8.5
  */
 
 namespace GatewayPush\Business;

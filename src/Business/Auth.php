@@ -17,13 +17,14 @@
  *   isRevoked()        异步，查询 Redis 撤销名单
  *   checkDeviceBind()  异步，校验 uid <-> device_id 绑定关系
  *
- * 兼容 PHP 8.0 ~ 8.5
+ * 兼容 PHP 8.1 ~ 8.5
  */
 
 namespace GatewayPush\Business;
 
 use GatewayPush\Common\Logger;
 use GatewayPush\Common\RedisClient;
+use Random\RandomException;
 
 class Auth
 {
@@ -116,8 +117,9 @@ class Auth
      * 本方法主要用于联调自测与内部服务调用。
      *
      * @param array $claims 至少包含 uid，可选 device_id
-     * @param int   $ttl    有效期（秒），0 取配置默认值
+     * @param int $ttl 有效期（秒），0 取配置默认值
      * @return string
+     * @throws RandomException
      */
     public static function issue(array $claims, $ttl = 0)
     {

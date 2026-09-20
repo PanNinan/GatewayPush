@@ -13,6 +13,7 @@ $basePath = defined('BASE_PATH') ? BASE_PATH : dirname(__DIR__);
 
 // 定时任务周期统一从此处取值，避免与队列 / 心跳配置出现两套真源
 $udpQueueInterval   = Env::float('UDP_QUEUE_INTERVAL', 0.05);
+$pushQueueInterval  = Env::float('PUSH_QUEUE_INTERVAL', 0.05);
 $heartbeatInterval  = Env::int('HB_CHECK_INTERVAL', 10);
 $monitorInterval    = Env::int('MONITOR_INTERVAL', 60);
 
@@ -53,6 +54,22 @@ return [
     ],
 
     /* ---------------------------------------------------------------
+     | 定向推送出站队列
+     |
+     | 外部系统（HTTP 接口 / 业务代码 / 运维命令）统一把推送任务写入该队列，
+     | 由业务进程原子批量消费后执行真实推送。单一执行路径便于指标统计与幂等控制。
+     |
+     | queue.key 与 api / push 模块同源（PUSH_QUEUE_KEY）
+     --------------------------------------------------------------- */
+    'push_queue' => [
+        'enable'   => Env::bool('PUSH_QUEUE_ENABLE', true),
+        'key'      => Env::str('PUSH_QUEUE_KEY', 'queue:push:out'),
+        'batch'    => Env::int('PUSH_QUEUE_BATCH', 200),
+        'interval' => $pushQueueInterval,
+        'max_len'  => Env::int('PUSH_QUEUE_MAX_LEN', 10000),  // 积压告警阈值
+    ],
+
+    /* ---------------------------------------------------------------
      | 定时任务注册表（结构性配置：任务集合本身不随环境变化）
      |
      | scope = first  : 仅在 worker id = 0 的进程注册（全局唯一任务）
@@ -66,6 +83,15 @@ return [
             'interval'   => $udpQueueInterval,
             'class'      => 'GatewayPush\Business\Bootstrap',
             'method'     => 'consumeUdpQueue',
+            'persistent' => true,
+            'timeout'    => 3,
+            'scope'      => 'first',
+        ],
+        [
+            'name'       => 'push-queue-consume',
+            'interval'   => $pushQueueInterval,
+            'class'      => 'GatewayPush\Business\Bootstrap',
+            'method'     => 'consumePushQueue',
             'persistent' => true,
             'timeout'    => 3,
             'scope'      => 'first',

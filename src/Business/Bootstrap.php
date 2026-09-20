@@ -10,13 +10,15 @@
  * 职责范围（对应文档 3.1.2）：承载全部业务逻辑，直接操作 Redis，
  * 完成鉴权、会话管理、单对一定向推送、定时任务、指标统计。
  *
- * 兼容 PHP 8.0 ~ 8.5
+ * 兼容 PHP 8.1 ~ 8.5
  */
 
 namespace GatewayPush\Business;
 
 use GatewayPush\Common\Logger;
+use GatewayPush\Common\RateLimiter;
 use GatewayPush\Common\RedisClient;
+use GatewayPush\Common\WorkerEvents;
 use GatewayWorker\BusinessWorker;
 use GatewayWorker\Lib\Context;
 use GatewayWorker\Lib\Gateway as GatewayClient;
@@ -39,7 +41,10 @@ class Bootstrap
     protected static $appConfig = array();
 
     /**
-     * 已通过鉴权的 clientId 集合（进程内，随连接生命周期）
+     * 已通过鉴权的连接：clientId => uid（进程内，随连接生命周期）
+     *
+     * 存 uid 而非单纯的 true，是为了让报文级限流的用户维度无需再查一次
+     * Redis 会话（每报文省一次往返）。uid 为空串表示鉴权功能关闭下的直通连接。
      *
      * @var array
      */
@@ -52,6 +57,13 @@ class Bootstrap
      */
     protected static $authTimers = array();
 
+    /**
+     * 指令路由表是否已注册
+     *
+     * @var bool
+     */
+    protected static $routesRegistered = false;
+
     /* ---------------------------------------------------------------------
      | 初始化
      --------------------------------------------------------------------- */
@@ -61,9 +73,11 @@ class Bootstrap
      *
      * @param array $businessConfig config/business.php
      * @param array $appConfig      config/app.php
+     * @param array $gatewayConfig  config/gateway.php（仅取 UDP 出站队列配置）
+     * @param array $actionConfig   config/actions.php（业务动作清单）
      * @return void
      */
-    public static function init(array $businessConfig, array $appConfig)
+    public static function init(array $businessConfig, array $appConfig, array $gatewayConfig = array(), array $actionConfig = array())
     {
         if (!self::roleEnabled('business')) {
             return;
@@ -75,6 +89,22 @@ class Bootstrap
         Auth::init($appConfig['auth']);
         Session::init($appConfig['session']);
         Monitor::init($appConfig['monitor']);
+        RateLimiter::init(isset($appConfig['rate_limit']) ? $appConfig['rate_limit'] : array());
+        Subscribe::init(isset($appConfig['subscribe']) ? $appConfig['subscribe'] : array());
+
+        // 装载业务动作表：WS 与 UDP 两条链路共用同一份声明，
+        // 差异只在回执方式（见 config/actions.php 的 reply 段）
+        ActionRunner::load($actionConfig);
+
+        // UDP 出站队列 key 与网关进程同源（gateway.udp.out_queue），避免两套真源
+        Push::init(
+            $appConfig['push'],
+            $businessConfig['push_queue'],
+            isset($gatewayConfig['udp']['out_queue']) ? $gatewayConfig['udp']['out_queue'] : array()
+        );
+
+        // 注册指令路由表（一级 cmd + 二级 data.action）
+        self::registerDefaultRoutes();
 
         $conf   = $businessConfig['worker'];
         $worker = new BusinessWorker();
@@ -110,6 +140,9 @@ class Bootstrap
             Logger::info('BusinessWorker 正在停止，释放连接资源', array('id' => $worker->id));
             RedisClient::closeAll();
         };
+
+        // 连接级错误与背压观测（业务进程持有与网关的内部连接）
+        WorkerEvents::bind($worker, $conf['name']);
     }
 
     /* ---------------------------------------------------------------------
@@ -160,6 +193,10 @@ class Bootstrap
     /**
      * 收到客户端消息
      *
+     * 流程：解码 -> 报文级限流 -> 业务分发。
+     * 限流置于解码之后、业务之前：解码是纯本地计算且已有长度上限保护，
+     * 先解码才能拿到 cmd 以区分心跳与业务指令的配额。
+     *
      * @param string $clientId
      * @param mixed  $rawMessage
      * @return void
@@ -182,6 +219,22 @@ class Bootstrap
             return;
         }
 
+        // 报文级限流（L2）：连接 / 用户双维度，单次 Redis 往返原子判定。
+        // 判定为异步，通过后才进入业务分发，杜绝「未判定即执行处理器」。
+        self::guardRate($clientId, $packet, function () use ($clientId, $packet) {
+            self::dispatch($clientId, $packet);
+        });
+    }
+
+    /**
+     * 业务分发（限流通过后的主链路）
+     *
+     * @param string $clientId
+     * @param array  $packet
+     * @return void
+     */
+    protected static function dispatch($clientId, array $packet)
+    {
         // 鉴权拦截：未鉴权连接仅允许白名单指令
         if (Auth::enabled() && !self::isAuthed($clientId) && !Auth::isAllowedBeforeAuth($packet['cmd'])) {
             Monitor::incr('msg_fail');
@@ -199,29 +252,119 @@ class Bootstrap
             return;
         }
 
-        switch ($packet['cmd']) {
-            case Message::CMD_AUTH:
-                self::handleAuth($clientId, $packet);
-                break;
-
-            case Message::CMD_PING:
-                self::handlePing($clientId, $packet);
-                break;
-
-            case Message::CMD_DATA:
-                self::handleData($clientId, $packet);
-                break;
-
-            default:
-                Monitor::incr('msg_fail');
-                Logger::warn('收到未知指令', array('client_id' => $clientId, 'cmd' => $packet['cmd']));
-                self::send($clientId, Message::error(
-                    Message::CODE_UNKNOWN_CMD,
-                    '',
-                    $packet['seq'],
-                    $packet['cmd']
-                ));
+        // 指令分发统一走路由表（一级 cmd），新增指令无需改动本方法
+        $handler = Router::command($packet['cmd']);
+        if ($handler === null) {
+            Monitor::incr('msg_fail');
+            Logger::warn('收到未知指令', array('client_id' => $clientId, 'cmd' => $packet['cmd']));
+            self::send($clientId, Message::error(
+                Message::CODE_UNKNOWN_CMD,
+                '',
+                $packet['seq'],
+                $packet['cmd']
+            ));
+            return;
         }
+
+        // 处理器异常在此统一兜底：保证单条报文异常不影响连接与进程
+        try {
+            call_user_func($handler, $clientId, $packet);
+        } catch (\Throwable $e) {
+            Monitor::incr('msg_fail');
+            Logger::exception($e, 'business.route:' . $packet['cmd']);
+            self::send($clientId, Message::error(
+                Message::CODE_SERVER_ERROR,
+                '',
+                $packet['seq'],
+                $packet['cmd']
+            ));
+        }
+    }
+
+    /* ---------------------------------------------------------------------
+     | 报文级限流
+     --------------------------------------------------------------------- */
+
+    /**
+     * WebSocket 报文限流
+     *
+     * 维度组合：
+     *   连接维度（conn）—— 恒定参与，约束单连接刷报文
+     *   用户维度（uid）  —— 已鉴权时叠加，约束同账号多连接的总量
+     *   心跳维度（ping） —— 替代 conn 参与，配额更严
+     *
+     * 两个桶在一次 Redis 往返内原子判定（任一不足即整单拒绝且均不扣减），
+     * 避免「连接桶已扣、用户桶拒绝」造成的配额泄漏。
+     *
+     * @param string   $clientId
+     * @param array    $packet
+     * @param callable $next 放行后的后续处理
+     * @return void
+     */
+    protected static function guardRate($clientId, array $packet, callable $next)
+    {
+        if (!RateLimiter::enabled()) {
+            call_user_func($next);
+            return;
+        }
+
+        $isPing = in_array($packet['cmd'], array(Message::CMD_PING, Message::CMD_PONG), true);
+        $dim    = $isPing ? RateLimiter::DIM_PING : RateLimiter::DIM_CONN;
+
+        $buckets = array(RateLimiter::bucket($dim, $clientId));
+
+        $uid = self::authedUid($clientId);
+        if ($uid !== '') {
+            $buckets[] = RateLimiter::bucket(RateLimiter::DIM_UID, $uid);
+        }
+
+        RateLimiter::acquire($buckets, 1, function ($allowed) use ($clientId, $packet, $dim, $next) {
+            if ($allowed) {
+                call_user_func($next);
+                return;
+            }
+
+            Monitor::incr('msg_fail');
+            Monitor::incr('rate_limit_hit');
+            Monitor::incr('rate_limit_' . $dim);
+
+            RateLimiter::logReject($dim, $clientId, array(
+                'channel' => 'ws',
+                'cmd'     => $packet['cmd'],
+                'seq'     => $packet['seq'],
+            ));
+
+            self::rejectRateLimited($clientId, $packet);
+        });
+    }
+
+    /**
+     * WebSocket 超限处置
+     *
+     * 默认仅回错误报文、不断开连接：客户端可感知并自行退避，
+     * 而断开会在网络抖动时把限流放大成重连风暴。
+     *
+     * @param string $clientId
+     * @param array  $packet
+     * @return void
+     */
+    protected static function rejectRateLimited($clientId, array $packet)
+    {
+        if (!RateLimiter::shouldNotify()) {
+            return;
+        }
+
+        if (RateLimiter::shouldClose()) {
+            self::closeClient($clientId, Message::CODE_RATE_LIMIT, Message::codeMessage(Message::CODE_RATE_LIMIT));
+            return;
+        }
+
+        self::send($clientId, Message::error(
+            Message::CODE_RATE_LIMIT,
+            '',
+            $packet['seq'],
+            $packet['cmd']
+        ));
     }
 
     /**
@@ -399,8 +542,20 @@ class Bootstrap
                 'connect_at'  => time(),
             ));
 
-            self::markAuthed($clientId);
+            self::markAuthed($clientId, $uid);
             Monitor::incr('auth_success');
+
+            // 绑定 Gateway 原生 uid 路由，使 sendToUid 可用（跨进程由 Register 转发）。
+            // UDP 的 client_id 不在 Gateway 连接表内，无法参与该映射，故仅 WebSocket 绑定；
+            // 连接关闭时 Gateway 会自行清理 uid 路由表（见 Gateway::onClientClose），
+            // 业务侧无需重复调用 unbindUid。
+            if ($protocol === Session::PROTOCOL_WS) {
+                try {
+                    GatewayClient::bindUid($clientId, $uid);
+                } catch (\Throwable $e) {
+                    Logger::exception($e, 'business.bind_uid:' . $clientId);
+                }
+            }
 
             self::send($clientId, Message::ack($packet['seq'], array(
                 'uid'         => $uid,
@@ -416,6 +571,17 @@ class Bootstrap
                 'protocol'    => $protocol,
                 'reconnected' => $reconnected ? 1 : 0,
             ));
+
+            // 断线期间缓存的离线消息在鉴权成功后补投（至少一次语义）
+            Push::replayOffline($uid, $clientId, function ($count) use ($uid, $clientId) {
+                if ($count > 0) {
+                    Logger::info('离线消息已补投', array(
+                        'uid'       => $uid,
+                        'client_id' => $clientId,
+                        'count'     => $count,
+                    ));
+                }
+            });
         });
     }
 
@@ -435,10 +601,38 @@ class Bootstrap
     }
 
     /**
-     * 处理业务数据指令
+     * 处理客户端回执（对 push 下行报文的确认）
      *
-     * P0 阶段仅完成链路验证与心跳刷新，不承载具体业务。
-     * P1 扩展点：在此接入单对一定向推送、业务数据落库等逻辑。
+     * 推送采用「至少一次」语义，客户端回执仅用于观测投递质量；
+     * 报文中的 seq 即服务端下发的 msg_id，可直接与推送日志对齐排查。
+     *
+     * @param string $clientId
+     * @param array  $packet
+     * @return void
+     */
+    protected static function handleClientAck($clientId, array $packet)
+    {
+        $data  = $packet['data'];
+        $msgId = isset($data['msg_id']) ? (string)$data['msg_id'] : (string)$packet['seq'];
+
+        Monitor::incr('push_ack');
+
+        Logger::debug('收到客户端回执', array(
+            'client_id' => $clientId,
+            'msg_id'    => $msgId,
+            'ref'       => isset($packet['ref']) ? (string)$packet['ref'] : '',
+        ));
+    }
+
+    /**
+     * 处理业务数据指令（二级路由入口）
+     *
+     * data 报文约定：{"cmd":"data","data":{"action":"<动作名>","params":{...}}}
+     *
+     * 具体分发、鉴权、参数校验与回执全部交由 ActionRunner 完成 ——
+     * 它是 WS 与 UDP 两条链路共用的执行器，本方法只负责把身份信息透传下去。
+     * 这样做的直接收益：UDP 侧接入业务动作的路径与本方法完全一致，
+     * 不需要为「UDP 上报的业务报文」再维护一套并行的分发逻辑。
      *
      * @param string $clientId
      * @param array  $packet
@@ -446,12 +640,106 @@ class Bootstrap
      */
     protected static function handleData($clientId, array $packet)
     {
-        Logger::debug('收到业务数据（P0 阶段不做处理）', array(
-            'client_id' => $clientId,
-            'seq'       => $packet['seq'],
-            'keys'      => array_keys($packet['data']),
+        ActionRunner::run(
+            $clientId,
+            $packet,
+            self::resolveUid($clientId, $packet),
+            isset($packet['device_id']) ? (string)$packet['device_id'] : '',
+            self::protocolOf($clientId)
+        );
+    }
+
+    /**
+     * 解析报文归属身份（按通道选择可信来源）
+     *
+     * 两条通道的身份可信来源不同，不能混用：
+     *
+     *   WebSocket —— 以鉴权时写入的进程内映射为准。报文里的 uid 由客户端自行
+     *   填写且不在签名覆盖范围内，若采信则任意连接都能冒充他人身份。
+     *
+     *   UDP —— 无连接实体、无鉴权映射，身份取自报文 Token 的载荷。
+     *   Message::sign() 的签名基串是 cmd|seq|ts|device_id|token|canonicalize(data)，
+     *   uid 不在其中（可被篡改），但 token 参与签名、且 token 载荷本身由服务端
+     *   密钥 HMAC 保护并内含 uid —— 因此 Token 是报文内唯一可信的身份来源。
+     *
+     * Token 不可信时返回空串（不放行），而非回退到报文 uid，避免把伪造身份
+     * 当作合法身份使用。仅当鉴权整体关闭、报文确实不带 Token 时才回退。
+     *
+     * @param string $clientId
+     * @param array  $packet
+     * @return string 解析失败返回空串
+     */
+    protected static function resolveUid($clientId, array $packet)
+    {
+        if (self::protocolOf($clientId) !== Session::PROTOCOL_UDP) {
+            return self::authedUid($clientId);
+        }
+
+        $token = isset($packet['token']) ? (string)$packet['token'] : '';
+
+        if (Auth::enabled() && $token !== '') {
+            $result = Auth::verifyLocal($token);
+            if (!empty($result['ok']) && isset($result['claims']['uid'])) {
+                return (string)$result['claims']['uid'];
+            }
+
+            Logger::debug('UDP 报文 Token 不可信，身份置空', array(
+                'client_id' => $clientId,
+                'code'      => isset($result['code']) ? (int)$result['code'] : 0,
+                'msg'       => isset($result['msg']) ? (string)$result['msg'] : '',
+            ));
+            return '';
+        }
+
+        // 鉴权关闭场景：无 Token 可依，退回报文字段
+        return isset($packet['uid']) ? (string)$packet['uid'] : '';
+    }
+
+    /* ---------------------------------------------------------------------
+     | 指令路由表
+     --------------------------------------------------------------------- */
+
+    /**
+     * 注册默认指令路由（幂等）
+     *
+     * 一级（cmd）与二级（data.action）处理器均在此登记。
+     * 处理器以闭包形式注册，闭包在 Bootstrap 类作用域内定义，
+     * 因此可直接调用受保护的 handleXxx / actionXxx 方法。
+     *
+     * 扩展方式：在 init() 之后调用 Router::registerCommand / registerAction，
+     * 或在业务模块中自行注册，无需修改本类。
+     *
+     * @return void
+     */
+    protected static function registerDefaultRoutes()
+    {
+        if (self::$routesRegistered) {
+            return;
+        }
+        self::$routesRegistered = true;
+
+        // 一级：指令 -> 处理器
+        Router::registerCommand(Message::CMD_AUTH, function ($clientId, array $packet) {
+            self::handleAuth($clientId, $packet);
+        });
+        Router::registerCommand(Message::CMD_PING, function ($clientId, array $packet) {
+            self::handlePing($clientId, $packet);
+        });
+        Router::registerCommand(Message::CMD_DATA, function ($clientId, array $packet) {
+            self::handleData($clientId, $packet);
+        });
+        Router::registerCommand(Message::CMD_ACK, function ($clientId, array $packet) {
+            self::handleClientAck($clientId, $packet);
+        });
+
+        // 二级（data.action）不再在此注册：
+        // 业务动作改由 config/actions.php 声明，经 ActionRunner 装载与执行，
+        // 业务模块接入新动作无需改动本类。Router 的二级注册能力保留，
+        // 供需要绕过参数校验等标准流程的特殊场景使用。
+        Logger::info('指令路由表注册完成', array(
+            'commands' => Router::commands(),
+            'actions'  => ActionRunner::registered(),
         ));
-        self::send($clientId, Message::ack($packet['seq'], array('accepted' => 1)));
     }
 
     /* ---------------------------------------------------------------------
@@ -461,9 +749,9 @@ class Bootstrap
     /**
      * 消费 UDP 网关投递的业务队列
      *
-     * 权衡说明：当前实现为 lRange + lTrim 两步操作，二者之间非原子，
-     * 多进程并发消费会出现重复处理窗口。P0 阶段该任务 scope=first（仅在 worker 0 运行），
-     * 集群扩容阶段将改造为 Lua 原子取批或 BRPOP 模式。
+     * 采用 Lua 原子取批（LRANGE + LTRIM 在脚本内一次完成）：
+     * 早期用 lRange + lTrim 两步实现，二者之间的非原子窗口会让多进程并发消费
+     * 重复处理同一批元素。改用原子取批后，该任务可安全地扩展到多 worker 消费。
      *
      * @return void
      */
@@ -476,26 +764,41 @@ class Bootstrap
 
         $batch = max(1, (int)$conf['batch']);
 
-        RedisClient::lRange($conf['key'], 0, $batch - 1, function ($items) use ($conf) {
-            if (!is_array($items) || !$items) {
-                return;
-            }
-
-            RedisClient::lTrim($conf['key'], count($items), -1, function () use ($items) {
-                foreach ($items as $raw) {
-                    try {
-                        self::handleUdpJob($raw);
-                    } catch (\Throwable $e) {
-                        Monitor::incr('msg_fail');
-                        Logger::exception($e, 'business.udp_job');
-                    }
+        RedisClient::popBatch($conf['key'], $batch, function ($items) {
+            foreach ($items as $raw) {
+                try {
+                    self::handleUdpJob($raw);
+                } catch (\Throwable $e) {
+                    Monitor::incr('msg_fail');
+                    Logger::exception($e, 'business.udp_job');
                 }
-            });
+            }
         });
     }
 
     /**
+     * 消费定向推送队列（定时任务）
+     *
+     * 所有推送触发入口（HTTP 接口 / 外部系统直接写队列 / 运维命令）最终都汇聚到这里，
+     * 由 Push::dispatch 统一完成目标解析、通道选择、幂等与离线缓存。
+     *
+     * @return void
+     */
+    public static function consumePushQueue()
+    {
+        try {
+            Push::consumeQueue();
+        } catch (\Throwable $e) {
+            Logger::exception($e, 'business.push_queue');
+        }
+    }
+
+    /**
      * 处理单条 UDP 队列任务
+     *
+     * 流程：格式校验 -> 报文级限流 -> 业务处理。
+     * 超限采用静默丢弃：UDP 允许丢包，回错误报文会形成反射放大
+     * （攻击者伪造源地址即可借服务端放大流量）。
      *
      * @param string $raw
      * @return void
@@ -517,30 +820,176 @@ class Bootstrap
         Monitor::incr('msg_in');
         Monitor::incr('udp_msg_in');
 
-        // 应用层会话识别：UDP 以来源地址 + 报文身份建立会话
-        if ($deviceId !== '' || $uid !== '') {
-            Session::bind($clientId, array(
-                'uid'       => $uid,
-                'device_id' => $deviceId,
-            ), Session::PROTOCOL_UDP, array(
-                'client_ip'   => isset($job['remote_ip']) ? (string)$job['remote_ip'] : '',
-                'client_port' => isset($job['remote_port']) ? (int)$job['remote_port'] : 0,
-                'connect_at'  => time(),
-            ));
+        self::guardUdpRate($clientId, $uid, $packet, function () use ($job, $clientId, $uid, $deviceId) {
+            self::processUdpJob($job, $clientId, $uid, $deviceId);
+        });
+    }
+
+    /**
+     * UDP 报文限流
+     *
+     * UDP 无连接实体，连接维度以虚拟 clientId（udp:ip:port）参与；
+     * 报文自带 uid，已上报身份的报文叠加用户维度。
+     *
+     * 注意：网关层已按来源 IP 做过一轮内存桶限流（L1），此处是业务层的
+     * 第二道防线，用于约束单终端 / 单账号，与前者的 IP 维度互补。
+     *
+     * @param string   $clientId
+     * @param string   $uid
+     * @param array    $packet
+     * @param callable $next
+     * @return void
+     */
+    protected static function guardUdpRate($clientId, $uid, array $packet, callable $next)
+    {
+        if (!RateLimiter::enabled()) {
+            call_user_func($next);
+            return;
         }
 
-        // P1 扩展点：在此接入 UDP 业务处理（上报数据落库、定向推送等）
-        Logger::debug('UDP 业务任务已消费', array(
-            'client_id' => $clientId,
-            'cmd'       => isset($packet['cmd']) ? $packet['cmd'] : '',
-            'uid'       => $uid,
-            'device_id' => $deviceId,
-        ));
+        $cmd    = isset($packet['cmd']) ? (string)$packet['cmd'] : '';
+        $isPing = in_array($cmd, array(Message::CMD_PING, Message::CMD_PONG), true);
+        $dim    = $isPing ? RateLimiter::DIM_PING : RateLimiter::DIM_CONN;
+
+        $buckets = array(RateLimiter::bucket($dim, $clientId));
+        if ($uid !== '') {
+            $buckets[] = RateLimiter::bucket(RateLimiter::DIM_UID, $uid);
+        }
+
+        RateLimiter::acquire($buckets, 1, function ($allowed) use ($clientId, $uid, $cmd, $dim, $next) {
+            if ($allowed) {
+                call_user_func($next);
+                return;
+            }
+
+            Monitor::incr('msg_fail');
+            Monitor::incr('rate_limit_hit');
+            Monitor::incr('rate_limit_' . $dim);
+
+            RateLimiter::logReject($dim, $clientId, array(
+                'channel' => 'udp',
+                'cmd'     => $cmd,
+                'uid'     => $uid,
+            ));
+            // 静默丢弃：不回错误报文、不断开连接
+        });
+    }
+
+    /**
+     * UDP 业务处理（限流通过后）
+     *
+     * @param array  $job
+     * @param string $clientId
+     * @param string $uid
+     * @param string $deviceId
+     * @return void
+     */
+    protected static function processUdpJob(array $job, $clientId, $uid, $deviceId)
+    {
+        // 应用层会话识别：UDP 以来源地址 + 报文身份建立会话。
+        // 先用 EXISTS 探测会话是否已存在 —— UDP 无连接实体，只有在报文到达时
+        // 才能判断「会话是否重建」，而该时机正是离线消息补投的触发点
+        // （与 WebSocket 在鉴权成功后补投的语义对齐）。
+        if ($deviceId !== '' || $uid !== '') {
+            Session::exists($clientId, function ($existed) use ($clientId, $uid, $deviceId, $job) {
+                Session::bind($clientId, array(
+                    'uid'       => $uid,
+                    'device_id' => $deviceId,
+                ), Session::PROTOCOL_UDP, array(
+                    'client_ip'   => isset($job['remote_ip']) ? (string)$job['remote_ip'] : '',
+                    'client_port' => isset($job['remote_port']) ? (int)$job['remote_port'] : 0,
+                    'connect_at'  => time(),
+                ));
+
+                // 会话此前已被回收/过期（EXISTS=0）说明客户端刚刚恢复连接，补投离线消息；
+                // 会话存在期间不会重复触发，判定天然幂等。
+                if (!$existed && $uid !== '') {
+                    Push::replayOffline($uid, $clientId, function ($count) use ($uid, $clientId) {
+                        if ($count > 0) {
+                            Logger::info('UDP 离线消息已补投', array(
+                                'uid'       => $uid,
+                                'client_id' => $clientId,
+                                'count'     => $count,
+                            ));
+                        }
+                    });
+                }
+            });
+        }
+
+        // 业务分发：与 WebSocket 共用同一张指令路由表，业务动作的声明式清单
+        // （config/actions.php）在两条链路上完全一致，不存在「WS 能跑、UDP 跑不通」。
+        //
+        // 但只放行真正需要业务层介入的两类指令：
+        //   data —— 业务动作
+        //   ack  —— 客户端对下行推送的确认
+        // 其余指令在此不重复处理：auth 所需的会话绑定已在上方完成，
+        // ping 已由 UDP 网关在收包时即时回执，再走一遍会造成重复回执与重复补投。
+        $packet = isset($job['packet']) && is_array($job['packet']) ? $job['packet'] : array();
+        $cmd    = isset($packet['cmd']) ? (string)$packet['cmd'] : '';
+
+        if ($cmd !== Message::CMD_DATA && $cmd !== Message::CMD_ACK) {
+            Logger::debug('UDP 报文无需业务层处理', array(
+                'client_id' => $clientId,
+                'cmd'       => $cmd,
+                'uid'       => $uid,
+                'device_id' => $deviceId,
+            ));
+            return;
+        }
+
+        $handler = Router::command($cmd);
+        if ($handler === null) {
+            Monitor::incr('msg_fail');
+            Logger::warn('UDP 报文指令未注册，已丢弃', array(
+                'client_id' => $clientId,
+                'cmd'       => $cmd,
+            ));
+            return;
+        }
+
+        // 处理器异常统一兜底：单条 UDP 报文异常不得影响进程与后续队列消费
+        try {
+            call_user_func($handler, $clientId, $packet);
+        } catch (\Throwable $e) {
+            Monitor::incr('msg_fail');
+            Logger::exception($e, 'business.udp.route:' . $cmd);
+        }
     }
 
     /* ---------------------------------------------------------------------
      | 内部辅助
      --------------------------------------------------------------------- */
+
+    /**
+     * 向客户端回执报文（供路由处理器调用）
+     *
+     * 与内部 send() 的区别：本方法为公开 API，允许在外部模块注册
+     * Router 处理器时复用统一的回执通道（含指标与异常兜底）。
+     *
+     * @param string $clientId
+     * @param array  $packet 已构造的报文数组
+     * @return void
+     */
+    public static function respond($clientId, array $packet)
+    {
+        self::send($clientId, $packet);
+    }
+
+    /**
+     * 向客户端回执错误报文（供路由处理器调用）
+     *
+     * @param string $clientId
+     * @param int    $code
+     * @param string $msg
+     * @param string $seq
+     * @param string $ref
+     * @return void
+     */
+    public static function respondError($clientId, $code, $msg = '', $seq = '', $ref = '')
+    {
+        self::send($clientId, Message::error($code, $msg, $seq, $ref));
+    }
 
     /**
      * 下发报文
@@ -555,6 +1004,15 @@ class Bootstrap
     {
         Monitor::incr('msg_out');
         try {
+            // UDP 的 clientId 形如 udp:{ip}:{port}，不在 Gateway 连接表内，
+            // sendToClient 对其静默无效。统一改走网关出站队列，由 UDP 网关
+            // 进程 sendto —— 这样本方法的调用方（含既有 cmd 处理器）无需
+            // 感知协议差异，双通道自动兼容。
+            if (self::protocolOf($clientId) === Session::PROTOCOL_UDP) {
+                Push::sendToUdpClient($clientId, $packet);
+                return;
+            }
+
             GatewayClient::sendToClient($clientId, Message::encode($packet));
         } catch (\Throwable $e) {
             Monitor::incr('msg_fail');
@@ -575,6 +1033,17 @@ class Bootstrap
      */
     protected static function closeClient($clientId, $code = 0, $msg = '')
     {
+        // UDP 无连接实体，不存在「断开」动作，也不会进入 Gateway 连接表。
+        // 其会话回收依赖心跳超时巡检（Session::checkHeartbeatTimeout），
+        // 此处仅记录并返回，避免对 UDP 下发无效的关闭指令。
+        if (self::protocolOf($clientId) === Session::PROTOCOL_UDP) {
+            Logger::debug('UDP 会话无连接可关闭，改由心跳超时回收', array(
+                'client_id' => $clientId,
+                'code'      => $code,
+            ));
+            return;
+        }
+
         try {
             if ($code > 0) {
                 GatewayClient::closeClient($clientId, Message::encode(Message::error($code, $msg)));
@@ -609,11 +1078,12 @@ class Bootstrap
      * 标记连接已鉴权，并清理鉴权超时定时器
      *
      * @param string $clientId
+     * @param string $uid 鉴权功能关闭时可为空串
      * @return void
      */
-    protected static function markAuthed($clientId)
+    protected static function markAuthed($clientId, $uid = '')
     {
-        self::$authed[$clientId] = true;
+        self::$authed[$clientId] = (string)$uid;
         if (isset(self::$authTimers[$clientId])) {
             Timer::del((int)self::$authTimers[$clientId]);
             unset(self::$authTimers[$clientId]);
@@ -632,6 +1102,17 @@ class Bootstrap
     }
 
     /**
+     * 已鉴权连接的 uid（未鉴权返回空串）
+     *
+     * @param string $clientId
+     * @return string
+     */
+    protected static function authedUid($clientId)
+    {
+        return isset(self::$authed[$clientId]) ? (string)self::$authed[$clientId] : '';
+    }
+
+    /**
      * 推断连接协议类型
      *
      * @param string $clientId
@@ -639,7 +1120,7 @@ class Bootstrap
      */
     protected static function protocolOf($clientId)
     {
-        return strpos((string)$clientId, 'udp:') === 0 ? Session::PROTOCOL_UDP : Session::PROTOCOL_WS;
+        return str_starts_with((string)$clientId, 'udp:') ? Session::PROTOCOL_UDP : Session::PROTOCOL_WS;
     }
 
     /**

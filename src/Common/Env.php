@@ -22,7 +22,7 @@
  *   4. PutenvAdapter 仅注册为 reader 而非 writer：使 getenv() 注入的值同样被识别为
  *      「外部已有」而受保护，同时避免把密钥写回进程环境（/proc/self/environ 可读）。
  *
- * 兼容 PHP 8.0 ~ 8.5
+ * 兼容 PHP 8.1 ~ 8.5
  */
 
 namespace GatewayPush\Common;
