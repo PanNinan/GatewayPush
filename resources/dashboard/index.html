@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="robots" content="noindex, nofollow">
 <title>GatewayWorker 监控面板</title>
 <style>
   :root {
@@ -86,9 +88,22 @@
   th { font-size: 11px; font-weight: 600; color: var(--text-dim); background: #fafbfc;
        text-transform: uppercase; letter-spacing: .5px; }
   tr:last-child td { border-bottom: none; }
-  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  /* 数值列必须同时覆盖 th 与 td —— 只给 td.num 加右对齐会让表头留在左侧、
+     数据贴到右侧，整列看起来是错位的 */
+  th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .pid { font-family: ui-monospace, Consolas, "Courier New", monospace; color: var(--text-dim); }
   .fail-nonzero { color: var(--bad); font-weight: 600; }
+
+  /* 进程身份单元格：上行角色名，下行 PID / worker 编号 */
+  .cell-proc .n { display: block; font-size: 12px; font-weight: 500; color: var(--text); }
+  .cell-proc .s { display: block; font-size: 10px; color: var(--text-mute);
+                  font-family: ui-monospace, Consolas, "Courier New", monospace; }
+  tr.exited { color: var(--text-mute); }
+  tr.exited .cell-proc .n { color: var(--text-mute); font-weight: 400; }
+
+  /* 状态色：正常态统一走 --ok，异常/退出态走 muted */
+  .st-ok  { color: var(--ok); font-weight: 600; }
+  .st-off { color: var(--text-mute); }
 
   /* ---------------- 派生指标 ---------------- */
   .derived { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 10px; }
@@ -263,13 +278,35 @@
    * 汇总各进程的存活信息。
    * gauge 的 TTL 远长于上报周期，进程退出后其 memory_bytes / tasks 字段仍会
    * 残留到 TTL 结束，因此必须凭 pid_at 时间戳识别幽灵进程。
-   * 缺少 pid_at 的旧版本上报（灰度期间）一律按「在线」处理，避免误判为已退出。
+   *
+   * 存活阈值取「连续两个上报周期未上报」而非 gauge TTL —— 后者（默认 600s，
+   * 是周期的 10 倍）过于宽松，会把刚退出的进程长时间算作在线。
+   *
+   * 缺少 pid_at 的进程：若上报链路本身是新鲜的（report_at 在阈值内），说明
+   * 采集正常运行却唯独没有该 PID 的时间戳，即可判定它已经退出 —— 这也是
+   * 从旧版本升级上来时清理历史残留字段的依据。只有连 report_at 都过期时，
+   * 才因无法判断而保守地按「在线」展示。
    */
+  /* 启动角色（start.php 的 APP_ROLE）→ 可读名称。
+     未列出的角色回退为原始值，保证新增角色不会在页面上变成空白。 */
+  var ROLE_LABEL = {
+    register:  '注册中心',
+    gateway:   'WS 网关',
+    udp:       'UDP 网关',
+    business:  '业务进程',
+    api:       'HTTP 接口',
+    dashboard: '监控面板',
+    all:       '全组件'
+  };
+
   function procStates(d) {
     var g = d.gauge || {};
     var m = d.meta || {};
     var now = num(m.now);
-    var ttl = num(m.ttl) || 600;
+    var interval = num(m.interval) || 60;
+    var stale = Math.max(interval * 2, 5);
+    var reportAt = num(g.report_at);
+    var gaugeFresh = reportAt > 0 && (now - reportAt) <= stale;
     var map = {};
 
     Object.keys(g).forEach(function (k) {
@@ -284,6 +321,15 @@
       var c = /^tasks:(\d+)$/.exec(k);
       if (c) { (map[c[1]] = map[c[1]] || {}).raw = g[k]; }
     });
+    /* 进程自报身份（角色 + worker 编号）。旧版本不会写该字段，此时留空由
+       渲染层显示「未知进程」。 */
+    Object.keys(g).forEach(function (k) {
+      var e = /^proc:(\d+)$/.exec(k);
+      if (!e) { return; }
+      var info = null;
+      try { info = JSON.parse(g[k]); } catch (err) { info = null; }
+      if (info) { (map[e[1]] = map[e[1]] || {}).proc = info; }
+    });
 
     return Object.keys(map).map(function (pid) {
       var o = map[pid];
@@ -295,10 +341,44 @@
         pid: pid,
         mem: o.mem || 0,
         age: age,
-        live: !known || age <= ttl,
-        jobs: jobs
+        live: known ? age <= stale : !gaugeFresh,
+        stale: stale,
+        jobs: jobs,
+        proc: o.proc || null
       };
-    }).sort(function (a, b) { return b.mem - a.mem; });
+    }).sort(function (a, b) {
+      if (a.live !== b.live) { return a.live ? -1 : 1; }
+      /* 同角色的进程排在一起，比单纯按内存排序更易读眼睛 */
+      var ra = a.proc && a.proc.role ? String(a.proc.role) : '\uffff';
+      var rb = b.proc && b.proc.role ? String(b.proc.role) : '\uffff';
+      if (ra !== rb) { return ra < rb ? -1 : 1; }
+      var wa = a.proc ? num(a.proc.worker_id) : 0;
+      var wb = b.proc ? num(b.proc.worker_id) : 0;
+      if (wa !== wb) { return wa - wb; }
+      return b.mem - a.mem;
+    });
+  }
+
+  /*
+   * 渲染进程身份单元格：上行角色名，下行 PID 或 worker 编号。
+   * 单看 PID 无法判断它是什么进程 —— PID 会被系统回收复用，
+   * 同一角色的多个 worker 也无法区分，因此必须由进程自报角色。
+   */
+  function procCell(r, pidLabel) {
+    if (!r.proc || !r.proc.role) {
+      /* 升级到带身份上报之前启动的进程不会带 proc 字段。
+         仍存活的说明它尚未重启到新版本；已退出的则无从追溯，
+         显示破折号比「未知进程」更干净、也不自相矛盾。 */
+      return r.live
+        ? '<span class="n">未知进程</span><span class="s">需重启该进程后生效</span>'
+        : '<span class="s">—</span>';
+    }
+    var role = String(r.proc.role);
+    var sub  = pidLabel
+      ? 'PID ' + r.pid
+      : 'worker #' + num(r.proc.worker_id);
+    return '<span class="n">' + esc(ROLE_LABEL[role] || role) + '</span>' +
+           '<span class="s">' + esc(sub) + '</span>';
   }
 
   function renderFresh(d) {
@@ -389,24 +469,31 @@
     var dead = list.filter(function (r) { return !r.live; });
     var total = live.reduce(function (s, r) { return s + r.mem; }, 0);
 
-    var html = '<table><thead><tr><th>PID</th><th class="num">内存占用</th><th class="num">上次上报</th><th>状态</th></tr></thead><tbody>';
+    var html = '<table><thead><tr>' +
+               '<th>PID</th><th>进程</th>' +
+               '<th class="num">内存占用</th><th class="num">上次上报</th><th>状态</th>' +
+               '</tr></thead><tbody>';
     live.forEach(function (r) {
-      html += '<tr><td class="pid">' + esc(r.pid) + '</td>' +
+      html += '<tr>' +
+              '<td class="pid">' + esc(r.pid) + '</td>' +
+              '<td class="cell-proc">' + procCell(r) + '</td>' +
               '<td class="num">' + bytes(r.mem) + '</td>' +
               '<td class="num">' + (r.age === null ? '—' : r.age + 's') + '</td>' +
-              '<td>在线</td></tr>';
+              '<td><span class="st-ok">在线</span></td></tr>';
     });
     dead.forEach(function (r) {
-      html += '<tr style="color:var(--text-mute)"><td class="pid">' + esc(r.pid) + '</td>' +
+      html += '<tr class="exited">' +
+              '<td class="pid">' + esc(r.pid) + '</td>' +
+              '<td class="cell-proc">' + procCell(r) + '</td>' +
               '<td class="num">' + bytes(r.mem) + '</td>' +
-              '<td class="num">' + r.age + 's</td>' +
-              '<td>已退出</td></tr>';
+              '<td class="num">' + (r.age === null ? '—' : r.age + 's') + '</td>' +
+              '<td><span class="st-off">已退出</span></td></tr>';
     });
     html += '</tbody></table>';
 
     html += '<div style="margin-top:6px;font-size:11px;color:var(--text-mute)">' +
             live.length + ' 个进程在线 · 合计 ' + bytes(total) +
-            (dead.length ? ' · ' + dead.length + ' 个已退出进程的指标尚未过期（gauge TTL ' + fmt(num(d.meta && d.meta.ttl) || 600) + 's）' : '') +
+            (dead.length ? ' · ' + dead.length + ' 个已退出（超过 ' + list[0].stale + 's 未上报；残留字段待 gauge 过期后自动消失）' : '') +
             '</div>';
     $('procs').innerHTML = html;
   }
@@ -420,7 +507,7 @@
     }
 
     var html = '<table><thead><tr>' +
-               '<th>PID</th><th>任务</th><th class="num">周期(s)</th><th class="num">执行次数</th>' +
+               '<th>进程</th><th>任务</th><th class="num">周期(s)</th><th class="num">执行次数</th>' +
                '<th class="num">失败</th><th class="num">跳过</th><th class="num">耗时(s)</th><th>状态</th>' +
                '</tr></thead><tbody>';
 
@@ -428,17 +515,17 @@
       var jobs = b.jobs.jobs;
       var names = Object.keys(jobs).sort();
       if (!names.length) {
-        html += '<tr><td class="pid">' + esc(b.pid) + '</td>' +
+        html += '<tr><td class="cell-proc">' + procCell(b, true) + '</td>' +
                 '<td colspan="7" style="color:var(--text-mute)">本进程无已注册的定时任务</td></tr>';
         return;
       }
       names.forEach(function (name, i) {
         var j = jobs[name];
-        var running = j.running ? '<span style="color:var(--warn)">执行中</span>' : '正常';
+        var running = j.running ? '<span class="st-ok">执行中</span>' : '正常';
         var fc = num(j.fail) > 0 ? 'fail-nonzero' : '';
         var sc = num(j.skip) > 0 ? 'fail-nonzero' : '';
         html += '<tr>' +
-                (i === 0 ? '<td class="pid" rowspan="' + names.length + '">' + esc(b.pid) + '</td>' : '') +
+                (i === 0 ? '<td class="cell-proc" rowspan="' + names.length + '">' + procCell(b, true) + '</td>' : '') +
                 '<td>' + esc(name) + '</td>' +
                 '<td class="num">' + esc(j.interval) + '</td>' +
                 '<td class="num">' + fmt(j.count) + '</td>' +

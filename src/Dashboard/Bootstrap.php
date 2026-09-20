@@ -67,11 +67,14 @@ class Bootstrap
     protected static $appConfig = array();
 
     /**
-     * 页面模板缓存（避免每次请求读盘）
+     * 页面模板缓存
      *
-     * @var string|null
+     * 记录 mtime 以便模板被修改后自动失效 —— 调整面板样式是高频操作，
+     * 不该每次都要求重启进程。每个请求多一次 stat，代价可忽略。
+     *
+     * @var array{content: string, mtime: int}
      */
-    protected static $page = null;
+    protected static $page = array('content' => '', 'mtime' => 0);
 
     /**
      * 初始化监控面板进程
@@ -195,19 +198,29 @@ class Bootstrap
     protected static function html()
     {
         $path = self::pagePath();
-        if (self::$page === null) {
-            $content = is_file($path) ? file_get_contents($path) : false;
-            self::$page = ($content === false || $content === '') ? '' : $content;
+
+        // workerman 常驻进程没有 PHP 的请求边界，stat 缓存不会被自动清理，
+        // filemtime() 会一直返回进程首次 stat 时的旧值，导致「模板已改、mtime
+        // 不变、永不重载」。必须显式清理，否则下面的 mtime 失效逻辑形同虚设。
+        clearstatcache(true, $path);
+
+        $mtime = is_file($path) ? (int)filemtime($path) : 0;
+        if ($mtime !== self::$page['mtime']) {
+            $content = $mtime > 0 ? file_get_contents($path) : false;
+            self::$page = array(
+                'content' => ($content === false) ? '' : $content,
+                'mtime'   => $mtime,
+            );
         }
 
-        if (self::$page === '') {
+        if (self::$page['content'] === '') {
             return self::json(500, self::CODE_SERVER_ERROR, '页面模板缺失：' . $path, null, 500);
         }
 
         return new Response(200, array(
             'Content-Type'  => 'text/html; charset=utf-8',
             'Cache-Control' => 'no-store',
-        ), self::$page);
+        ), self::$page['content']);
     }
 
     /* ---------------------------------------------------------------------

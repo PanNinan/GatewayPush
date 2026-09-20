@@ -196,7 +196,7 @@ class Bootstrap
     {
         $body = $request->rawBody();
 
-        $job = json_decode($body, true);
+        $job = json_decode($body, true, 512, JSON_THROW_ON_ERROR);
         if (!is_array($job)) {
             $connection->send(self::json(400, self::CODE_BAD_PARAM, '请求体必须是合法 JSON 对象'));
             return;
@@ -204,7 +204,7 @@ class Bootstrap
 
         $targetType = isset($job['target_type']) ? strtolower(trim((string)$job['target_type'])) : '';
         $target     = isset($job['target']) ? trim((string)$job['target']) : '';
-        $payload    = isset($job['payload']) ? $job['payload'] : array();
+        $payload    = $job['payload'] ?? array();
 
         if (!in_array($targetType, array(Push::TARGET_UID, Push::TARGET_DEVICE, Push::TARGET_CLIENT), true)) {
             $connection->send(self::json(400, self::CODE_BAD_PARAM, 'target_type 必须是 uid / device / client 之一'));
@@ -420,7 +420,7 @@ class Bootstrap
             $payload = '{"code":5000,"msg":"response encode failed"}';
         }
 
-        return new Response($http === null ? $status : $http, array(
+        return new Response($http ?? $status, array(
             'Content-Type' => 'application/json; charset=utf-8',
         ), $payload);
     }
