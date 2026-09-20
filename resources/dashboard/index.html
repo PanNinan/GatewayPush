@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GatewayWorker 监控面板</title>
+<style>
+  :root {
+    --bg:        #f5f6f8;
+    --panel:     #ffffff;
+    --border:    #e3e6ea;
+    --border-st: #d0d5dc;
+    --text:      #1f2329;
+    --text-dim:  #6b7280;
+    --text-mute: #9aa1ab;
+    --accent:    #2563eb;
+    --ok:        #15803d;
+    --ok-bg:     #ecfdf3;
+    --warn:      #b45309;
+    --warn-bg:   #fffbeb;
+    --bad:       #b91c1c;
+    --bad-bg:    #fef2f2;
+    --bar-bg:    #eef0f3;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 20px 20px 48px; }
+
+  /* ---------------- 顶栏 ---------------- */
+  header {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding-bottom: 14px; border-bottom: 1px solid var(--border); margin-bottom: 18px;
+  }
+  h1 { font-size: 17px; font-weight: 600; margin: 0; letter-spacing: .2px; }
+  h1 small { font-weight: 400; color: var(--text-mute); font-size: 12px; margin-left: 8px; }
+  .spacer { flex: 1; }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 500;
+    border: 1px solid transparent; white-space: nowrap;
+  }
+  .badge .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .badge.ok   { color: var(--ok);   background: var(--ok-bg);   border-color: #bbf7d0; }
+  .badge.warn { color: var(--warn); background: var(--warn-bg); border-color: #fde68a; }
+  .badge.bad  { color: var(--bad);  background: var(--bad-bg);  border-color: #fecaca; }
+  .badge.mute { color: var(--text-dim); background: var(--bar-bg); border-color: var(--border); }
+
+  button {
+    font: inherit; font-size: 12px; padding: 5px 12px; cursor: pointer;
+    background: var(--panel); color: var(--text); border: 1px solid var(--border-st);
+    border-radius: 6px;
+  }
+  button:hover { background: #f0f2f5; }
+  button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.on:hover { background: #1d4ed8; }
+
+  /* ---------------- KPI ---------------- */
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .kpi {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .kpi .k { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
+  .kpi .v { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.3px; }
+  .kpi .v.zero { color: var(--text-mute); }
+  .kpi .sub { font-size: 11px; color: var(--text-mute); margin-top: 3px; }
+
+  /* ---------------- 区块 ---------------- */
+  section { margin-bottom: 20px; }
+  section > h2 {
+    font-size: 13px; font-weight: 600; margin: 0 0 8px;
+    color: var(--text-dim); text-transform: uppercase; letter-spacing: .6px;
+  }
+
+  table { width: 100%; border-collapse: collapse; background: var(--panel);
+          border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  th, td { padding: 7px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { font-size: 11px; font-weight: 600; color: var(--text-dim); background: #fafbfc;
+       text-transform: uppercase; letter-spacing: .5px; }
+  tr:last-child td { border-bottom: none; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .pid { font-family: ui-monospace, Consolas, "Courier New", monospace; color: var(--text-dim); }
+  .fail-nonzero { color: var(--bad); font-weight: 600; }
+
+  /* ---------------- 派生指标 ---------------- */
+  .derived { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 10px; }
+  .d-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 13px; }
+  .d-card .k { font-size: 11px; color: var(--text-dim); }
+  .d-card .v { font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .d-card .bar { height: 3px; background: var(--bar-bg); border-radius: 2px; margin-top: 7px; overflow: hidden; }
+  .d-card .bar i { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+  .d-card.warn .v { color: var(--warn); }
+  .d-card.bad  .v { color: var(--bad); }
+  .d-card.bad  .bar i { background: var(--bad); }
+  .d-card.warn .bar i { background: var(--warn); }
+
+  /* ---------------- 指标分组 ---------------- */
+  .groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(272px, 1fr)); gap: 12px; }
+  .g-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .g-card > .g-head {
+    padding: 8px 13px; font-size: 12px; font-weight: 600; color: var(--text-dim);
+    background: #fafbfc; border-bottom: 1px solid var(--border);
+  }
+  .g-card > .g-body { padding: 4px 0; }
+  .row { display: flex; align-items: baseline; gap: 10px; padding: 4px 13px; }
+  .row .name { flex: 1; color: var(--text-dim); font-size: 12px; }
+  .row .code { font-family: ui-monospace, Consolas, monospace; font-size: 10px; color: var(--text-mute); }
+  .row .val { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 62px; text-align: right; }
+  .row.is-zero .val { color: var(--text-mute); font-weight: 400; }
+  .row.is-fail .val { color: var(--bad); }
+
+  /* ---------------- 提示 ---------------- */
+  .empty { padding: 14px; color: var(--text-mute); font-size: 12px; background: var(--panel);
+           border: 1px dashed var(--border-st); border-radius: 8px; }
+  #err {
+    display: none; margin-bottom: 14px; padding: 9px 13px; border-radius: 8px;
+    background: var(--bad-bg); border: 1px solid #fecaca; color: var(--bad); font-size: 12px;
+  }
+  footer { margin-top: 26px; color: var(--text-mute); font-size: 11px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>GatewayWorker 监控面板 <small id="listen"></small></h1>
+    <span id="fresh" class="badge mute"><span class="dot"></span>等待数据</span>
+    <span class="spacer"></span>
+    <button id="btn-nonzero">只看非零</button>
+    <button id="btn-auto" class="on">自动刷新</button>
+    <button id="btn-refresh">立即刷新</button>
+  </header>
+
+  <div id="err"></div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <section>
+    <h2>派生指标</h2>
+    <div class="derived" id="derived"></div>
+  </section>
+
+  <section>
+    <h2>进程内存 · 上报周期</h2>
+    <div id="procs"></div>
+  </section>
+
+  <section>
+    <h2>定时任务</h2>
+    <div id="tasks"></div>
+  </section>
+
+  <section>
+    <h2>累计指标（当日）</h2>
+    <div class="groups" id="groups"></div>
+  </section>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* 指标中文名。未列出的指标回退为原始键名，保证新增指标不会在页面上消失。 */
+  var LABELS = {
+    conn_open: '连接建立', conn_close: '连接关闭', conn_error: '连接错误',
+    msg_in: '入站报文', msg_out: '出站报文', msg_fail: '处理失败', udp_msg_in: 'UDP 入站',
+    auth_success: '鉴权成功', auth_fail: '鉴权失败',
+    heartbeat_timeout: '心跳超时清理',
+    push_in: '推送受理', push_out: '推送投递', push_fail: '推送失败',
+    push_offline: '离线入队', push_replay: '重连补投', push_dedup: '幂等去重', push_ack: '送达回执',
+    push_topic: '主题广播次数', push_topic_targets: '广播目标数',
+    udp_out_queued: 'UDP 出站入队', udp_out: 'UDP 实际下发', udp_out_fail: 'UDP 下发失败',
+    action_in: '动作受理', action_ok: '动作成功', action_fail: '动作失败', action_timeout: '动作超时',
+    action_echo: 'echo', action_session: 'session', action_report: 'report',
+    action_subscribe: 'subscribe', action_unsubscribe: 'unsubscribe',
+    action_topics: 'topics', action_notify: 'notify',
+    rate_limit_hit: '限流命中合计', rate_limit_ip: 'IP 维度', rate_limit_conn: '连接维度',
+    rate_limit_uid: '用户维度', rate_limit_ping: '心跳维度',
+    buffer_full: '发送缓冲写满', buffer_drain: '缓冲排空',
+    conn_total: '在线连接', conn_ws: 'WebSocket', conn_udp: 'UDP'
+  };
+
+  /* 分组顺序即页面渲染顺序；失败类指标单独标注以红色突出 */
+  var GROUPS = [
+    { title: '连接',      keys: ['conn_open', 'conn_close', 'conn_error'] },
+    { title: '消息收发',  keys: ['msg_in', 'msg_out', 'msg_fail', 'udp_msg_in'] },
+    { title: '鉴权',      keys: ['auth_success', 'auth_fail'] },
+    { title: '会话心跳',  keys: ['heartbeat_timeout'] },
+    { title: '定向推送',  keys: ['push_in', 'push_out', 'push_fail', 'push_offline', 'push_replay', 'push_dedup', 'push_ack'] },
+    { title: '主题广播',  keys: ['push_topic', 'push_topic_targets'] },
+    { title: 'UDP 出站',  keys: ['udp_out_queued', 'udp_out', 'udp_out_fail'] },
+    { title: '业务动作',  keys: ['action_in', 'action_ok', 'action_fail', 'action_timeout',
+                                 'action_echo', 'action_session', 'action_report',
+                                 'action_subscribe', 'action_unsubscribe', 'action_topics', 'action_notify'] },
+    { title: '限流',      keys: ['rate_limit_hit', 'rate_limit_ip', 'rate_limit_conn',
+                                 'rate_limit_uid', 'rate_limit_ping'] },
+    { title: '发送背压',  keys: ['buffer_full', 'buffer_drain'] }
+  ];
+
+  var FAIL_KEYS = {
+    msg_fail: 1, auth_fail: 1, push_fail: 1, udp_out_fail: 1,
+    action_fail: 1, action_timeout: 1, conn_error: 1, heartbeat_timeout: 1
+  };
+
+  var last = null;
+  var onlyNonZero = false;
+  var autoTimer = null;
+  var autoOn = true;
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+
+  /* 大数字加千分位，便于一眼读数 */
+  function fmt(n) {
+    n = Number(n);
+    if (!isFinite(n)) { return '—'; }
+    return n.toLocaleString('en-US');
+  }
+
+  function num(v) {
+    var n = Number(v);
+    return isFinite(n) ? n : 0;
+  }
+
+  function bytes(b) {
+    b = num(b);
+    if (b <= 0) { return '—'; }
+    if (b < 1024) { return b + ' B'; }
+    if (b < 1048576) { return (b / 1024).toFixed(1) + ' KB'; }
+    return (b / 1048576).toFixed(1) + ' MB';
+  }
+
+  function pct(a, b) {
+    if (b <= 0) { return { v: 0, s: '—' }; }
+    var r = a / b * 100;
+    return { v: r, s: r.toFixed(r >= 10 ? 1 : 2) + '%' };
+  }
+
+  function level(p) {
+    if (p >= 20) { return 'bad'; }
+    if (p >= 5)  { return 'warn'; }
+    return '';
+  }
+
+  /* ---------------- 渲染 ---------------- */
+
+  /*
+   * 汇总各进程的存活信息。
+   * gauge 的 TTL 远长于上报周期，进程退出后其 memory_bytes / tasks 字段仍会
+   * 残留到 TTL 结束，因此必须凭 pid_at 时间戳识别幽灵进程。
+   * 缺少 pid_at 的旧版本上报（灰度期间）一律按「在线」处理，避免误判为已退出。
+   */
+  function procStates(d) {
+    var g = d.gauge || {};
+    var m = d.meta || {};
+    var now = num(m.now);
+    var ttl = num(m.ttl) || 600;
+    var map = {};
+
+    Object.keys(g).forEach(function (k) {
+      var a = /^memory_bytes:(\d+)$/.exec(k);
+      if (a) { (map[a[1]] = map[a[1]] || {}).mem = num(g[k]); }
+    });
+    Object.keys(g).forEach(function (k) {
+      var b = /^pid_at:(\d+)$/.exec(k);
+      if (b) { (map[b[1]] = map[b[1]] || {}).at = num(g[k]); }
+    });
+    Object.keys(g).forEach(function (k) {
+      var c = /^tasks:(\d+)$/.exec(k);
+      if (c) { (map[c[1]] = map[c[1]] || {}).raw = g[k]; }
+    });
+
+    return Object.keys(map).map(function (pid) {
+      var o = map[pid];
+      var known = o.at > 0;
+      var age = known ? Math.max(0, now - o.at) : null;
+      var jobs = null;
+      if (o.raw) { try { jobs = JSON.parse(o.raw); } catch (e) { jobs = null; } }
+      return {
+        pid: pid,
+        mem: o.mem || 0,
+        age: age,
+        live: !known || age <= ttl,
+        jobs: jobs
+      };
+    }).sort(function (a, b) { return b.mem - a.mem; });
+  }
+
+  function renderFresh(d) {
+    var el = $('fresh');
+    var m = d.meta || {};
+    var rt = num(d.gauge && d.gauge.report_at);
+    if (!rt) {
+      el.className = 'badge bad';
+      el.innerHTML = '<span class="dot"></span>无上报数据';
+      return 0;
+    }
+    var age = num(m.now) - rt;
+    if (age < 0) { age = 0; }
+    var cls, text;
+    if (!m.enable) {
+      cls = 'mute'; text = '指标采集已关闭';
+    } else if (age <= num(m.interval) * 2) {
+      cls = 'ok';   text = '数据新鲜 · ' + age + 's 前上报';
+    } else if (age <= num(m.ttl)) {
+      cls = 'warn'; text = '上报滞后 · ' + age + 's 前';
+    } else {
+      cls = 'bad';  text = '数据已过期 · ' + age + 's 前（TTL ' + fmt(m.ttl) + 's）';
+    }
+    el.className = 'badge ' + cls;
+    el.innerHTML = '<span class="dot"></span>' + esc(text);
+    return age;
+  }
+
+  function renderKpis(d) {
+    var g = d.gauge || {};
+    var m = d.meta || {};
+    var items = [
+      { k: '在线连接总数', v: num(g.conn_total) },
+      { k: 'WebSocket',    v: num(g.conn_ws) },
+      { k: 'UDP',          v: num(g.conn_udp) }
+    ];
+
+    var html = items.map(function (it) {
+      return '<div class="kpi"><div class="k">' + esc(it.k) + '</div>' +
+             '<div class="v' + (it.v === 0 ? ' zero' : '') + '">' + fmt(it.v) + '</div>' +
+             '<div class="sub">瞬时值</div></div>';
+    }).join('');
+
+    var c = d.counter || {};
+    html += '<div class="kpi"><div class="k">当日入站报文</div>' +
+            '<div class="v' + (num(c.msg_in) === 0 ? ' zero' : '') + '">' + fmt(num(c.msg_in)) + '</div>' +
+            '<div class="sub">累加值</div></div>';
+
+    html += '<div class="kpi"><div class="k">上报周期</div>' +
+            '<div class="v">' + fmt(m.interval) + '<span style="font-size:13px;font-weight:400;color:var(--text-dim)"> s</span></div>' +
+            '<div class="sub">gauge TTL ' + fmt(m.ttl) + ' s</div></div>';
+
+    $('kpis').innerHTML = html;
+  }
+
+  function renderDerived(d) {
+    var c = d.counter || {};
+    var defs = [
+      { k: '报文处理失败率', a: c.msg_fail,   b: c.msg_in },
+      { k: '鉴权失败率',     a: c.auth_fail,  b: num(c.auth_success) + num(c.auth_fail) },
+      { k: '推送失败率',     a: c.push_fail,  b: c.push_in },
+      { k: '动作失败率',     a: c.action_fail, b: c.action_in },
+      { k: '限流命中率',     a: c.rate_limit_hit, b: c.msg_in },
+      { k: 'UDP 下发失败率', a: c.udp_out_fail,  b: c.udp_out }
+    ];
+
+    $('derived').innerHTML = defs.map(function (x) {
+      var p = pct(num(x.a), num(x.b));
+      var lv = p.b > 0 ? level(p.v) : '';
+      var w  = Math.min(100, p.v);
+      return '<div class="d-card ' + lv + '">' +
+             '<div class="k">' + esc(x.k) + '</div>' +
+             '<div class="v">' + esc(p.s) + '</div>' +
+             '<div class="bar"><i style="width:' + w.toFixed(1) + '%"></i></div>' +
+             '<div class="k" style="margin-top:5px">' + fmt(num(x.a)) + ' / ' + fmt(num(x.b)) + '</div>' +
+             '</div>';
+    }).join('');
+  }
+
+  function renderProcs(d) {
+    var list = procStates(d);
+    if (!list.length) {
+      $('procs').innerHTML = '<div class="empty">暂无进程上报（gauge 已过期，或采集未启用）</div>';
+      return;
+    }
+
+    var live = list.filter(function (r) { return r.live; });
+    var dead = list.filter(function (r) { return !r.live; });
+    var total = live.reduce(function (s, r) { return s + r.mem; }, 0);
+
+    var html = '<table><thead><tr><th>PID</th><th class="num">内存占用</th><th class="num">上次上报</th><th>状态</th></tr></thead><tbody>';
+    live.forEach(function (r) {
+      html += '<tr><td class="pid">' + esc(r.pid) + '</td>' +
+              '<td class="num">' + bytes(r.mem) + '</td>' +
+              '<td class="num">' + (r.age === null ? '—' : r.age + 's') + '</td>' +
+              '<td>在线</td></tr>';
+    });
+    dead.forEach(function (r) {
+      html += '<tr style="color:var(--text-mute)"><td class="pid">' + esc(r.pid) + '</td>' +
+              '<td class="num">' + bytes(r.mem) + '</td>' +
+              '<td class="num">' + r.age + 's</td>' +
+              '<td>已退出</td></tr>';
+    });
+    html += '</tbody></table>';
+
+    html += '<div style="margin-top:6px;font-size:11px;color:var(--text-mute)">' +
+            live.length + ' 个进程在线 · 合计 ' + bytes(total) +
+            (dead.length ? ' · ' + dead.length + ' 个已退出进程的指标尚未过期（gauge TTL ' + fmt(num(d.meta && d.meta.ttl) || 600) + 's）' : '') +
+            '</div>';
+    $('procs').innerHTML = html;
+  }
+
+  function renderTasks(d) {
+    var list = procStates(d).filter(function (r) { return r.live && r.jobs && r.jobs.jobs; });
+
+    if (!list.length) {
+      $('tasks').innerHTML = '<div class="empty">暂无在线进程的定时任务上报。业务进程的下一次指标上报（默认 60s）后出现。</div>';
+      return;
+    }
+
+    var html = '<table><thead><tr>' +
+               '<th>PID</th><th>任务</th><th class="num">周期(s)</th><th class="num">执行次数</th>' +
+               '<th class="num">失败</th><th class="num">跳过</th><th class="num">耗时(s)</th><th>状态</th>' +
+               '</tr></thead><tbody>';
+
+    list.forEach(function (b) {
+      var jobs = b.jobs.jobs;
+      var names = Object.keys(jobs).sort();
+      if (!names.length) {
+        html += '<tr><td class="pid">' + esc(b.pid) + '</td>' +
+                '<td colspan="7" style="color:var(--text-mute)">本进程无已注册的定时任务</td></tr>';
+        return;
+      }
+      names.forEach(function (name, i) {
+        var j = jobs[name];
+        var running = j.running ? '<span style="color:var(--warn)">执行中</span>' : '正常';
+        var fc = num(j.fail) > 0 ? 'fail-nonzero' : '';
+        var sc = num(j.skip) > 0 ? 'fail-nonzero' : '';
+        html += '<tr>' +
+                (i === 0 ? '<td class="pid" rowspan="' + names.length + '">' + esc(b.pid) + '</td>' : '') +
+                '<td>' + esc(name) + '</td>' +
+                '<td class="num">' + esc(j.interval) + '</td>' +
+                '<td class="num">' + fmt(j.count) + '</td>' +
+                '<td class="num ' + fc + '">' + fmt(j.fail) + '</td>' +
+                '<td class="num ' + sc + '">' + fmt(j.skip) + '</td>' +
+                '<td class="num">' + esc(j.last_cost) + '</td>' +
+                '<td>' + running + '</td>' +
+                '</tr>';
+      });
+    });
+
+    html += '</tbody></table>';
+    $('tasks').innerHTML = html;
+  }
+
+  function renderGroups(d) {
+    var c = d.counter || {};
+    var seen = {};
+    var html = '';
+
+    GROUPS.forEach(function (grp) {
+      seen[grp.title] = 1;
+      var rows = grp.keys.map(function (key) {
+        var v = num(c[key]);
+        seen[key] = 1;
+        var cls = 'row' + (v === 0 ? ' is-zero' : '') + (FAIL_KEYS[key] && v > 0 ? ' is-fail' : '');
+        return { html: '<div class="' + cls + '">' +
+                       '<span class="name">' + esc(LABELS[key] || key) +
+                       ' <span class="code">' + esc(key) + '</span></span>' +
+                       '<span class="val">' + fmt(v) + '</span></div>', v: v };
+      });
+      var nonZero = rows.filter(function (r) { return r.v !== 0; }).length;
+      if (onlyNonZero && nonZero === 0) { return; }
+      html += '<div class="g-card"><div class="g-head">' + esc(grp.title) +
+              ' <span style="font-weight:400;color:var(--text-mute)">' + nonZero + '/' + rows.length + '</span></div>' +
+              '<div class="g-body">' + rows.map(function (r) { return r.html; }).join('') + '</div></div>';
+    });
+
+    /* 兜底：config 里新增但页面未归类的指标，仍要显示，避免静默丢失 */
+    var rest = Object.keys(c).filter(function (k) { return !seen[k]; }).sort();
+    if (rest.length) {
+      var rows2 = rest.map(function (k) {
+        var v = num(c[k]);
+        return '<div class="row' + (v === 0 ? ' is-zero' : '') + '">' +
+               '<span class="name">' + esc(LABELS[k] || k) + ' <span class="code">' + esc(k) + '</span></span>' +
+               '<span class="val">' + fmt(v) + '</span></div>';
+      }).join('');
+      if (!onlyNonZero || rest.some(function (k) { return num(c[k]) !== 0; })) {
+        html += '<div class="g-card"><div class="g-head">未归类指标</div><div class="g-body">' + rows2 + '</div></div>';
+      }
+    }
+
+    if (!html) {
+      html = '<div class="empty">当日暂无累计指标（counter 键尚未写入，或已过 7 天保留期）</div>';
+    }
+    $('groups').innerHTML = html;
+  }
+
+  /* ---------------- 数据拉取 ---------------- */
+
+  function refresh() {
+    fetch('metrics.json?_=' + Date.now(), { cache: 'no-store' })
+      .then(function (r) {
+        if (!r.ok) { throw new Error('HTTP ' + r.status); }
+        return r.json();
+      })
+      .then(function (body) {
+        if (!body || body.code !== 0 || !body.data) {
+          throw new Error((body && body.msg) || '响应格式异常');
+        }
+        var d = body.data;
+        last = d;
+        $('err').style.display = 'none';
+
+        var age = renderFresh(d);
+        renderKpis(d);
+        renderDerived(d);
+        renderProcs(d);
+        renderTasks(d);
+        renderGroups(d);
+
+        $('foot').textContent =
+          '数据源 Redis ' + (d.meta && d.meta.enable ? 'metrics:gauge + metrics:counter' : '(采集已关闭)') +
+          ' · 页面拉取于 ' + new Date().toLocaleTimeString('zh-CN') +
+          (age ? ' · 服务端上报距今 ' + age + 's' : '');
+      })
+      .catch(function (e) {
+        $('err').style.display = 'block';
+        $('err').textContent = '拉取指标失败：' + e.message + '（页面保留上一次成功的数据）';
+      });
+  }
+
+  function setAuto(on) {
+    autoOn = on;
+    $('btn-auto').className = on ? 'on' : '';
+    if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+    if (!on) { return; }
+    var iv = ((last && last.meta && last.meta.refresh) || 5) * 1000;
+    if (iv < 1000) { iv = 5000; }
+    autoTimer = setInterval(refresh, iv);
+  }
+
+  $('btn-refresh').addEventListener('click', refresh);
+  $('btn-auto').addEventListener('click', function () { setAuto(!autoOn); });
+  $('btn-nonzero').addEventListener('click', function () {
+    onlyNonZero = !onlyNonZero;
+    this.className = onlyNonZero ? 'on' : '';
+    if (last) { renderGroups(last); }
+  });
+
+  refresh();
+  setAuto(true);
+})();
+</script>
+</body>
+</html>

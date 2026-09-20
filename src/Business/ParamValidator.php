@@ -36,7 +36,7 @@ class ParamValidator
      *
      * @var array
      */
-    protected static $types = array('string', 'int', 'float', 'bool', 'array', 'json');
+    protected static array $types = array('string', 'int', 'float', 'bool', 'array', 'json');
 
     /**
      * 校验并归一化参数

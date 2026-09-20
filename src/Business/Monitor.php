@@ -130,6 +130,13 @@ class Monitor
         $gaugeKey = self::KEY_GAUGE;
 
         RedisClient::hSet($gaugeKey, 'memory_bytes:' . $pid, Logger::memoryUsage());
+
+        // 进程元信息：pid_at 用于判定进程存活（gauge TTL 远长于上报周期，
+        // 进程退出后其字段仍会残留，面板必须靠时间戳识别幽灵进程）；
+        // tasks 为定时任务健康度 —— 纯进程内状态，跨进程读不到，必须随指标落库。
+        // 二者按 PID 独立成字段（与 memory_bytes:{pid} 同一命名风格），多 worker 不会互相覆盖。
+        self::flushProcessMeta($gaugeKey, $pid);
+
         RedisClient::hSet($gaugeKey, 'report_at', time());
         RedisClient::expire($gaugeKey, $ttl);
 
@@ -211,6 +218,34 @@ class Monitor
             RedisClient::hIncrBy($key, $metric, $value);
         }
         RedisClient::expire($key, self::COUNTER_KEEP_DAYS * 86400);
+    }
+
+    /**
+     * 上报本进程的元信息（存活时间戳 + 定时任务健康度）
+     *
+     * Task::$jobs 是纯进程内状态，跨进程无法读取。面板进程要展示「定时任务
+     * 是否卡住」就必须依赖这里的落库。
+     *
+     * 两个字段都按 PID 独立存放（与 memory_bytes:{pid} 同一命名风格）：
+     * 一是多 worker 各写各的、不会互相覆盖；二是进程退出后其字段仍会随 gauge
+     * 存活到 TTL 结束，调用方需凭 pid_at 判断该 PID 是否仍在线。
+     *
+     * @param string $gaugeKey
+     * @param int    $pid
+     * @return void
+     */
+    protected static function flushProcessMeta($gaugeKey, $pid)
+    {
+        RedisClient::hSet($gaugeKey, 'pid_at:' . $pid, time());
+
+        $payload = json_encode(array(
+            'worker_id' => Task::workerId(),
+            'jobs'      => Task::stats(),
+        ), JSON_UNESCAPED_UNICODE);
+
+        if ($payload !== false) {
+            RedisClient::hSet($gaugeKey, 'tasks:' . $pid, $payload);
+        }
     }
 
     /**

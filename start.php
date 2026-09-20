@@ -77,7 +77,7 @@ if (isset($_SERVER['argv'])) {
     $_SERVER['argv'] = $cleanArgv;
 }
 
-$validRoles = array('all', 'register', 'gateway', 'udp', 'business', 'api');
+$validRoles = array('all', 'register', 'gateway', 'udp', 'business', 'api', 'dashboard');
 if (!in_array($role, $validRoles, true)) {
     fwrite(STDERR, '[FATAL] 非法启动角色：' . $role . '，可选值：' . implode(' / ', $validRoles) . "\n");
     exit(1);
@@ -199,6 +199,7 @@ if (DIRECTORY_SEPARATOR !== '/' && $role === 'all') {
 GatewayPush\Gateway\Bootstrap::init($gatewayConfig, $appConfig);
 GatewayPush\Business\Bootstrap::init($businessConfig, $appConfig, $gatewayConfig, $actionConfig);
 GatewayPush\Api\Bootstrap::init($appConfig, $businessConfig);
+GatewayPush\Dashboard\Bootstrap::init($appConfig);
 
 Worker::runAll();
 
@@ -792,17 +793,19 @@ function usageText()
     $text[]  = '  push <uid|device|client> <target> [payload-json] [msg_id] [offline_mode]';
     $text[]  = '                提交一条定向推送任务（只入队，由业务进程消费后投递）';
     $text[]  = '';
-    $text[]  = '角色（--role）：all / register / gateway / udp / business / api';
+    $text[]  = '角色（--role）：all / register / gateway / udp / business / api / dashboard';
+    $text[]  = '  dashboard 为只读监控面板，默认监听 ' . Env::str('DASHBOARD_LISTEN', 'http://127.0.0.1:8291');
     $text[]  = '';
     if ($isLinux) {
         $text[] = 'Linux 单机部署：php start.php start -d';
     } else {
-        $text[] = 'Windows 开发环境需按角色分别启动（5 个终端）：';
+        $text[] = 'Windows 开发环境需按角色分别启动（6 个终端）：';
         $text[] = '  php start.php start --role=register';
         $text[] = '  php start.php start --role=gateway';
         $text[] = '  php start.php start --role=udp';
         $text[] = '  php start.php start --role=business';
         $text[] = '  php start.php start --role=api';
+        $text[] = '  php start.php start --role=dashboard   # 可选的监控面板';
     }
     $text[] = '';
     return implode("\n", $text) . "\n";
