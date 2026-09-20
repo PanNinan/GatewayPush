@@ -111,9 +111,12 @@ class Monitor
     /**
      * 上报指标（定时任务调用）
      *
+     * @param bool $withOnline 是否采集在线连接数。
+     *                         UDP 网关进程仅有连接数以外的指标（出站收发），
+     *                         且进程内无 Session/业务上下文，故传 false 跳过。
      * @return void
      */
-    public static function report()
+    public static function report($withOnline = true)
     {
         if (empty(self::$config['enable'])) {
             return;
@@ -129,6 +132,10 @@ class Monitor
         RedisClient::hSet($gaugeKey, 'memory_bytes:' . $pid, Logger::memoryUsage());
         RedisClient::hSet($gaugeKey, 'report_at', time());
         RedisClient::expire($gaugeKey, $ttl);
+
+        if (!$withOnline) {
+            return;
+        }
 
         // 在线连接数仅在 worker 0 采集，避免多进程重复写入
         if (Task::workerId() !== 0) {

@@ -53,6 +53,11 @@ return [
      |
      | UDP 无连接，采用应用层会话识别（报文内 device_id + token）
      | 网关进程仅做协议解析与签名校验，业务处理经 Redis 队列解耦投递
+     |
+     | queue     入站：客户端 -> 网关 -> 业务进程
+     | out_queue 出站：业务进程 -> 网关 -> 客户端（定向推送）
+     |   UDP 的 client_id 形如 udp:ip:port，不在 Gateway 连接表内，
+     |   sendToClient 对其无效，因此出站必须由网关进程直接 sendto。
      --------------------------------------------------------------- */
     'udp' => [
         'enable'          => Env::bool('UDP_ENABLE', true),
@@ -64,6 +69,12 @@ return [
             'enable'  => Env::bool('UDP_QUEUE_ENABLE', true),
             'key'     => Env::str('UDP_QUEUE_KEY', 'queue:udp:in'),
             'max_len' => Env::int('UDP_QUEUE_MAX_LEN', 10000),   // 队列长度上限，溢出丢弃并告警
+        ],
+        'out_queue'       => [
+            'enable'   => Env::bool('UDP_OUT_QUEUE_ENABLE', true),
+            'key'      => Env::str('UDP_OUT_QUEUE_KEY', 'queue:udp:out'),
+            'batch'    => Env::int('UDP_OUT_QUEUE_BATCH', 200),      // 单次原子弹出条数
+            'interval' => Env::float('UDP_OUT_QUEUE_INTERVAL', 0.05), // 出站消费周期（秒）
         ],
     ],
 

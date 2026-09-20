@@ -124,6 +124,39 @@ return [
     ],
 
     /* ---------------------------------------------------------------
+     | 单对一定向推送（文档 4.3 的推送侧实现）
+     |
+     | offline_mode = drop  : 目标不在线时直接丢弃，仅计指标
+     | offline_mode = queue : 写入 push:offline:{uid} 列表，设备重连后投递
+     --------------------------------------------------------------- */
+    'push' => [
+        'enable'          => Env::bool('PUSH_ENABLE', true),
+        'offline_mode'    => Env::str('PUSH_OFFLINE_MODE', 'queue'),   // drop | queue
+        'offline_ttl'     => Env::int('PUSH_OFFLINE_TTL', 86400),      // 离线消息保留时长（秒）
+        'offline_max'     => Env::int('PUSH_OFFLINE_MAX', 100),        // 单用户离线消息条数上限
+        'replay_batch'    => Env::int('PUSH_REPLAY_BATCH', 50),        // 重连补投单批条数
+        'idempotent'      => Env::bool('PUSH_IDEMPOTENT', true),       // 按 msg_id 去重
+        'idempotent_ttl'  => Env::int('PUSH_IDEMPOTENT_TTL', 600),     // 去重窗口（秒）
+        'payload_max'     => Env::int('PUSH_PAYLOAD_MAX', 4096),       // 单条业务数据体上限（字节）
+    ],
+
+    /* ---------------------------------------------------------------
+     | HTTP 推送接口（独立进程，仅受理推送入队）
+     |
+     | 鉴权：HMAC-SHA256(timestamp|rawBody, api.secret)，时间戳用于防重放
+     | 权限分离：API 进程只写队列，不直接持有 Gateway 连接与业务密钥
+     --------------------------------------------------------------- */
+    'api' => [
+        'enable'    => Env::bool('API_ENABLE', true),
+        'listen'    => Env::str('API_LISTEN', 'http://127.0.0.1:8290'),
+        'name'      => 'GW-API',                                 // 进程名，结构性
+        'secret'    => Env::str('API_SECRET', ''),
+        'sign_ttl'  => Env::int('API_SIGN_TTL', 300),            // 请求时间戳有效窗口（秒）
+        'rate'      => Env::int('API_RATE_LIMIT', 600),          // 单 IP 每分钟请求上限，0 = 不限
+        'body_max'  => Env::int('API_BODY_MAX', 65536),          // 请求体上限（字节）
+    ],
+
+    /* ---------------------------------------------------------------
      | 监控指标
      --------------------------------------------------------------- */
     'monitor' => [
@@ -138,6 +171,8 @@ return [
             'msg_in', 'msg_out', 'msg_fail',
             'auth_success', 'auth_fail',
             'heartbeat_timeout', 'memory_bytes',
+            'push_in', 'push_out', 'push_fail', 'push_offline', 'push_replay', 'push_dedup', 'push_ack',
+            'udp_out_queued', 'udp_out', 'udp_out_fail',
         ],
     ],
 ];

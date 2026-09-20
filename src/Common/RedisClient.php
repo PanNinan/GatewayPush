@@ -21,6 +21,22 @@ use Workerman\Redis\Client;
 class RedisClient
 {
     /**
+     * Lua：原子批量弹出队列元素
+     *
+     * KEYS[1] = 队列键，ARGV[1] = 单批最大条数
+     */
+    const LUA_POP_BATCH = "local items = redis.call('LRANGE', KEYS[1], 0, tonumber(ARGV[1]) - 1) "
+        . "if #items > 0 then redis.call('LTRIM', KEYS[1], #items, -1) end return items";
+
+    /**
+     * Lua：SET key value EX ttl NX
+     *
+     * KEYS[1] = 键，ARGV[1] = 值，ARGV[2] = TTL 秒
+     */
+    const LUA_SET_NX_EX = "local ok = redis.call('SET', KEYS[1], ARGV[1], 'EX', tonumber(ARGV[2]), 'NX') "
+        . "if ok then return 1 end return 0";
+
+    /**
      * 连接配置
      *
      * @var array
@@ -56,6 +72,15 @@ class RedisClient
      * @var bool
      */
     protected static $inited = false;
+
+    /**
+     * 连接预设结果（spl_object_id => bool）
+     *
+     * 标记哪些连接已完成 DB / AUTH 预设，用于跳过连接回调中的兜底逻辑。
+     *
+     * @var array
+     */
+    protected static $primed = array();
 
     /**
      * 初始化连接配置
@@ -125,7 +150,17 @@ class RedisClient
                 ));
                 return;
             }
-            Logger::info('Redis 连接成功', array('pool' => $index, 'address' => $address));
+            Logger::info('Redis 连接成功', array(
+                'pool'     => $index,
+                'address'  => $address,
+                'database' => (int)self::$config['database'],
+            ));
+
+            // 兜底路径：正常情况已由 primeConnection() 预设属性、由客户端自动补发完成；
+            // 仅当反射预设失败时才需要在这里显式下发（此时首批命令可能已落错库，属已知降级）
+            if (!empty(self::$primed[spl_object_id($client)])) {
+                return;
+            }
 
             $password = (string)self::$config['password'];
             if ($password !== '') {
@@ -143,7 +178,65 @@ class RedisClient
             }
         });
 
+        // 必须在任何业务命令入队前完成，原因见 primeConnection()
+        self::primeConnection($client);
+
         return $client;
+    }
+
+    /**
+     * 预设连接的 DB / 认证信息（关键修复，勿删）
+     *
+     * 背景：
+     *   workerman/redis 的 Client 内部维护 $_db / $_auth，并在**每次连接建立时**
+     *   把 [['SELECT', $_db]] / [['AUTH', $_auth]] 插入命令队列首位（Client::connect 中）。
+     *   但 select() / auth() 是在**命令响应返回后**才通过 format 回调写入这两个属性的，
+     *   而 onConnect 的执行顺序是「先 process() 发送队列，再回调用户 callback」。
+     *
+     *   后果：若首个业务命令与连接建立落在同一事件循环周期（连接池懒加载时必然如此），
+     *   该命令会先于 SELECT 发出，静默落到默认 DB 0。实测复现：
+     *   Push::enqueue 的首条 RPUSH 写入 DB 0，而消费端读 DB 9，队列恒为空。
+     *
+     *   解决：构造完成后立即用反射预设属性，使自动补发机制在连接建立时就
+     *   把 SELECT / AUTH 排到队首，从根源消除竞态。
+     *
+     * @param Client $client
+     * @return void
+     */
+    protected static function primeConnection(Client $client)
+    {
+        $database = (int)self::$config['database'];
+        $password = (string)self::$config['password'];
+
+        self::$primed[spl_object_id($client)] = false;
+
+        if ($database <= 0 && $password === '') {
+            // 使用默认 DB 且无密码，无需预设
+            self::$primed[spl_object_id($client)] = true;
+            return;
+        }
+
+        try {
+            $ref = new \ReflectionObject($client);
+
+            if ($database > 0 && $ref->hasProperty('_db')) {
+                $prop = $ref->getProperty('_db');
+                $prop->setAccessible(true);
+                $prop->setValue($client, $database);
+            }
+
+            if ($password !== '' && $ref->hasProperty('_auth')) {
+                $prop = $ref->getProperty('_auth');
+                $prop->setAccessible(true);
+                $prop->setValue($client, $password);
+            }
+
+            self::$primed[spl_object_id($client)] = true;
+        } catch (\Throwable $e) {
+            Logger::warn('Redis 连接预设失败，DB / AUTH 可能延迟生效', array(
+                'error' => $e->getMessage(),
+            ));
+        }
     }
 
     /**
@@ -352,6 +445,28 @@ class RedisClient
         );
     }
 
+    /**
+     * 仅保留列表末尾 N 条（超限裁剪）
+     *
+     * 等价于 LTRIM key -N -1，用于离线消息等有上限的队列。
+     *
+     * @param string        $key
+     * @param int           $keep
+     * @param callable|null $cb
+     * @return mixed
+     */
+    public static function lTrimKeepLast($key, $keep, callable $cb = null)
+    {
+        $keep = max(1, (int)$keep);
+
+        return self::connection()->lTrim(
+            self::key($key),
+            -$keep,
+            -1,
+            self::wrap('LTRIM', $cb, $key)
+        );
+    }
+
     /* ---------------------------------------------------------------------
      | Set（在线集合使用）
      --------------------------------------------------------------------- */
@@ -396,20 +511,100 @@ class RedisClient
      --------------------------------------------------------------------- */
 
     /**
+     * 原子批量弹出队列元素（Lua 实现）
+     *
+     * 用途：UDP 入站队列 / 推送队列的多进程消费。
+     * lRange + lTrim 两步操作之间存在非原子窗口，多进程并发消费会重复处理同一批
+     * 元素；Lua 脚本在 Redis 单线程内一次执行完毕，取批与裁剪不可分割。
+     *
+     * @param string        $key
+     * @param int           $batch 单次最大弹出条数
+     * @param callable|null $cb    function(array $items)
+     * @return mixed
+     */
+    public static function popBatch($key, $batch = 100, callable $cb = null)
+    {
+        $batch   = max(1, (int)$batch);
+        $fullKey = self::key($key);
+
+        return self::eval(
+            self::LUA_POP_BATCH,
+            array($fullKey, $batch),
+            1,
+            function ($result, $client = null) use ($key, $cb) {
+                if ($client && method_exists($client, 'error') && $client->error() !== '') {
+                    Logger::error('Redis 批量弹出失败', array('key' => $key, 'error' => $client->error()));
+                    $result = array();
+                }
+                $items = is_array($result) ? $result : array();
+                if ($cb) {
+                    call_user_func($cb, $items);
+                }
+                return $items;
+            }
+        );
+    }
+
+    /**
+     * 原子写入「不存在的键」（幂等控制用）
+     *
+     * 等价于 SET key value EX ttl NX，返回 1 表示首次写入成功。
+     *
+     * @param string        $key
+     * @param string        $value
+     * @param int           $ttl
+     * @param callable|null $cb function(bool $first)
+     * @return mixed
+     */
+    public static function setNxEx($key, $value, $ttl = 0, callable $cb = null)
+    {
+        $ttl     = max(1, (int)$ttl);
+        $fullKey = self::key($key);
+
+        return self::eval(
+            self::LUA_SET_NX_EX,
+            array($fullKey, (string)$value, (string)$ttl),
+            1,
+            function ($result, $client = null) use ($key, $cb) {
+                if ($client && method_exists($client, 'error') && $client->error() !== '') {
+                    Logger::error('Redis SETNX 执行失败', array('key' => $key, 'error' => $client->error()));
+                    $result = 0;
+                }
+                $first = (int)$result === 1;
+                if ($cb) {
+                    call_user_func($cb, $first);
+                }
+                return $first;
+            }
+        );
+    }
+
+    /**
      * 执行 Lua 脚本（用于需要原子性的复合操作）
      *
+     * 参数拼接说明（实测结论，勿随意调整）：
+     *   Redis 语法为 EVAL script numkeys key [key ...] [arg [arg ...]]，
+     *   即 numkeys 必须紧跟在 script 之后。
+     *   而 workerman/redis 的魔术方法只会把入参数组**展平一层**
+     *   （见 Protocols\Redis::encode），因此本方法把 numkeys 与 KEYS/ARGV
+     *   合并为单个数组传入，最终拼出正确的命令序列。
+     *
+     *   错误写法：connection()->eval($script, $args, $numKeys, $cb)
+     *              -> 得到 EVAL script key arg numkeys（numkeys 位置错误，Redis 报错）
+     *
      * @param string        $script
-     * @param array         $args    KEYS + ARGV 顺序拼接
+     * @param array         $args    KEYS + ARGV 顺序拼接（key 需已带全局前缀）
      * @param int           $numKeys KEYS 个数
-     * @param callable|null $cb
+     * @param callable|null $cb      function(mixed $result, Client $client = null)
      * @return mixed
      */
     public static function eval($script, array $args = array(), $numKeys = 0, callable $cb = null)
     {
+        $flat = array_merge(array((int)$numKeys), array_values($args));
+
         return self::connection()->eval(
-            $script,
-            $args,
-            (int)$numKeys,
+            (string)$script,
+            $flat,
             self::wrap('EVAL', $cb)
         );
     }
@@ -451,5 +646,6 @@ class RedisClient
         }
         self::$pool   = array();
         self::$cursor = 0;
+        self::$primed = array();
     }
 }

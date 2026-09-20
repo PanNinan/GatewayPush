@@ -61,9 +61,10 @@ class Bootstrap
      *
      * @param array $businessConfig config/business.php
      * @param array $appConfig      config/app.php
+     * @param array $gatewayConfig  config/gateway.php（仅取 UDP 出站队列配置）
      * @return void
      */
-    public static function init(array $businessConfig, array $appConfig)
+    public static function init(array $businessConfig, array $appConfig, array $gatewayConfig = array())
     {
         if (!self::roleEnabled('business')) {
             return;
@@ -75,6 +76,13 @@ class Bootstrap
         Auth::init($appConfig['auth']);
         Session::init($appConfig['session']);
         Monitor::init($appConfig['monitor']);
+
+        // UDP 出站队列 key 与网关进程同源（gateway.udp.out_queue），避免两套真源
+        Push::init(
+            $appConfig['push'],
+            $businessConfig['push_queue'],
+            isset($gatewayConfig['udp']['out_queue']) ? $gatewayConfig['udp']['out_queue'] : array()
+        );
 
         $conf   = $businessConfig['worker'];
         $worker = new BusinessWorker();
@@ -210,6 +218,10 @@ class Bootstrap
 
             case Message::CMD_DATA:
                 self::handleData($clientId, $packet);
+                break;
+
+            case Message::CMD_ACK:
+                self::handleClientAck($clientId, $packet);
                 break;
 
             default:
@@ -402,6 +414,18 @@ class Bootstrap
             self::markAuthed($clientId);
             Monitor::incr('auth_success');
 
+            // 绑定 Gateway 原生 uid 路由，使 sendToUid 可用（跨进程由 Register 转发）。
+            // UDP 的 client_id 不在 Gateway 连接表内，无法参与该映射，故仅 WebSocket 绑定；
+            // 连接关闭时 Gateway 会自行清理 uid 路由表（见 Gateway::onClientClose），
+            // 业务侧无需重复调用 unbindUid。
+            if ($protocol === Session::PROTOCOL_WS) {
+                try {
+                    GatewayClient::bindUid($clientId, $uid);
+                } catch (\Throwable $e) {
+                    Logger::exception($e, 'business.bind_uid:' . $clientId);
+                }
+            }
+
             self::send($clientId, Message::ack($packet['seq'], array(
                 'uid'         => $uid,
                 'device_id'   => $deviceId,
@@ -416,6 +440,17 @@ class Bootstrap
                 'protocol'    => $protocol,
                 'reconnected' => $reconnected ? 1 : 0,
             ));
+
+            // 断线期间缓存的离线消息在鉴权成功后补投（至少一次语义）
+            Push::replayOffline($uid, $clientId, function ($count) use ($uid, $clientId) {
+                if ($count > 0) {
+                    Logger::info('离线消息已补投', array(
+                        'uid'       => $uid,
+                        'client_id' => $clientId,
+                        'count'     => $count,
+                    ));
+                }
+            });
         });
     }
 
@@ -435,10 +470,34 @@ class Bootstrap
     }
 
     /**
+     * 处理客户端回执（对 push 下行报文的确认）
+     *
+     * 推送采用「至少一次」语义，客户端回执仅用于观测投递质量；
+     * 报文中的 seq 即服务端下发的 msg_id，可直接与推送日志对齐排查。
+     *
+     * @param string $clientId
+     * @param array  $packet
+     * @return void
+     */
+    protected static function handleClientAck($clientId, array $packet)
+    {
+        $data  = $packet['data'];
+        $msgId = isset($data['msg_id']) ? (string)$data['msg_id'] : (string)$packet['seq'];
+
+        Monitor::incr('push_ack');
+
+        Logger::debug('收到客户端回执', array(
+            'client_id' => $clientId,
+            'msg_id'    => $msgId,
+            'ref'       => isset($packet['ref']) ? (string)$packet['ref'] : '',
+        ));
+    }
+
+    /**
      * 处理业务数据指令
      *
-     * P0 阶段仅完成链路验证与心跳刷新，不承载具体业务。
-     * P1 扩展点：在此接入单对一定向推送、业务数据落库等逻辑。
+     * P0/P1 阶段仅完成链路验证与心跳刷新，不承载具体业务。
+     * 扩展点：在此接入业务数据落库、按规则回推（Push::direct）等逻辑。
      *
      * @param string $clientId
      * @param array  $packet
@@ -446,7 +505,7 @@ class Bootstrap
      */
     protected static function handleData($clientId, array $packet)
     {
-        Logger::debug('收到业务数据（P0 阶段不做处理）', array(
+        Logger::debug('收到业务数据（暂不做业务处理）', array(
             'client_id' => $clientId,
             'seq'       => $packet['seq'],
             'keys'      => array_keys($packet['data']),
@@ -461,9 +520,9 @@ class Bootstrap
     /**
      * 消费 UDP 网关投递的业务队列
      *
-     * 权衡说明：当前实现为 lRange + lTrim 两步操作，二者之间非原子，
-     * 多进程并发消费会出现重复处理窗口。P0 阶段该任务 scope=first（仅在 worker 0 运行），
-     * 集群扩容阶段将改造为 Lua 原子取批或 BRPOP 模式。
+     * 采用 Lua 原子取批（LRANGE + LTRIM 在脚本内一次完成）：
+     * 早期用 lRange + lTrim 两步实现，二者之间的非原子窗口会让多进程并发消费
+     * 重复处理同一批元素。改用原子取批后，该任务可安全地扩展到多 worker 消费。
      *
      * @return void
      */
@@ -476,22 +535,33 @@ class Bootstrap
 
         $batch = max(1, (int)$conf['batch']);
 
-        RedisClient::lRange($conf['key'], 0, $batch - 1, function ($items) use ($conf) {
-            if (!is_array($items) || !$items) {
-                return;
-            }
-
-            RedisClient::lTrim($conf['key'], count($items), -1, function () use ($items) {
-                foreach ($items as $raw) {
-                    try {
-                        self::handleUdpJob($raw);
-                    } catch (\Throwable $e) {
-                        Monitor::incr('msg_fail');
-                        Logger::exception($e, 'business.udp_job');
-                    }
+        RedisClient::popBatch($conf['key'], $batch, function ($items) {
+            foreach ($items as $raw) {
+                try {
+                    self::handleUdpJob($raw);
+                } catch (\Throwable $e) {
+                    Monitor::incr('msg_fail');
+                    Logger::exception($e, 'business.udp_job');
                 }
-            });
+            }
         });
+    }
+
+    /**
+     * 消费定向推送队列（定时任务）
+     *
+     * 所有推送触发入口（HTTP 接口 / 外部系统直接写队列 / 运维命令）最终都汇聚到这里，
+     * 由 Push::dispatch 统一完成目标解析、通道选择、幂等与离线缓存。
+     *
+     * @return void
+     */
+    public static function consumePushQueue()
+    {
+        try {
+            Push::consumeQueue();
+        } catch (\Throwable $e) {
+            Logger::exception($e, 'business.push_queue');
+        }
     }
 
     /**
