@@ -709,7 +709,7 @@ composer test:e2e       # php tests/e2e_check.php
 | `AUTH_TOKEN_TTL` | `7200` | Token 默认有效期（秒） |
 | `AUTH_CLOCK_SKEW` | `300` | 允许时钟偏移（秒），同时用于报文时间戳校验 |
 | `AUTH_BIND_DEVICE` | `true` | 校验 `uid ↔ device_id` 绑定（首个绑定者胜出） |
-| `AUTH_FAIL_CLOSE` | `true` | 鉴权失败立即断开连接 |
+| `AUTH_FAIL_CLOSE` | `true` | 鉴权失败立即断开连接（先下发 4003 报文，`CLOSE_DELAY`=0.1s 后再断开，见 9.2） |
 | `AUTH_TIMEOUT` | `15` | 建连后 N 秒未鉴权则断开 |
 
 #### 会话
@@ -1106,7 +1106,7 @@ BusinessWorker                                   Gateway(GW-WS)          客户�
 | 指令回执（`ack` / `pong` / `error`） | `Gateway::sendToClient` | 精确到连接 |
 | 业务动作回执 | `ActionContext::reply()` → `sender` → `Bootstrap::respond()` | 由动作执行器统一构造 |
 | 定向推送（WS 目标） | `Gateway::sendToClient`（`via=session`）或 `Gateway::sendToUid`（`via=native`） | 见 9.6 |
-| 主动断开 | `Gateway::closeClient($clientId, $errPacket)` | **错误报文作为附带消息一并下发**，避免 `send` + `close` 两步走的时序风险 |
+| 主动断开 | 先 `Gateway::sendToClient($errPacket)`，延迟 `Bootstrap::CLOSE_DELAY`（0.1s）后再 `Gateway::closeClient($clientId)` | **刻意不用 close 的「附带消息」通道** —— workerman 5.x 的 `TcpConnection::close()` 在 `send()` 之后若发送缓冲为空会立即 `destroy()` → `fclose()`，实测 30 轮命中 6 轮以 **RST** 收场，已写入的报文被一并丢弃（客户端读到 0 字节）。拆成两步后由 TCP 顺序性保证「报文先到、FIN 后到」 |
 
 ### 9.3 UDP 上行链路（客户端 → 服务端 → 业务进程）
 
@@ -1723,12 +1723,19 @@ php tests/e2e_check.php <uid> [device_id] [timeout]
 | **每轮必须换全新 uid**（如 `e2e-uid-0001` / `0002` 递增） | UDP 无断连事件，会话只靠心跳超时回收；上一轮遗留会话会被判定为在线，导致用例 K（离线补投）**确定性失败** |
 | **必须独占运行** | 与浏览器压测/截图等并行会引入干扰，产生假失败 |
 
-**两条既有缺陷（非本次引入，已知未修）**：
+**一条既有缺陷（非本次引入，仍未修）**：
 
 | 缺陷 | 现象 | 根因 | 规避 |
 |---|---|---|---|
-| B 用例偶发失败 | 「连接已关闭但未收到越权拦截提示」 | `AUTH_FAIL_CLOSE=true` 时 `reject()` 走 `closeClient()`，`4003` 以 **close 帧**下发；workerman `Ws::input()` 的 `case 0x8` 在未注册 `onWebSocketClose` 时只触发 `onClose`、不触发 `onMessage`。**影响面不止测试** —— SDK 调用方同样无法从 `onMessage` 观测该错误 | 属既有行为，关注日志而非客户端回调 |
 | UDP 会话跨轮次污染 | 固定 uid 多轮运行 → 用例 K 确定性失败 | 见上方「铁律」 | 每轮换 uid |
+
+**已修复（2026-09-20）**：B 用例曾偶发失败（「连接已关闭但未收到越权拦截提示」）。
+根因不是 close 帧语义，而是 `AUTH_FAIL_CLOSE=true` 时把 4003 交给
+`Gateway::closeClient($id, $message)` 的「附带消息」通道 —— workerman 5.x 的
+`TcpConnection::close()` 在 `send()` 之后若发送缓冲为空会立即 `destroy()` → `fclose()`，
+实测 30 轮裸 socket 探针命中 6 轮以 **RST** 收场，已写入的报文被一并丢弃，客户端读到
+0 字节。修法：先独立下发报文、延迟 `Bootstrap::CLOSE_DELAY`（0.1s）再关闭，靠 TCP 的
+顺序性保证送达；修复后同样探针 60 轮 100% 送达，e2e 连续 3 轮全绿。详见 9.2 的「主动断开」。
 
 ### 13.5 单元测试
 

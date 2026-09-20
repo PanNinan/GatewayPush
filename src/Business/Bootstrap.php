@@ -64,6 +64,22 @@ class Bootstrap
      */
     protected static $routesRegistered = false;
 
+    /**
+     * 已调度「延迟关闭」的连接（防止同一连接重复触发）
+     *
+     * @var array
+     */
+    protected static $closingClients = array();
+
+    /**
+     * 下发错误报文后延迟关闭连接的间隔（秒）
+     *
+     * 取值权衡：取 0 等于不延迟，RST 竞态依旧；取值过大则会延长鉴权失败、
+     * 限流超限场景下连接的占用时间。本机实测报文下发在 10ms 内完成，
+     * 100ms 留出一个数量级的余量。
+     */
+    const CLOSE_DELAY = 0.1;
+
     /* ---------------------------------------------------------------------
      | 初始化
      --------------------------------------------------------------------- */
@@ -355,7 +371,13 @@ class Bootstrap
         }
 
         if (RateLimiter::shouldClose()) {
-            self::closeClient($clientId, Message::CODE_RATE_LIMIT, Message::codeMessage(Message::CODE_RATE_LIMIT));
+            self::closeClient(
+                $clientId,
+                Message::CODE_RATE_LIMIT,
+                Message::codeMessage(Message::CODE_RATE_LIMIT),
+                $packet['seq'],
+                $packet['cmd']
+            );
             return;
         }
 
@@ -402,6 +424,8 @@ class Bootstrap
 
         $wasAuthed = self::isAuthed($clientId);
         unset(self::$authed[$clientId]);
+        // 连接已消失，清理延迟关闭标记，避免映射随连接数无限增长
+        unset(self::$closingClients[$clientId]);
 
         if ($wasAuthed) {
             Session::markOffline($clientId);
@@ -1023,15 +1047,29 @@ class Bootstrap
     /**
      * 主动断开连接
      *
-     * 传入 $code 时，错误报文会作为断开前的附带消息由 Gateway 一并下发，
-     * 避免「先 send 再 close」两条独立内部消息带来的时序风险。
+     * 传入 $code 时先独立下发错误报文，延迟 CLOSE_DELAY 后再断开。
+     *
+     * **为什么不把报文交给 GatewayClient::closeClient($id, $message) 的
+     * 「关闭前附带消息」通道**：workerman 5.x 的 TcpConnection::close() 在
+     * send() 之后若发送缓冲为空，会立即 destroy() -> fclose()。实测该写法约
+     * 20% 概率以 RST 收场（本机 30 轮裸 socket 探针命中 6 轮），此时已写入
+     * 但对端尚未读取的报文被一并丢弃 —— 客户端只看到连接断开、读不到任何
+     * 字节，表现为「越权拦截提示丢失」。
+     *
+     * 拆成两步后，报文与 FIN 是两次独立的发送动作，TCP 的顺序性保证了
+     * 「报文先到、关闭后到」，不再依赖内核在 close 瞬间的缓冲状态。
+     *
+     * 副作用：错误报文无法再随关闭一起下发时，$seq/$ref 得以保留 ——
+     * 客户端因此可以把 4003 关联回具体请求（旧实现经 close 通道会丢掉它们）。
      *
      * @param string $clientId
-     * @param int    $code
+     * @param int    $code 0 表示纯关闭、不下发报文
      * @param string $msg
+     * @param string $seq
+     * @param string $ref
      * @return void
      */
-    protected static function closeClient($clientId, $code = 0, $msg = '')
+    protected static function closeClient($clientId, $code = 0, $msg = '', $seq = '', $ref = '')
     {
         // UDP 无连接实体，不存在「断开」动作，也不会进入 Gateway 连接表。
         // 其会话回收依赖心跳超时巡检（Session::checkHeartbeatTimeout），
@@ -1045,11 +1083,28 @@ class Bootstrap
         }
 
         try {
-            if ($code > 0) {
-                GatewayClient::closeClient($clientId, Message::encode(Message::error($code, $msg)));
+            if ($code <= 0) {
+                GatewayClient::closeClient($clientId);
                 return;
             }
-            GatewayClient::closeClient($clientId);
+
+            // 同一连接只调度一次：延迟窗口内客户端若再发报文，
+            // 不重复下发错误报文、也不叠加定时器。
+            if (isset(self::$closingClients[$clientId])) {
+                return;
+            }
+            self::$closingClients[$clientId] = true;
+
+            self::send($clientId, Message::error($code, $msg, $seq, $ref));
+
+            Timer::add(self::CLOSE_DELAY, function () use ($clientId) {
+                unset(self::$closingClients[$clientId]);
+                try {
+                    GatewayClient::closeClient($clientId);
+                } catch (\Throwable $e) {
+                    Logger::exception($e, 'business.close:' . $clientId);
+                }
+            }, array(), false);
         } catch (\Throwable $e) {
             Logger::exception($e, 'business.close:' . $clientId);
         }
@@ -1068,7 +1123,7 @@ class Bootstrap
     protected static function reject($clientId, $code, $msg, $seq = '', $ref = '')
     {
         if (Auth::shouldCloseOnFail()) {
-            self::closeClient($clientId, $code, $msg);
+            self::closeClient($clientId, $code, $msg, $seq, $ref);
             return;
         }
         self::send($clientId, Message::error($code, $msg, $seq, $ref));
