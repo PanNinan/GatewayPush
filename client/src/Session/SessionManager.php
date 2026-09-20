@@ -262,7 +262,6 @@ class SessionManager
             'device_id' => $this->config['device_id'],
             'token'     => $token,
         ));
-        $packet['sign'] = Signer::sign($packet, (string)$this->config['secret']); // WS 不校验，无副作用；UDP 通道（P3）必需
 
         $this->registerPending($packet['seq'], 'auth', (float)$this->config['timeout'], $cb);
         $this->setState(self::STATE_AUTHENTICATING);
@@ -307,7 +306,6 @@ class SessionManager
             'uid'       => $this->config['uid'],
             'device_id' => $this->config['device_id'],
         ));
-        $packet['sign'] = Signer::sign($packet, (string)$this->config['secret']);
 
         $what    = 'data.' . (string)$action;
         $timeout = $timeout !== null ? (float)$timeout : (float)$this->config['timeout'];
@@ -315,6 +313,32 @@ class SessionManager
         $this->sendPacket($packet);
 
         return $packet['seq'];
+    }
+
+    /**
+     * 对下行推送回执（「至少一次」语义的 ack；服务端据此统计投递质量）
+     *
+     * PushReceiver 收到 push 后自动调用；业务代码一般不需要手动调用。
+     *
+     * @param string $msgId 推送报文的 msg_id（即服务端 seq）
+     * @param array  $data  附加数据
+     * @return bool 是否已发送（未就绪时静默跳过）
+     */
+    public function sendAck($msgId, array $data = array())
+    {
+        $msgId = (string)$msgId;
+        if ($msgId === '' || $this->state !== self::STATE_READY) {
+            return false;
+        }
+
+        $packet = Message::packet(Message::CMD_ACK, array_merge(array(
+            'msg_id' => $msgId,
+        ), $data), array(
+            'seq' => $msgId,
+        ));
+        $this->sendPacket($packet);
+
+        return true;
     }
 
     /**
@@ -658,6 +682,13 @@ class SessionManager
 
     private function sendPacket(array $packet)
     {
+        $secret = (string)$this->config['secret'];
+        if ($secret !== '' && !isset($packet['sign'])) {
+            // WS 不校验签名（无副作用）；UDP 通道（P3）必需。统一在发送口计算，
+            // 保证所有上行报文的签名口径一致，调用方无需关心。
+            $packet['sign'] = Signer::sign($packet, $secret);
+        }
+
         $this->transport->send(Codec::encode($packet));
     }
 

@@ -1,6 +1,6 @@
 # GatewayWorker 客户端 SDK 与调试器设计方案
 
-> 状态：已确认，**P0、P1 已完成**（2026-09-20），P2~P6 按阶段实现
+> 状态：已确认，**P0、P1、P2 已完成**（2026-09-20），P3~P6 按阶段实现
 > 对应服务端：`Workman V2 GatewayWorker 实时数据推送服务技术方案文档.md`
 > 使用手册：`README.md`
 
@@ -354,7 +354,7 @@ php client/bin/gwclient.php stats
 |---|---|---|
 | **P0** ✅ | `Protocol/` 三件套 + 单测 | 与服务端 `Message`/`Auth` 输出逐字节一致（含 `canonicalize` 边界：嵌套、键序、中文），**已完成 2026-09-20** |
 | **P1** ✅ | `WsTransport` + `SessionManager` | `connect → auth → ack`；`ping → pong`；**应答服务端反向 ping**；`echo` 通 —— **单测 21 例 + 实测 4 项全通过 2026-09-20** |
-| **P2** | 7 个动作 API + `PushReceiver` + 自动 ack | 与 `config/actions.php` 声明一一对应；推送回执对齐 `msg_id` |
+| **P2** ✅ | 7 个动作 API + `PushReceiver` + 自动 ack | 与 `config/actions.php` 声明一一对应；推送回执对齐 `msg_id` —— **单测 16 例 + 实测 9 项（notify 推送闭环 + 订阅族）全通过 2026-09-20** |
 | **P3** | `UdpTransport` | 合法签名通过；篡改签名 `4001`；**双层 ack 正确判别**；首包重传 |
 | **P4** | `AdminApi` | `/health 200`、`/stats 200`、`/push` 验签通过 + 验签失败 `401` |
 | **P5** | 重连 + 会话恢复 + 离线补投 | 重连后 `reconnected:1`；补投报文 `offline:1` |
@@ -433,3 +433,31 @@ php client/bin/gwclient.php stats
    元信息供上层（PushReceiver、P2 Service API）使用；
 4. `close()` 会取消挂起的重连定时器（重连等待期没有活动连接，onClose 不会再触发，
    须直接落 disconnected）—— 该点由 PHPStan `property.onlyWritten` 告警发现。
+
+### P2 实际交付（2026-09-20）
+
+| 文件 | 内容 |
+|---|---|
+| `client/src/Service/AbstractApi.php` | 回调包装基类：统一三元组 `($ok, $data, ?$error)`；服务端 error 报文取 code/msg，本地超时 code=CLIENT_TIMEOUT(10001) |
+| `client/src/Service/EchoApi.php` | echo（`params='*'` 原样透传） |
+| `client/src/Service/SessionApi.php` | session（会话摘要） |
+| `client/src/Service/ReportApi.php` | report（topic/count/value；UDP 侧静默由文档声明，客户端不做通道判断） |
+| `client/src/Service/SubscribeApi.php` | subscribe / unsubscribe / topics |
+| `client/src/Service/NotifyApi.php` | notify（value / msg_id / offline_mode；目标恒为自身 uid） |
+| `client/src/Event/PushReceiver.php` | push 解析为 payload+meta → 业务回调 → **自动回 ack**（`data.msg_id` 对齐 `seq`）；`offline=1` 标记补投 |
+| `client/src/Session/SessionManager.php`（增强） | ① 新增 `sendAck()`（未 ready 静默跳过）；② **签名统一移至 `sendPacket()`** —— 所有上行报文一致带 sign，P3 UDP 直接复用 |
+| `client/tests/Unit/PushReceiverTest.php` | 6 用例（解析 / 自动 ack / msg_id 回退 seq / offline 标记 / 无回调仍回执 / 未 ready 不发） |
+| `client/tests/Unit/ServiceApiTest.php` | 10 用例（6 API 报文构造 + 服务端错误呈现 + 本地超时呈现 + 状态守卫） |
+| `client/tests/Support/` | FakeTransport / FakeTimers 抽为共享基建（phpunit.xml 以 `<file>` 显式加载） |
+
+**实测验收**（register/gateway/business + Redis）：
+`echo` 回显一致 → `subscribe` 成功 → `notify`（自带 msg_id）→ 收 push（payload 解析正确、
+msg_id 与请求对齐、offline=0 实时）→ **自动回执 acked=1** → `topics` 含已订主题 → `unsubscribe` 收尾。
+全链路 9 项全通过。
+
+与设计稿的偏离：
+
+1. `AbstractApi::call` 失败时 `$error = ['code' => int, 'msg' => string]`（数组而非异常对象）——
+   回调三元组不可序列化携带异常栈，数组足以覆盖「服务端错误码 + 本地超时码」两类语义；
+2. 签名计算从 auth/request 各自内联收敛到 `SessionManager::sendPacket()` 统一出口
+   （P1 遗留的「部分报文带 sign 不一致」问题顺手修复）。

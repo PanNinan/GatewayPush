@@ -1,7 +1,7 @@
 # GatewayWorker 客户端 SDK 与调试器
 
 > 设计方案见仓库根目录 `GatewayWorker 客户端SDK与调试器设计方案.md`。
-> 当前进度：**P0（协议层）、P1（WS 传输 + 会话层）已完成**，P2~P6 待实现。
+> 当前进度：**P0（协议层）、P1（WS 传输 + 会话层）、P2（动作 API + 推送接收）已完成**，P3~P6 待实现。
 
 ## 为什么放在同一仓库
 
@@ -16,7 +16,7 @@
 直接调用同一份实现即天然一致。将来若要抽成独立 composer 包，
 只需替换 `Protocol/` 适配层的实现，上层无需改动。
 
-## 目录结构（P1 现状）
+## 目录结构（P2 现状）
 
 ```
 client/
@@ -31,18 +31,24 @@ client/
 │   ├── Transport/
 │   │   ├── TransportInterface.php 统一传输接口（含 onOpen，见设计稿 §12 偏离说明）
 │   │   └── WsTransport.php        ws://（AsyncTcpConnection 薄封装）
-│   └── Session/
-│       ├── SessionManager.php     鉴权状态机 / seq / pending / 心跳 / 重连 / 下行分发
-│       └── PendingRequest.php     单次请求上下文
-└── tests/Unit/
-    ├── CodecTest.php
-    ├── SignerTest.php
-    ├── TokenIssuerTest.php
-    ├── ErrorCodeTest.php
-    └── SessionManagerTest.php     假传输层 + 假计时器，21 个用例
+│   ├── Session/
+│   │   ├── SessionManager.php     鉴权状态机 / seq / pending / 心跳 / 重连 / 下行分发 / sendAck
+│   │   └── PendingRequest.php     单次请求上下文
+│   ├── Service/
+│   │   ├── AbstractApi.php        回调包装基类（ok, data, error 三元组）
+│   │   ├── EchoApi.php            echo（params=* 透传）
+│   │   ├── SessionApi.php         session（会话摘要）
+│   │   ├── ReportApi.php          report（UDP 侧静默不回执）
+│   │   ├── SubscribeApi.php       subscribe / unsubscribe / topics
+│   │   └── NotifyApi.php          notify（触发对自身推送）
+│   └── Event/
+│       └── PushReceiver.php       push 下行解析 + 业务回调 + 自动回 ack
+└── tests/
+    ├── Support/                   FakeTransport / FakeTimers（测试共享基建）
+    └── Unit/                      7 个测试类
 ```
 
-后续阶段将补齐 `UdpTransport`/`HttpTransport`、`Service/`、`Event/`、`bin/gwclient.php`。
+后续阶段将补齐 `UdpTransport`/`HttpTransport`、`AdminApi`、`bin/gwclient.php`。
 
 ## 快速开始
 
@@ -129,6 +135,61 @@ $session->request('echo', array('hello' => 'world'), function ($ok, $packet) {
 | 重连等待期关闭 | `close()` 会取消挂起的重连定时器并直接落 disconnected |
 | 回调签名 | 统一 `function (bool $ok, array $packet): void`（完整报文，载荷在 `$packet['data']`） |
 
+## 业务动作与推送（P2）
+
+`Service/` 把 7 个服务端动作封装为 API（均基于 `SessionManager::request()`），
+回调统一三元组签名：`function (bool $ok, array $data, ?array $error): void`。
+
+```php
+use GatewayPush\Client\Event\PushReceiver;
+use GatewayPush\Client\Service\EchoApi;
+use GatewayPush\Client\Service\NotifyApi;
+use GatewayPush\Client\Service\ReportApi;
+use GatewayPush\Client\Service\SessionApi;
+use GatewayPush\Client\Service\SubscribeApi;
+
+$echo      = new EchoApi($session);
+$session_  = new SessionApi($session);
+$report    = new ReportApi($session);
+$subscribe = new SubscribeApi($session);
+$notify    = new NotifyApi($session);
+
+$echo->send(array('hello' => 'world'), function ($ok, $data, $error) {
+    if ($ok) { print_r($data['params']); }   // 回执业务载荷
+    else     { echo $error['code'], $error['msg']; }
+});
+
+$report->report('metric.cpu', 5, array('avg' => 0.8));        // WS 回执；UDP 静默（cb 只会收到本地超时）
+$subscribe->subscribe('topic.a');
+$subscribe->topics();
+$notify->notify(array('x' => 1), 'msg-001', 'queue');         // 目标恒为自身 uid
+```
+
+### 接收推送（自动回 ack）
+
+```php
+$receiver = new PushReceiver($session);   // 构造即接管 onPush 分发
+$receiver->onPush(function (array $payload, array $meta) {
+    // $payload = 推送载荷（push 报文 data）
+    // $meta    = {msg_id, seq, source, offline, pushed_at, ts}
+    if ($meta['offline'] === 1) {
+        // offline=1 为重连补投，可与实时消息区分
+    }
+});
+// 收到 push 后自动回 cmd=ack（data.msg_id 对齐），无需业务代码参与；
+// $receiver->ackedCount() 可观察回执数量。
+```
+
+要点：
+
+| 项 | 说明 |
+|---|---|
+| notify 闭环 | `notify()` 成功受理后，服务端向自身 uid 推送，`PushReceiver` 收到并自动回执 |
+| msg_id 幂等 | 相同 `msg_id` 600s 内去重；重复触发请换 msg_id（留空由服务端生成） |
+| report 通道差异 | WS 同步回执；UDP 静默不回执（`cb` 只会收到本地超时，属预期） |
+| publish 不存在 | 服务端刻意不开放客户端广播，客户端亦不提供 |
+| 错误语义 | `$error = ['code' => int, 'msg' => string]`；服务端错误为 4000~5000，本地超时为 10001 |
+
 ## 协议要点速查
 
 | 项 | 事实 |
@@ -171,7 +232,7 @@ $session->request('echo', array('hello' => 'world'), function ($ok, $packet) {
 |---|---|---|
 | P0 | `Protocol/` 三件套 + 单测 | ✅ 已完成 |
 | P1 | `WsTransport` + `SessionManager` | ✅ 已完成（单测 21 例 + 实测：auth/ping-pong/echo/40s 反向心跳存活全通过） |
-| P2 | 7 个动作 API + `PushReceiver` + 自动 ack | 待办 |
+| P2 | 7 个动作 API + `PushReceiver` + 自动 ack | ✅ 已完成（单测 16 例 + 实测：echo/subscribe/notify→push→auto-ack/topics/unsubscribe 全通过） |
 | P3 | `UdpTransport` | 待办 |
 | P4 | `AdminApi`（`/push` `/stats` `/health`） | 待办 |
 | P5 | 重连 + 会话恢复 + 离线补投（重连/补投骨架已在 P1 就位，待补验收） | 待办 |
