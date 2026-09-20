@@ -12,7 +12,7 @@
  *
  * 全程不触碰 Redis / workerman，仅注入闭包作为下发器与钩子。
  *
- * 兼容 PHP 8.0 ~ 8.5
+ * 兼容 PHP 8.1 ~ 8.5
  */
 
 namespace GatewayPush\Tests\Unit;

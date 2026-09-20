@@ -11,7 +11,7 @@
  *   all / register / gateway / udp / business
  * Windows 下 workerman 单启动文件仅支持 1 个 Worker 实例，需按角色分别启动。
  *
- * 兼容 PHP 8.0 ~ 8.5
+ * 兼容 PHP 8.1 ~ 8.5
  */
 
 namespace GatewayPush\Gateway;

@@ -1,0 +1,657 @@
+﻿#Requires -Version 5.1
+<#
+============================================================================
+ GatewayWorker 实时数据推送服务 —— Windows 服务管理脚本
+============================================================================
+
+ 职责边界
+ --------------------------------------------------------------------------
+ 本脚本只做「进程编排 + 终端编码」，不做任何业务判断。环境自检、角色装配、
+ 启动流程全部由 start.php 负责。
+
+ 为什么 Windows 下不能用 start.php 的 stop / restart / reload / status
+ --------------------------------------------------------------------------
+ workerman 的命令行解析入口 Worker::parseCommand() 第一行就是：
+     if (DIRECTORY_SEPARATOR !== '/') { return; }
+ 非 Unix 平台直接跳过整个解析流程，于是 `php start.php stop --role=xxx` 不会
+ 停止任何进程，而是**照常启动一个新实例** —— 每执行一次就多一个进程、多一份
+ 端口占用。Windows 下也没有 pid 文件（workerman 只在 Unix 侧写盘）。
+
+ 所以本脚本自己承担进程编排：启动时记录窗口 PID，停止 / 状态则以
+ `Get-CimInstance Win32_Process` 读取命令行反查 php.exe，二者互相兜底。
+
+ 中文显示（Windows）
+ --------------------------------------------------------------------------
+ 乱码的根因是「编码对不上」：php.exe 恒以 UTF-8 字节写出，而简体中文版
+ Windows 的控制台活动代码页是 936（GBK），按 GBK 解码 UTF-8 字节必然乱码。
+ 本脚本处理三处：
+   1) 自身控制台 —— 设 [Console]::OutputEncoding / InputEncoding / $OutputEncoding
+      为 UTF-8，.NET 会同步把控制台代码页切成 65001；
+   2) 本文件编码 —— 必须保存为 **UTF-8 带 BOM**，否则 PowerShell 5.1 会按
+      ANSI（GBK）解读脚本文件，脚本内的中文字面量先一步烂掉；
+   3) 新开的角色窗口 —— 新控制台会退回系统默认代码页，故启动命令统一以
+      `cmd /k "chcp 65001>nul && ..."` 包裹。
+ 另：控制台字体需支持中文（Consolas 无 CJK 字形，建议「新宋体 / 微软雅黑 /
+ Lucida Console」或在 Windows Terminal 中使用）。
+
+ 用法
+ --------------------------------------------------------------------------
+     bin\start.ps1 <命令> [参数]
+     bin\start.ps1 help
+#>
+
+[CmdletBinding()]
+param(
+    [Parameter(Position = 0)]
+    [string]$Command = 'help',
+
+    [Parameter(Position = 1, ValueFromRemainingArguments = $true)]
+    [string[]]$Arguments,
+
+    # 指定 php.exe 绝对路径；不传则依次尝试 PATH、phpstudy_pro 常见目录
+    [string]$PhpPath = ''
+)
+
+$ErrorActionPreference = 'Stop'
+
+if ($null -eq $Arguments) { $Arguments = @() }
+
+# ---------------------------------------------------------------------------
+# 0. 终端编码（中文不乱码的关键，必须最先执行）
+# ---------------------------------------------------------------------------
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+try {
+    [Console]::OutputEncoding = $Utf8NoBom   # 解读子进程 stdout + 控制台输出代码页
+    [Console]::InputEncoding = $Utf8NoBom    # 控制台输入代码页
+    $OutputEncoding = $Utf8NoBom             # 管道给原生程序时所用编码
+} catch {
+    Write-Host '[警告]  切换控制台编码为 UTF-8 失败，中文可能显示为乱码。' -ForegroundColor Yellow
+}
+
+# ---------------------------------------------------------------------------
+# 1. 基础路径
+# ---------------------------------------------------------------------------
+if ($PSScriptRoot) {
+    $ScriptDir = $PSScriptRoot
+} else {
+    $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+}
+$Root = (Resolve-Path -LiteralPath (Join-Path $ScriptDir '..')).Path
+Set-Location -LiteralPath $Root
+
+$PidDir = Join-Path $Root 'runtime\pid'
+$LogDir = Join-Path $Root 'runtime\logs'
+
+# 启动顺序即依赖顺序：register 必须先就绪，其余角色都要向它注册
+$RoleOrder = @('register', 'gateway', 'udp', 'business', 'api', 'dashboard')
+$RoleCore = @('register', 'gateway', 'udp', 'business', 'api')
+
+$RoleMeta = @{
+    register  = @{ Desc = '注册中心';       AddrKey = 'REGISTER_LISTEN';   Port = $true  }
+    gateway   = @{ Desc = 'WebSocket 网关'; AddrKey = 'WS_LISTEN';         Port = $true  }
+    udp       = @{ Desc = 'UDP 网关';       AddrKey = 'UDP_LISTEN';        Port = $true  }
+    business  = @{ Desc = '业务进程';       AddrKey = '';                  Port = $false }
+    api       = @{ Desc = 'HTTP 接口';      AddrKey = 'API_LISTEN';        Port = $true  }
+    dashboard = @{ Desc = '监控面板';       AddrKey = 'DASHBOARD_LISTEN';  Port = $true  }
+}
+
+# ---------------------------------------------------------------------------
+# 2. 输出与表格
+# ---------------------------------------------------------------------------
+function Write-Step  { param([string]$Text) Write-Host ('==> ' + $Text) -ForegroundColor Cyan }
+function Write-Ok    { param([string]$Text) Write-Host ('[OK]    ' + $Text) -ForegroundColor Green }
+function Write-Warn2 { param([string]$Text) Write-Host ('[警告]  ' + $Text) -ForegroundColor Yellow }
+function Write-Err   { param([string]$Text) Write-Host ('[错误]  ' + $Text) -ForegroundColor Red }
+
+# 字符串在等宽终端下的显示宽度：CJK 字符占 2 列，其余占 1 列。
+# 直接用 PadRight() 只按「字符数」补空格，含中文的列会错位 —— 这正是
+# 在终端里排中文表格最容易踩的坑。
+function Get-TextWidth {
+    param([string]$Text)
+    $w = 0
+    foreach ($ch in $Text.ToCharArray()) {
+        $c = [int][char]$ch
+        if (($c -ge 0x1100 -and $c -le 0x115F) -or
+            ($c -ge 0x2E80 -and $c -le 0xA4CF) -or
+            ($c -ge 0xAC00 -and $c -le 0xD7A3) -or
+            ($c -ge 0xF900 -and $c -le 0xFAFF) -or
+            ($c -ge 0xFE30 -and $c -le 0xFE6F) -or
+            ($c -ge 0xFF00 -and $c -le 0xFF60) -or
+            ($c -ge 0xFFE0 -and $c -le 0xFFE6)) { $w += 2 } else { $w += 1 }
+    }
+    return $w
+}
+
+function Format-Pad {
+    param([string]$Text, [int]$Width)
+    if ($null -eq $Text) { $Text = '' }
+    $cur = Get-TextWidth $Text
+    if ($cur -ge $Width) { return ($Text + ' ') }
+    return $Text + (' ' * ($Width - $cur))
+}
+
+# 状态表列宽（显示宽度，非字符数）
+$COL_ROLE = 12; $COL_STATE = 12; $COL_ADDR = 27
+$COL_PID = 10;  $COL_MEM = 10;   $COL_UP = 12
+
+function Write-TableHead {
+    Write-Host ((Format-Pad '角色' $COL_ROLE) + (Format-Pad '状态' $COL_STATE) +
+                (Format-Pad '监听地址' $COL_ADDR) + (Format-Pad 'PID' $COL_PID) +
+                (Format-Pad '内存' $COL_MEM) + (Format-Pad '运行时长' $COL_UP) + '说明')
+    # 固定列共 $COL_ROLE+$COL_STATE+$COL_ADDR+$COL_PID+$COL_MEM+$COL_UP 个显示列，
+    # 末列「说明」不参与补齐，按表头文字宽度 4 计
+    $width = $COL_ROLE + $COL_STATE + $COL_ADDR + $COL_PID + $COL_MEM + $COL_UP + 4
+    Write-Host ('-' * $width)
+}
+
+# 注意：形参不能取名 $Pid —— PowerShell 的 $PID 是只读自动变量（当前进程 ID），
+# 大小写不敏感，绑定同名参数会直接抛 VariableNotWritable。
+function Write-TableRow {
+    param([string]$Role, [string]$State, [string]$Addr, [string]$ProcId,
+          [string]$Mem, [string]$Up, [string]$Desc)
+    Write-Host ((Format-Pad $Role $COL_ROLE) + (Format-Pad $State $COL_STATE) +
+                (Format-Pad $Addr $COL_ADDR) + (Format-Pad $ProcId $COL_PID) +
+                (Format-Pad $Mem $COL_MEM) + (Format-Pad $Up $COL_UP) + $Desc)
+}
+
+# ---------------------------------------------------------------------------
+# 3. 配置读取
+# ---------------------------------------------------------------------------
+# .env 为 UTF-8，必须显式按 UTF-8 读取，否则其中的中文注释会以 GBK 解码
+function Get-EnvValue {
+    param([string]$Key)
+    $file = Join-Path $Root '.env'
+    if (-not (Test-Path -LiteralPath $file)) { return '' }
+    $pattern = '^\s*' + [regex]::Escape($Key) + '\s*=\s*(.*)$'
+    $found = ''
+    foreach ($line in [System.IO.File]::ReadAllLines($file, [System.Text.Encoding]::UTF8)) {
+        if ($line -match $pattern) {
+            $found = $matches[1].Trim().Trim('"').Trim("'")
+        }
+    }
+    return $found
+}
+
+# 从监听地址中取端口与协议，如 udp://0.0.0.0:8283 -> 8283 / udp
+function Get-ListenEndpoint {
+    param([string]$Role)
+    $key = $RoleMeta[$Role].AddrKey
+    if (-not $key) { return $null }
+    $raw = Get-EnvValue $key
+    if (-not $raw) { return $null }
+    if ($raw -match ':(\d+)\s*$') {
+        # 必须先把端口取出：$Matches 是自动变量，下一次 -match 会把它整体覆盖，
+        # 若在后面才取 $matches[1]，拿到的将是 scheme 而不是端口号。
+        $port = [int]$matches[1]
+        $scheme = 'tcp'
+        if ($raw -match '^([A-Za-z][A-Za-z0-9+.\-]*)://') { $scheme = $matches[1].ToLower() }
+        return [pscustomobject]@{ Raw = $raw; Port = $port; Scheme = $scheme }
+    }
+    return $null
+}
+
+# ---------------------------------------------------------------------------
+# 4. 前置检查
+# ---------------------------------------------------------------------------
+function Resolve-PhpExe {
+    param([string]$Override)
+
+    if ($Override) {
+        if (Test-Path -LiteralPath $Override) { return (Resolve-Path -LiteralPath $Override).Path }
+        throw "指定的 PHP 可执行文件不存在：$Override"
+    }
+
+    $cmd = Get-Command php.exe -ErrorAction SilentlyContinue
+    if (-not $cmd) { $cmd = Get-Command php -ErrorAction SilentlyContinue }
+    if ($cmd -and $cmd.Source) { return $cmd.Source }
+
+    # phpstudy_pro 的常见安装位置
+    $hits = @()
+    foreach ($pat in @('D:\phpstudy_pro\Extensions\php\*\php.exe',
+                       'C:\phpstudy_pro\Extensions\php\*\php.exe',
+                       'D:\phpstudy_pro\Extensions\php\*\php.exe')) {
+        $hits += @(Get-ChildItem -Path $pat -ErrorAction SilentlyContinue)
+    }
+    if ($hits.Count -gt 0) {
+        return ($hits | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+    }
+
+    throw '未找到 php.exe。请把 PHP 加入 PATH，或用 -PhpPath 指定绝对路径。'
+}
+
+function Test-Preflight {
+    if (-not (Test-Path -LiteralPath (Join-Path $Root 'vendor\autoload.php'))) {
+        Write-Err '依赖未安装，请先执行：composer install'
+        return $false
+    }
+    return $true
+}
+
+# ---------------------------------------------------------------------------
+# 5. 进程查询
+# ---------------------------------------------------------------------------
+$script:ProcCache = $null
+
+# 取全部 php.exe 进程（含命令行）。Get-CimInstance 一次约百毫秒，故做进程内缓存
+function Get-PhpProcesses {
+    param([switch]$Refresh)
+
+    if ($null -ne $script:ProcCache -and -not $Refresh) { return $script:ProcCache }
+
+    $list = @()
+    try {
+        $list = @(Get-CimInstance -ClassName Win32_Process -Filter "Name = 'php.exe'" -ErrorAction Stop)
+    } catch {
+        # 退化为按进程名匹配：拿不到命令行，只能识别「有 php 在跑」
+        foreach ($p in @(Get-Process -Name php -ErrorAction SilentlyContinue)) {
+            $list += [pscustomobject]@{ ProcessId = $p.Id; CommandLine = '' }
+        }
+    }
+    $script:ProcCache = $list
+    return $list
+}
+
+# 反查某角色对应的 php.exe PID 列表（命令行同时含 start.php 与 --role=<角色>）
+function Get-RoleIds {
+    param([string]$Role)
+    $pattern = '--role=' + [regex]::Escape($Role) + '(\s|$)'
+    $ids = @()
+    foreach ($proc in (Get-PhpProcesses -Refresh)) {
+        $cl = $proc.CommandLine
+        if (-not $cl) { continue }
+        if ($cl -match 'start\.php' -and $cl -match $pattern) {
+            $ids += [int]$proc.ProcessId
+        }
+    }
+    return @($ids)
+}
+
+function Get-RolePidFile {
+    param([string]$Role)
+    return (Join-Path $PidDir ('win_{0}.pid' -f $Role))
+}
+
+function Get-ProcessMem {
+    param([int]$Id)
+    $p = Get-Process -Id $Id -ErrorAction SilentlyContinue
+    if (-not $p) { return '-' }
+    return ('{0:N1} MB' -f ($p.WorkingSet64 / 1MB))
+}
+
+function Get-ProcessUptime {
+    param([int]$Id)
+    $p = Get-Process -Id $Id -ErrorAction SilentlyContinue
+    if (-not $p) { return '-' }
+    $span = (Get-Date) - $p.StartTime
+    return ('{0:00}:{1:00}:{2:00}' -f [int]$span.TotalHours, $span.Minutes, $span.Seconds)
+}
+
+function Test-PortListening {
+    param([int]$Port, [switch]$Udp)
+
+    if (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue) {
+        if ($Udp) {
+            return (@(Get-NetUDPEndpoint -LocalPort $Port -ErrorAction SilentlyContinue).Count -gt 0)
+        }
+        return (@(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue).Count -gt 0)
+    }
+
+    # 旧系统兜底：解析 netstat
+    if ($Udp) {
+        $lines = @(& netstat -ano -p UDP 2>$null)
+        return [bool](@($lines | Where-Object { $_ -match ('^\s*UDP\s+\S+:' + $Port + '\s') }).Count -gt 0)
+    }
+    $lines = @(& netstat -ano -p TCP 2>$null)
+    return [bool](@($lines | Where-Object { $_ -match ('^\s*TCP\s+\S+:' + $Port + '\s+\S+\s+LISTENING') }).Count -gt 0)
+}
+
+# ---------------------------------------------------------------------------
+# 6. 启动 / 停止
+# ---------------------------------------------------------------------------
+# 新开控制台会退回系统默认代码页（简体中文 Windows 为 936），必须在窗口内
+# 先 chcp 65001，否则 php 输出的中文在该窗口里依然是乱码。
+# 用 cmd /k 而非 /c：php 若启动即失败，窗口不会瞬间关闭，报错可见。
+function Start-OneRole {
+    param([string]$Role)
+
+    if ((Get-RoleIds $Role).Count -gt 0) {
+        return [pscustomobject]@{ Ok = $true; Skipped = $true }
+    }
+
+    $inner = 'chcp 65001 >nul && "' + $script:PhpExe + '" start.php start --role=' + $Role
+    try {
+        $proc = Start-Process -FilePath $env:ComSpec `
+                              -ArgumentList @('/k', $inner) `
+                              -WorkingDirectory $Root -PassThru -ErrorAction Stop
+    } catch {
+        Write-Err ('  ' + (Format-Pad $Role $COL_ROLE) + '启动失败：' + $_.Exception.Message)
+        return [pscustomobject]@{ Ok = $false; Skipped = $false }
+    }
+
+    # 记录的是承载窗口（cmd.exe）的 PID，仅用于停止时连带关闭窗口；
+    # 角色存活的权威判据始终是命令行反查 php.exe。
+    if (-not (Test-Path -LiteralPath $PidDir)) {
+        [void](New-Item -ItemType Directory -Path $PidDir -Force)
+    }
+    Set-Content -LiteralPath (Get-RolePidFile $Role) -Value $proc.Id -Encoding ASCII
+
+    return [pscustomobject]@{ Ok = (Wait-RoleReady -Role $Role -TimeoutSec 25); Skipped = $false }
+}
+
+function Wait-RoleReady {
+    param([string]$Role, [int]$TimeoutSec = 25)
+
+    $ep = Get-ListenEndpoint $Role
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    $seen = 0
+    $miss = 0
+    $tick = 0
+
+    while ((Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 500
+        $tick++
+
+        # 命令行反查较慢，每 4 个轮次（约 2s）做一次存活确认
+        if (($tick % 4) -eq 1) {
+            if ((Get-RoleIds $Role).Count -gt 0) { $seen++; $miss = 0 }
+            elseif ($seen -gt 0) { $miss++ }
+            if ($miss -ge 2) { return $false }   # 起来过又消失 → 启动失败
+        }
+
+        if ($null -ne $ep) {
+            if (Test-PortListening -Port $ep.Port -Udp:($ep.Scheme -eq 'udp')) { return $true }
+        } elseif ($seen -ge 2) {
+            return $true   # 无监听端口的角色（business），只能判进程存活
+        }
+    }
+    return $false
+}
+
+function Stop-OneRole {
+    param([string]$Role, [switch]$Quiet)
+
+    $ids = Get-RoleIds $Role
+    $winPid = 0
+    $pidFile = Get-RolePidFile $Role
+    if (Test-Path -LiteralPath $pidFile) {
+        $txt = (Get-Content -LiteralPath $pidFile -Raw -ErrorAction SilentlyContinue)
+        if ($txt) { [void][int]::TryParse($txt.Trim(), [ref]$winPid) }
+    }
+
+    if ($ids.Count -eq 0 -and $winPid -le 0) {
+        if (-not $Quiet) { Write-Host ('  ' + (Format-Pad $Role $COL_ROLE) + '未在运行') -ForegroundColor DarkGray }
+        return $true
+    }
+
+    foreach ($id in $ids) {
+        try {
+            Stop-Process -Id $id -Force -ErrorAction Stop
+            Write-Host ('  ' + (Format-Pad $Role $COL_ROLE) + '已停止（PID ' + $id + '）')
+        } catch {
+            Write-Err ((Format-Pad $Role $COL_ROLE) + '停止 PID ' + $id + ' 失败：' + $_.Exception.Message)
+            return $false
+        }
+    }
+
+    # 连带关掉承载窗口，避免留下一排空命令行
+    if ($winPid -gt 0) {
+        $w = Get-Process -Id $winPid -ErrorAction SilentlyContinue
+        if ($w -and $w.ProcessName -eq 'cmd') {
+            try { Stop-Process -Id $winPid -Force -ErrorAction Stop } catch { }
+        }
+    }
+    if (Test-Path -LiteralPath $pidFile) { Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue }
+
+    $script:ProcCache = $null
+    return $true
+}
+
+# ---------------------------------------------------------------------------
+# 7. 命令实现
+# ---------------------------------------------------------------------------
+function Invoke-Start {
+    param([string[]]$Targets)
+
+    $roles = $RoleOrder
+    if ($Targets.Count -ge 1 -and $Targets[0]) {
+        $first = $Targets[0].ToLower()
+        if ($first -eq 'core') {
+            $roles = $RoleCore
+        } elseif ($RoleMeta.ContainsKey($first)) {
+            $roles = @($first)
+        } else {
+            Write-Err ('非法目标：' + $Targets[0] + '（可选：core 或 ' + ($RoleOrder -join ' / ') + '）')
+            return 1
+        }
+    }
+
+    if (-not (Test-Preflight)) { return 1 }
+
+    # 先跑一次环境自检：失败就不逐个开窗口，避免留下 6 个闪退的窗口难排查
+    Write-Step '执行环境自检'
+    & $script:PhpExe (Join-Path $Root 'start.php') check | Out-Host
+    if ($LASTEXITCODE -ne 0) {
+        Write-Err '环境自检未通过，启动终止。'
+        return 1
+    }
+
+    Write-Host ''
+    Write-Step ('启动 ' + $roles.Count + ' 个角色（每个角色一个窗口，按依赖顺序）')
+    Write-Host ''
+
+    $failed = @()
+    foreach ($role in $roles) {
+        # 不用 "\r" 原地刷新进度：输出一旦被重定向到管道/文件，\r 不会覆盖而是拼接，
+        # 反而把同一行重复打印出来。这里只打印最终结果，管道与终端下表现一致。
+        $r = Start-OneRole -Role $role
+        $ids = @(Get-RoleIds $role)
+        if ($r.Skipped) {
+            Write-Host ('  ' + (Format-Pad $role $COL_ROLE) + '已在运行（PID ' + ($ids -join ', ') + '）')
+        } elseif ($r.Ok) {
+            Write-Host ('  ' + (Format-Pad $role $COL_ROLE) + '启动成功（PID ' + ($ids -join ', ') + '）')
+        } else {
+            $failed += $role
+            Write-Host ('  ' + (Format-Pad $role $COL_ROLE) + '启动失败，请检查新窗口中的报错') -ForegroundColor Red
+        }
+        Start-Sleep -Milliseconds 500
+    }
+
+    Write-Host ''
+    if ($failed.Count -gt 0) {
+        Write-Err ('以下角色未就绪：' + ($failed -join ' / '))
+        Write-Host ('       排查：' + $script:PhpExe + ' start.php check  或  ' +
+                    'bin\start.ps1 log error')
+        return 1
+    }
+    Write-Ok ('全部 ' + $roles.Count + ' 个角色已就绪')
+    Write-Host ('       面板地址：' + (Get-EnvValue 'DASHBOARD_LISTEN'))
+    return 0
+}
+
+function Invoke-Stop {
+    param([string[]]$Targets)
+
+    $roles = $RoleOrder
+    if ($Targets.Count -ge 1 -and $Targets[0]) {
+        $first = $Targets[0].ToLower()
+        if ($first -ne 'all') {
+            if ($RoleMeta.ContainsKey($first)) { $roles = @($first) }
+            else {
+                Write-Err ('非法角色：' + $Targets[0])
+                return 1
+            }
+        }
+    }
+
+    Write-Step '停止角色'
+    Write-Host ''
+    $rc = 0
+    foreach ($role in $roles) {
+        if (-not (Stop-OneRole -Role $role -Quiet)) { $rc = 1 }
+    }
+    Write-Host ''
+    if ($rc -eq 0) { Write-Ok '服务已停止' } else { Write-Err '部分角色停止失败，请用 status 复查' }
+    return $rc
+}
+
+function Invoke-Restart {
+    param([string[]]$Targets)
+    if ((Invoke-Stop $Targets) -ne 0) { return 1 }
+    Start-Sleep -Seconds 2
+    return (Invoke-Start $Targets)
+}
+
+# Windows 无 master 进程，做不到真正的平滑重载，只能重启承载业务的角色。
+# 保留 register 不动，可少一轮全网重新注册。
+function Invoke-Reload {
+    Write-Warn2 'Windows 不支持平滑重载（无 master 进程），将重启业务相关角色。'
+    Write-Warn2 'WebSocket 长连接会中断，客户端需自动重连。'
+    Write-Host ''
+    $null = Invoke-Stop @('business', 'gateway', 'udp', 'api', 'dashboard')
+    Start-Sleep -Seconds 2
+    return (Invoke-Start @('gateway', 'udp', 'business', 'api', 'dashboard'))
+}
+
+function Invoke-Status {
+    Write-TableHead
+    $running = 0
+    foreach ($role in $RoleOrder) {
+        $ep = Get-ListenEndpoint $role
+        $addr = '-'
+        if ($null -ne $ep) { $addr = $ep.Raw }
+
+        $ids = Get-RoleIds $role
+        if ($ids.Count -gt 0) {
+            $pid0 = $ids[0]
+            Write-TableRow $role '运行中' $addr ([string]$pid0) `
+                           (Get-ProcessMem $pid0) (Get-ProcessUptime $pid0) $RoleMeta[$role].Desc
+            $running++
+        } else {
+            Write-TableRow $role '已停止' $addr '-' '-' '-' $RoleMeta[$role].Desc
+        }
+    }
+    Write-Host ''
+    Write-Host ('本机 PID：' + $PID + '   项目目录：' + $Root)
+    Write-Host ('运行中 ' + $running + ' / ' + $RoleOrder.Count + ' 个角色')
+    return 0
+}
+
+function Invoke-Log {
+    param([string[]]$Targets)
+
+    $follow = $false
+    $type = 'workerman'
+    $lines = 60
+
+    foreach ($arg in $Targets) {
+        if ($arg -eq '-f' -or $arg -eq '--follow') { $follow = $true }
+        elseif ($arg -match '^\d+$') { $lines = [int]$arg }
+        elseif ($arg) { $type = $arg.ToLower() }
+    }
+
+    if ($type -eq 'workerman') {
+        $file = Join-Path $LogDir 'workerman.log'
+    } elseif (@('info', 'warn', 'error', 'stdout') -contains $type) {
+        $file = (Get-ChildItem -Path (Join-Path $LogDir ($type + '_*.log')) -ErrorAction SilentlyContinue |
+                 Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+    } else {
+        Write-Err ('未知日志类型：' + $type + '（可选 workerman / info / warn / error / stdout）')
+        return 1
+    }
+
+    if (-not $file -or -not (Test-Path -LiteralPath $file)) {
+        Write-Err ('未找到日志文件：' + $LogDir + '\' + $type + '*')
+        return 1
+    }
+
+    Write-Step ('日志文件：' + $file)
+    Write-Host ''
+    # 必须走 Out-Host：本函数返回单值退出码，而外层是 exit (Invoke-Log ...)，
+    # 该写法会把函数的「成功流」整体当成退出码收集掉，行内容会凭空消失。
+    # Write-Host / Out-Host 写的是宿主流，不参与收集。
+    if ($follow) {
+        Get-Content -LiteralPath $file -Tail $lines -Encoding UTF8 -Wait | Out-Host
+    } else {
+        Get-Content -LiteralPath $file -Tail $lines -Encoding UTF8 | Out-Host
+    }
+    return 0
+}
+
+function Show-Help {
+    Write-Host @'
+GatewayWorker 实时数据推送服务 —— Windows 服务管理脚本
+
+用法：
+  bin\start.bat <命令> [参数]
+  bin\start.ps1 <命令> [参数] -PhpPath D:\php\php.exe
+
+命令：
+  start [core|角色]   启动。不带参数 = 全部 6 个角色，每个角色独立窗口；
+                      core = 除监控面板外的 5 个核心角色；也可只启动单个角色
+  stop  [all|角色]    停止。不带参数 = 全部
+  restart [all|角色]  重启（先停后启）
+  reload              重启业务相关角色（Windows 无 master，做不到真正平滑）
+  status              进程状态一览（PID / 内存 / 运行时长 / 监听地址）
+  log [-f] [类型] [行数]
+                      查看日志。类型：workerman(默认) / info / warn / error / stdout
+                      -f 持续跟随；行数默认 60
+  check               仅执行环境自检，不启动服务
+  env:init            生成 .env（首部署必执行，自动注入随机密钥）
+  token <uid> [device] [ttl]      生成调试用 Token
+  push <类型> <目标> [payload] [msg_id] [offline_mode]
+                      提交一条定向推送任务
+  help                显示本帮助
+
+角色：register  gateway  udp  business  api  dashboard
+
+重要：Windows 下请勿直接使用 start.php 的 stop / restart / reload / status
+      —— workerman 在非 Unix 平台会跳过命令行解析，这些命令会「反向启动一个
+      新实例」。请一律通过本脚本操作。
+
+示例：
+  bin\start.bat start                  # 启动全部 6 个角色
+  bin\start.bat start core             # 只启动 5 个核心角色
+  bin\start.bat start business         # 只启动业务进程（调试用）
+  bin\start.bat status
+  bin\start.bat log -f warn            # 跟随告警日志
+'@
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# 8. 入口
+# ---------------------------------------------------------------------------
+try {
+    $script:PhpExe = Resolve-PhpExe -Override $PhpPath
+} catch {
+    Write-Err $_.Exception.Message
+    exit 1
+}
+
+$cmd = 'help'
+if ($Command) { $cmd = $Command.ToLower() }
+
+switch ($cmd) {
+    'start'                      { exit (Invoke-Start $Arguments) }
+    'stop'                       { exit (Invoke-Stop $Arguments) }
+    'restart'                    { exit (Invoke-Restart $Arguments) }
+    'reload'                     { exit (Invoke-Reload) }
+    'status'                     { exit (Invoke-Status) }
+    'svc-status'                 { exit (Invoke-Status) }
+    'log'                        { exit (Invoke-Log $Arguments) }
+    'logs'                       { exit (Invoke-Log $Arguments) }
+    'tail'                       { exit (Invoke-Log $Arguments) }
+    'check'                      { & $script:PhpExe (Join-Path $Root 'start.php') check; exit $LASTEXITCODE }
+    'env:init'                   { & $script:PhpExe (Join-Path $Root 'start.php') env:init; exit $LASTEXITCODE }
+    'token'                      { & $script:PhpExe (Join-Path $Root 'start.php') token @Arguments; exit $LASTEXITCODE }
+    'push'                       { & $script:PhpExe (Join-Path $Root 'start.php') push @Arguments; exit $LASTEXITCODE }
+    'help'                       { exit (Show-Help) }
+    '-h'                         { exit (Show-Help) }
+    '--help'                     { exit (Show-Help) }
+    default {
+        Write-Err ('未知命令：' + $cmd)
+        Write-Host ''
+        [void](Show-Help)
+        exit 2
+    }
+}

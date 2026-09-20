@@ -11,7 +11,7 @@
  * 安全边界：目标恒为调用方自身 uid，不接受任意 uid 入参 ——
  * 否则任何客户端都能借服务端向他人推送（消息伪造）。
  *
- * 兼容 PHP 8.0 ~ 8.5
+ * 兼容 PHP 8.1 ~ 8.5
  */
 
 namespace GatewayPush\Business\Action;

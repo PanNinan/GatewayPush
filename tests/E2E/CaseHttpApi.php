@@ -7,7 +7,7 @@
  * 该用例在事件循环启动前**同步**执行（Harness::httpRequest 为阻塞实现），
  * 因此不参与超时保护；若 api 角色未启动，会在结果汇总中标记为 SKIP。
  *
- * 兼容 PHP 8.0 ~ 8.5
+ * 兼容 PHP 8.1 ~ 8.5
  */
 
 namespace GatewayPush\Tests\E2E;

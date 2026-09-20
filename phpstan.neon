@@ -5,7 +5,7 @@
 #   存量问题记录在 phpstan-baseline.neon，不在业务代码里做无意义的修补；
 #   此后新增的告警必须修复，不得追加进 baseline。
 #
-# 版本约束：phpstan/phpstan ^2.0（要求 php ^7.4|^8.0），与项目 PHP 8.0 目标兼容。
+# 版本约束：phpstan/phpstan ^2.0（要求 php ^7.4|^8.0），与项目 PHP 8.1 目标兼容。
 #
 # 分级目标：level 5 起步。待存量收敛后再提至 6 —— level 6 才会检查
 #   「mixed 传入非 mixed 形参」，而曾踩过的 array_keys('*') 属该类问题。
@@ -24,10 +24,11 @@ parameters:
     # 分析器缓存置于 runtime（已在 .gitignore 中排除）
     tmpDir: runtime/phpstan
 
-    # 项目刻意保持 PHP 8.0 兼容，不按分析机的 8.2 推断语言特性。
-    # 副作用：8.1+ 才引入的类型（如 Random\RandomException）会被判为未知类型，
+    # 项目下限为 PHP 8.1（由 workerman 5.x 的 require 决定），
+    # 不按分析机的 8.2 推断语言特性。
+    # 副作用：8.2+ 才引入的类型（如 Random\RandomException）会被判为未知类型，
     # 这是预期行为 —— 提示不要把高版本文档/语法当作可依赖前提。
-    phpVersion: 80000
+    phpVersion: 80100
 
     # workerman 大量使用动态属性（$worker->onMessage = ...），
     # 不把 phpdoc 类型当作绝对事实，避免制造无意义的告警

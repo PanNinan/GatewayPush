@@ -5,7 +5,7 @@
  * 模式：状态管理型 —— 与 SubscribeAction 成对，示范写操作的幂等处理：
  * 取消一个未订阅的主题同样返回成功，调用方无需区分「首次取消」与「重复取消」。
  *
- * 兼容 PHP 8.0 ~ 8.5
+ * 兼容 PHP 8.1 ~ 8.5
  */
 
 namespace GatewayPush\Business\Action;

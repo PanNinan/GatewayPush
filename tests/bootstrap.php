@@ -9,7 +9,7 @@
  * Env 的读取逻辑是「$_ENV -> $_SERVER -> getenv()」，
  * 用例写入 $_ENV 的键优先命中，不受真实 .env 影响。
  *
- * 兼容 PHP 8.0 ~ 8.5
+ * 兼容 PHP 8.1 ~ 8.5
  */
 
 require dirname(__DIR__) . '/vendor/autoload.php';

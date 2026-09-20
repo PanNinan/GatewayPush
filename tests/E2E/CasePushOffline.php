@@ -9,7 +9,7 @@
  * F 走 WS 直投，K 走 UDP 出站队列。相位设计也一致 ——
  * 先在无连接状态下入队，再建立连接 / 重建会话以触发补投。
  *
- * 兼容 PHP 8.0 ~ 8.5
+ * 兼容 PHP 8.1 ~ 8.5
  */
 
 namespace GatewayPush\Tests\E2E;

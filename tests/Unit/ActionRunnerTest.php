@@ -12,7 +12,7 @@
  * 早期实现直接 array_keys() 会抛 TypeError —— 纯类型错误，
  * 却要跑完整端到端才会暴露。
  *
- * 兼容 PHP 8.0 ~ 8.5
+ * 兼容 PHP 8.1 ~ 8.5
  */
 
 namespace GatewayPush\Tests\Unit;

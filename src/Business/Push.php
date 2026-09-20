@@ -28,7 +28,7 @@
  * 注意：离线列表按 uid 聚合（而非 client_id），因为断线重连后 client_id 必然变化，
  * 而 uid 稳定。重连补投采用「投给首个恢复的连接」语义，属至少一次投递。
  *
- * 兼容 PHP 8.0 ~ 8.5
+ * 兼容 PHP 8.1 ~ 8.5
  */
 
 namespace GatewayPush\Business;

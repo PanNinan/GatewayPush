@@ -32,7 +32,7 @@
 *   php start.php start --role=business
 *   php start.php start --role=api
 *
- * 兼容 PHP 8.0 ~ 8.5
+ * 兼容 PHP 8.1 ~ 8.5
  */
 
 define('BASE_PATH', __DIR__);

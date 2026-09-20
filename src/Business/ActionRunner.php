@@ -26,7 +26,7 @@
  *          （UDP clientId 不在 Gateway 连接表内，sendToClient 对其无效）
  *
  * ---------------------------------------------------------------------
- * 兼容 PHP 8.0 ~ 8.5
+ * 兼容 PHP 8.1 ~ 8.5
  */
 
 namespace GatewayPush\Business;

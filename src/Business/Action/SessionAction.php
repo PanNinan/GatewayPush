@@ -7,7 +7,7 @@
  * 安全约定：只读取「调用方自己」的会话，不接受 client_id / uid 入参，
  * 从接口形态上根除越权探测他人会话的可能（而非靠运行时校验兜底）。
  *
- * 兼容 PHP 8.0 ~ 8.5
+ * 兼容 PHP 8.1 ~ 8.5
  */
 
 namespace GatewayPush\Business\Action;

@@ -20,7 +20,7 @@
  * 本类只维护订阅关系，不负责投递。广播投递见 Push::enqueueTopic()，
  * 二者解耦后，订阅关系也可被外部系统（HTTP 接口 / 运维脚本）单独消费。
  *
- * 兼容 PHP 8.0 ~ 8.5
+ * 兼容 PHP 8.1 ~ 8.5
  */
 
 namespace GatewayPush\Business;

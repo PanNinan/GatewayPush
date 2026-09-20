@@ -8,7 +8,7 @@
  * 两者共用基准身份。UDP 首个报文可能因 socket 未就绪而静默丢失，
  * 故均通过 Harness::udpSendUntilAck() 走「延迟首包 + 应用层重传」。
  *
- * 兼容 PHP 8.0 ~ 8.5
+ * 兼容 PHP 8.1 ~ 8.5
  */
 
 namespace GatewayPush\Tests\E2E;
