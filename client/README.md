@@ -1,7 +1,7 @@
 # GatewayWorker 客户端 SDK 与调试器
 
 > 设计方案见仓库根目录 `GatewayWorker 客户端SDK与调试器设计方案.md`。
-> 当前进度：**P0 已完成（协议层 + 单测）**，P1~P6 待实现。
+> 当前进度：**P0（协议层）、P1（WS 传输 + 会话层）已完成**，P2~P6 待实现。
 
 ## 为什么放在同一仓库
 
@@ -16,7 +16,7 @@
 直接调用同一份实现即天然一致。将来若要抽成独立 composer 包，
 只需替换 `Protocol/` 适配层的实现，上层无需改动。
 
-## 目录结构（P0 现状）
+## 目录结构（P1 现状）
 
 ```
 client/
@@ -24,18 +24,25 @@ client/
 │   ├── Error/
 │   │   ├── ErrorCode.php          错误码常量（报文码 / HTTP 码 / 客户端本地码）
 │   │   └── ClientException.php    统一异常
-│   └── Protocol/
-│       ├── Codec.php              编解码适配 + data 业务信封
-│       ├── Signer.php             签名 / canonicalize / 本地验签
-│       └── TokenIssuer.php        Token 签发 / 解析 / 校验
+│   ├── Protocol/
+│   │   ├── Codec.php              编解码适配 + data 业务信封
+│   │   ├── Signer.php             签名 / canonicalize / 本地验签
+│   │   └── TokenIssuer.php        Token 签发 / 解析 / 校验
+│   ├── Transport/
+│   │   ├── TransportInterface.php 统一传输接口（含 onOpen，见设计稿 §12 偏离说明）
+│   │   └── WsTransport.php        ws://（AsyncTcpConnection 薄封装）
+│   └── Session/
+│       ├── SessionManager.php     鉴权状态机 / seq / pending / 心跳 / 重连 / 下行分发
+│       └── PendingRequest.php     单次请求上下文
 └── tests/Unit/
     ├── CodecTest.php
     ├── SignerTest.php
     ├── TokenIssuerTest.php
-    └── ErrorCodeTest.php
+    ├── ErrorCodeTest.php
+    └── SessionManagerTest.php     假传输层 + 假计时器，21 个用例
 ```
 
-后续阶段将补齐 `Transport/`（WS / UDP / HTTP）、`Session/`、`Service/`、`Event/`、`bin/gwclient.php`。
+后续阶段将补齐 `UdpTransport`/`HttpTransport`、`Service/`、`Event/`、`bin/gwclient.php`。
 
 ## 快速开始
 
@@ -75,6 +82,52 @@ $frame = Codec::encode($packet);
 
 > `new TokenIssuer($secret, $ttl, $clockSkew)` —— 三个参数依次对应服务端
 > `app.auth.secret` / `token_ttl` / `clock_skew`。
+
+## 会话层用法（P1）
+
+`SessionManager` 封装了「建连 → 鉴权 → 心跳 → 业务请求 → 断线重连」的完整会话生命周期。
+须运行在 workerman 事件环境中（如 `Worker::runAll()` 之后的回调里）：
+
+```php
+use GatewayPush\Client\Session\SessionManager;
+
+$session = new SessionManager(array(
+    'ws_url'    => 'ws://127.0.0.1:8282',
+    'uid'       => 'alice',
+    'device_id' => 'dev1',
+    'secret'    => 'AUTH_SECRET',   // 与服务端 app.auth.secret 一致
+    'heartbeat' => 20,              // 主动 ping 间隔（秒），0 = 关闭
+    'timeout'   => 5.0,             // 单次请求超时（秒）
+    'reconnect' => true,            // 断线自动重连（指数退避），重连后自动重鉴权
+));
+
+$session->onStateChange(function ($new, $old) { /* disconnected→connecting→connected→authenticating→ready */ });
+$session->onError(function (ClientException $e) { /* 服务端 error 报文 / 超时 / 传输错误 */ });
+$session->onPush(function (array $packet) { /* cmd=push 下行（P2 将由 PushReceiver 承接） */ });
+
+$session->connect();   // auto_auth=true（默认）：握手完成立即抢发 auth（15s 窗口内）
+
+$session->ping(function ($ok, $packet) use ($session) {
+    echo 'RTT=' . $session->lastRtt();
+});
+
+$session->request('echo', array('hello' => 'world'), function ($ok, $packet) {
+    if ($ok) {
+        print_r($packet['data']);          // 完整回执报文，业务载荷在 data
+    }
+});
+```
+
+行为要点：
+
+| 项 | 说明 |
+|---|---|
+| 鉴权时机 | 默认 `auto_auth=true`，握手完成的瞬间自动发 `auth`；手动模式置 false 后自行调 `auth()` |
+| 服务端反向心跳 | 收到 `{"cmd":"ping","ts":0}` 自动回 pong（实测 40s 不被网关断开） |
+| 请求-响应关联 | 内部按 seq 维护 pending 表，超时（默认 5s）以 `ok=false` 结算并触发 onError |
+| 断线重连 | 指数退避（1s 起步、封顶 15s），重连成功重鉴权后计数清零；用户 `close()` 不触发 |
+| 重连等待期关闭 | `close()` 会取消挂起的重连定时器并直接落 disconnected |
+| 回调签名 | 统一 `function (bool $ok, array $packet): void`（完整报文，载荷在 `$packet['data']`） |
 
 ## 协议要点速查
 
@@ -117,9 +170,9 @@ $frame = Codec::encode($packet);
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | P0 | `Protocol/` 三件套 + 单测 | ✅ 已完成 |
-| P1 | `WsTransport` + `SessionManager` | 待办 |
+| P1 | `WsTransport` + `SessionManager` | ✅ 已完成（单测 21 例 + 实测：auth/ping-pong/echo/40s 反向心跳存活全通过） |
 | P2 | 7 个动作 API + `PushReceiver` + 自动 ack | 待办 |
 | P3 | `UdpTransport` | 待办 |
 | P4 | `AdminApi`（`/push` `/stats` `/health`） | 待办 |
-| P5 | 重连 + 会话恢复 + 离线补投 | 待办 |
+| P5 | 重连 + 会话恢复 + 离线补投（重连/补投骨架已在 P1 就位，待补验收） | 待办 |
 | P6 | CLI 调试器（含 REPL）+ 客户端侧 e2e | 待办 |

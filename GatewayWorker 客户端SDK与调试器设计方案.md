@@ -1,6 +1,6 @@
 # GatewayWorker 客户端 SDK 与调试器设计方案
 
-> 状态：已确认，**P0 已完成**（2026-09-20），P1~P6 按阶段实现
+> 状态：已确认，**P0、P1 已完成**（2026-09-20），P2~P6 按阶段实现
 > 对应服务端：`Workman V2 GatewayWorker 实时数据推送服务技术方案文档.md`
 > 使用手册：`README.md`
 
@@ -153,6 +153,7 @@ interface TransportInterface {
     public function send(string $frame): void;
     public function close(): void;
     public function isConnected(): bool;
+    public function onOpen(callable $cb): void;    // P1 落地新增：握手完成信号（15s 鉴权窗口需要）
     public function onMessage(callable $cb): void;
     public function onClose(callable $cb): void;
     public function onError(callable $cb): void;
@@ -352,7 +353,7 @@ php client/bin/gwclient.php stats
 | 阶段 | 交付 | 验收标准 |
 |---|---|---|
 | **P0** ✅ | `Protocol/` 三件套 + 单测 | 与服务端 `Message`/`Auth` 输出逐字节一致（含 `canonicalize` 边界：嵌套、键序、中文），**已完成 2026-09-20** |
-| **P1** | `WsTransport` + `SessionManager` | `connect → auth → ack`；`ping → pong`；**应答服务端反向 ping**；`echo` 通 |
+| **P1** ✅ | `WsTransport` + `SessionManager` | `connect → auth → ack`；`ping → pong`；**应答服务端反向 ping**；`echo` 通 —— **单测 21 例 + 实测 4 项全通过 2026-09-20** |
 | **P2** | 7 个动作 API + `PushReceiver` + 自动 ack | 与 `config/actions.php` 声明一一对应；推送回执对齐 `msg_id` |
 | **P3** | `UdpTransport` | 合法签名通过；篡改签名 `4001`；**双层 ack 正确判别**；首包重传 |
 | **P4** | `AdminApi` | `/health 200`、`/stats 200`、`/push` 验签通过 + 验签失败 `401` |
@@ -407,3 +408,28 @@ php client/bin/gwclient.php stats
 > ① 增加 `Error/` 层（`TokenIssuer` 需要自有异常类型，且错误码分层是 P1 的前置）；
 > ② `TokenIssuer` 在**每次调用前**把配置写回静态类 `Auth` ——
 > 否则「后建实例改了密钥、先建实例跟着用错密钥」会静默发生。
+
+### P1 实际交付（2026-09-20）
+
+| 文件 | 内容 |
+|---|---|
+| `client/src/Transport/TransportInterface.php` | 统一传输接口（**新增 `onOpen`**，见下） |
+| `client/src/Transport/WsTransport.php` | `AsyncTcpConnection` 薄封装：回调归一化 + `isConnected` + 断开后丢弃连接实例（不可复用，重连须新建） |
+| `client/src/Session/SessionManager.php` | 状态机 / seq / pending 表 / 主动心跳 + **自动应答服务端反向 ping** / 指数退避重连（重连后 auto_auth 重鉴权）/ 下行分发 |
+| `client/src/Session/PendingRequest.php` | 请求上下文 |
+| `client/tests/Unit/SessionManagerTest.php` | 21 用例：假传输层 + 假计时器（`Timer::add` 在非 workerman 环境抛异常，计时器经构造参数注入） |
+
+**实测验收**（register/gateway/business 三角色 + Redis）：
+`auth` → ready；`ping` → pong（RTT 8.2ms）；`data.echo` → ack；
+**40s 存活观察**（覆盖 ≥3 个网关反向心跳周期 12.5s/次）连接不断且 echo 可用 —— 反向 ping 被正确应答。
+
+与设计稿/草案的偏离（均为必要修正）：
+
+1. `TransportInterface` 增加 `onOpen()` —— 15s 鉴权窗口要求「握手完成的瞬间」触发 auth，
+   无法从 onMessage/onClose 推导该时机；
+2. `PendingRequest` 的 `onReply`/`onTimeout` 合并为 `onReply(bool $ok, array $packet)` ——
+   超时也是一次结算（ok=false、packet 空），单一出口避免两条回调的触发次序歧义；
+3. 结算回调收到**完整回执报文**（业务载荷在 `$packet['data']`）—— 保留 seq/msg_id 等
+   元信息供上层（PushReceiver、P2 Service API）使用；
+4. `close()` 会取消挂起的重连定时器（重连等待期没有活动连接，onClose 不会再触发，
+   须直接落 disconnected）—— 该点由 PHPStan `property.onlyWritten` 告警发现。

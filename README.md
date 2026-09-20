@@ -170,6 +170,8 @@ GatewayWorker/
 │       └── UdpProtocol.php           UDP 应用层协议（输入分段 / 编解码）
 ├── client/                            客户端 SDK（独立于服务端进程，详见 client/README.md）
 │   ├── src/Protocol/                  Codec / Signer / TokenIssuer（复用服务端 Message、Auth）
+│   ├── src/Transport/                 TransportInterface / WsTransport（P1）
+│   ├── src/Session/                   SessionManager / PendingRequest（P1：鉴权状态机/心跳/重连）
 │   ├── src/Error/                     错误码与统一异常
 │   ├── tests/Unit/                    客户端单元测试
 │   └── README.md                      客户端使用说明与里程碑
@@ -1665,7 +1667,7 @@ class OrderQueryAction implements ActionInterface
 
 ```bash
 composer analyse        # PHPStan（level 5，baseline 冻结 11 条存量告警）
-composer test           # PHPUnit（206 tests / 551 assertions；含 client/tests/Unit）
+composer test           # PHPUnit（230 tests / 670 assertions；含 client/tests/Unit）
 composer test:e2e       # 端到端自检（15 个用例）
 ```
 
@@ -1746,7 +1748,7 @@ php tests/e2e_check.php <uid> [device_id] [timeout]
 
 ```bash
 composer test
-# OK (206 tests, 551 assertions)
+# OK (230 tests, 670 assertions)
 ```
 
 **只测「纯函数 / 零 IO」组件**：
