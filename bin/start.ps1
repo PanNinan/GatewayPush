@@ -17,10 +17,24 @@
  停止任何进程，而是**照常启动一个新实例** —— 每执行一次就多一个进程、多一份
  端口占用。Windows 下也没有 pid 文件（workerman 只在 Unix 侧写盘）。
 
- 所以本脚本自己承担进程编排：启动时记录窗口 PID，停止 / 状态则以
- `Get-CimInstance Win32_Process` 读取命令行反查 php.exe，二者互相兜底。
+所以本脚本自己承担进程编排：启动时记录窗口 PID，停止 / 状态则以
+`Get-CimInstance Win32_Process` 读取命令行反查 php.exe，二者互相兜底。
 
- 中文显示（Windows）
+ 为什么脚本要自己校验 PHP 版本
+ --------------------------------------------------------------------------
+ 项目的真实 PHP 下限由**依赖**决定（workerman 5.x 要求 >= 8.1），不由代码语法
+ 决定。Composer 会在 autoload 阶段用生成的 platform_check.php 直接抛
+ RuntimeException，所以拿旧解释器跑，用户看到的是一段 Composer 堆栈，而不是
+ 本项目自己的提示，极难定位。
+
+ 两个诱因：
+   1) PATH 里的第一个 php.exe 未必是本项目能用的版本（本机装了 5 个）；
+   2) IDE 会污染 PATH —— PhpStorm 把「项目默认解释器」注入集成终端，本机注入
+      的是 8.0.2，于是在 PhpStorm 终端里执行 start 会让 6 个角色全部启动失败。
+ 故本脚本解析解释器时逐一探测版本，跳过低于下限的候选；全部候选都不合格时
+ 给出完整清单。下限以 config/app.php 的 php_min 为唯一真源。
+
+中文显示（Windows）
  --------------------------------------------------------------------------
  乱码的根因是「编码对不上」：php.exe 恒以 UTF-8 字节写出，而简体中文版
  Windows 的控制台活动代码页是 936（GBK），按 GBK 解码 UTF-8 字节必然乱码。
@@ -193,29 +207,134 @@ function Get-ListenEndpoint {
 # ---------------------------------------------------------------------------
 # 4. 前置检查
 # ---------------------------------------------------------------------------
+# 下限版本 ID（如 80100 = 8.1.0），以 config/app.php 的 php_min 为唯一真源。
+# 解析失败时回落到 8.1.0 —— 宁可报错也不要因为读不到配置而放行旧解释器。
+function Get-PhpMinVersionId {
+    $fallback = 80100
+    $cfg = Join-Path $Root 'config\app.php'
+    if (-not (Test-Path -LiteralPath $cfg)) { return $fallback }
+    try {
+        $text = [System.IO.File]::ReadAllText($cfg, [System.Text.Encoding]::UTF8)
+    } catch {
+        return $fallback
+    }
+    if ($text -match "'php_min'\s*=>\s*'(\d+)\.(\d+)\.(\d+)'") {
+        return ([int]$matches[1] * 10000 + [int]$matches[2] * 100 + [int]$matches[3])
+    }
+    return $fallback
+}
+
+# 版本 ID -> "x.y.z"
+function Format-PhpVersion {
+    param([int]$Id)
+    return ('{0}.{1}.{2}' -f [int]($Id / 10000), [int](($Id / 100) % 100), [int]($Id % 100))
+}
+
+# 探测解释器版本 ID，探测失败返回 0。
+# 用 `-r` 而不是 `-v`：只跑一行代码，不加载任何本项目文件 —— 版本过低时正是
+# Composer 的 platform_check.php 会抛异常，用它探测根本拿不到版本号。
+function Get-PhpVersionId {
+    param([string]$Exe)
+
+    # 本函数要容忍解释器报错退出，故临时放开全局 Stop 偏好
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $out = @()
+    try {
+        $out = @(& $Exe -r 'echo PHP_VERSION_ID;' 2>$null)
+    } catch {
+        $out = @()
+    } finally {
+        $ErrorActionPreference = $prev
+    }
+
+    foreach ($line in $out) {
+        $s = "$line".Trim()
+        if ($s -match '^\d+$') { return [int]$s }
+    }
+    return 0
+}
+
 function Resolve-PhpExe {
     param([string]$Override)
 
+    $minId = Get-PhpMinVersionId
+    $minTxt = Format-PhpVersion $minId
+
+    # 1) 显式指定：只校验，不回落 —— 用户点名了这个二进制，静默换掉更危险
     if ($Override) {
-        if (Test-Path -LiteralPath $Override) { return (Resolve-Path -LiteralPath $Override).Path }
-        throw "指定的 PHP 可执行文件不存在：$Override"
+        if (-not (Test-Path -LiteralPath $Override)) {
+            throw "指定的 PHP 可执行文件不存在：$Override"
+        }
+        $exe = (Resolve-Path -LiteralPath $Override).Path
+        $id = Get-PhpVersionId $exe
+        if ($id -eq 0) {
+            Write-Warn2 ("无法探测 PHP 版本，跳过校验：{0}" -f $exe)
+            return $exe
+        }
+        if ($id -lt $minId) {
+            throw ("指定的 PHP 版本过低：{0}（{1}），本项目要求 >= {2}。" -f `
+                   $exe, (Format-PhpVersion $id), $minTxt)
+        }
+        $script:PhpVerTxt = Format-PhpVersion $id
+        return $exe
     }
 
-    $cmd = Get-Command php.exe -ErrorAction SilentlyContinue
-    if (-not $cmd) { $cmd = Get-Command php -ErrorAction SilentlyContinue }
-    if ($cmd -and $cmd.Source) { return $cmd.Source }
-
-    # phpstudy_pro 的常见安装位置
-    $hits = @()
+    # 2) 候选列表：PATH 优先（用户的显式选择），其次 phpstudy_pro 常见安装位置。
+    #    必须遍历 PATH 的**每一个**目录，而不是只取 Get-Command 的首个命中 ——
+    #    首个命中被判定版本过低时，PATH 里排在后面的合格版本应当先于外部目录兜底，
+    #    否则会把用户显式配置好的解释器无视掉。
+    $cands = @()
+    foreach ($name in @('php.exe', 'php')) {
+        $cmd = Get-Command $name -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($cmd -and $cmd.Source) { $cands += $cmd.Source }
+    }
+    foreach ($dir in @($env:PATH -split ';')) {
+        if (-not $dir -or $dir.Trim() -eq '') { continue }
+        $p = Join-Path ($dir.Trim().Trim('"')) 'php.exe'
+        if (Test-Path -LiteralPath $p -PathType Leaf) { $cands += $p }
+    }
     foreach ($pat in @('D:\phpstudy_pro\Extensions\php\*\php.exe',
-                       'C:\phpstudy_pro\Extensions\php\*\php.exe',
-                       'D:\phpstudy_pro\Extensions\php\*\php.exe')) {
-        $hits += @(Get-ChildItem -Path $pat -ErrorAction SilentlyContinue)
-    }
-    if ($hits.Count -gt 0) {
-        return ($hits | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+                       'C:\phpstudy_pro\Extensions\php\*\php.exe')) {
+        $cands += @(Get-ChildItem -Path $pat -ErrorAction SilentlyContinue |
+                    Sort-Object FullName -Descending |
+                    ForEach-Object { $_.FullName })
     }
 
+    # 去重且保序（PATH 命中项与 glob 命中项常为同一个文件）
+    $seen = @{}
+    $uniq = @()
+    foreach ($c in $cands) {
+        $key = $c.ToLower()
+        if ($seen.ContainsKey($key)) { continue }
+        $seen[$key] = $true
+        $uniq += $c
+    }
+
+    $rejected = @()
+    foreach ($c in $uniq) {
+        $id = Get-PhpVersionId $c
+        if ($id -eq 0) {
+            $rejected += ('{0}  [无法探测版本]' -f $c)
+            continue
+        }
+        if ($id -ge $minId) {
+            if ($rejected.Count -gt 0) {
+                Write-Warn2 ('已跳过不满足版本要求的 PHP：' + ($rejected -join ' | '))
+            }
+            $script:PhpVerTxt = Format-PhpVersion $id
+            return $c
+        }
+        $rejected += ('{0}  [{1}]' -f $c, (Format-PhpVersion $id))
+    }
+
+    if ($rejected.Count -gt 0) {
+        Write-Err ("以下 PHP 解释器均低于要求的 >= {0}：" -f $minTxt)
+        foreach ($r in $rejected) {
+            Write-Host ('        ' + $r) -ForegroundColor DarkGray
+        }
+        throw '没有可用的 PHP 解释器。请安装符合版本要求的 PHP，或用 -PhpPath 指定绝对路径。'
+    }
     throw '未找到 php.exe。请把 PHP 加入 PATH，或用 -PhpPath 指定绝对路径。'
 }
 
@@ -621,12 +740,15 @@ GatewayWorker 实时数据推送服务 —— Windows 服务管理脚本
 # ---------------------------------------------------------------------------
 # 8. 入口
 # ---------------------------------------------------------------------------
+$script:PhpVerTxt = ''
 try {
     $script:PhpExe = Resolve-PhpExe -Override $PhpPath
 } catch {
     Write-Err $_.Exception.Message
     exit 1
 }
+# 明确回显实际使用的解释器：本机装了 5 个 PHP，终端里显示清楚可以省掉一轮排查
+Write-Host ('      PHP ' + $script:PhpVerTxt + '  ' + $script:PhpExe) -ForegroundColor DarkGray
 
 $cmd = 'help'
 if ($Command) { $cmd = $Command.ToLower() }

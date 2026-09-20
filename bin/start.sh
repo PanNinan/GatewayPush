@@ -23,6 +23,15 @@
 #    * 终端里排含中文的表格不能直接用 printf 的 %-Ns —— 它按「字符数」补空格，
 #      而中文占 2 列，结果必然错位。本脚本用 disp_width() 按显示宽度对齐。
 #
+#  为什么脚本要自己校验 PHP 版本
+#  --------------------------------------------------------------------------
+#  项目的真实 PHP 下限由**依赖**决定（workerman 5.x 要求 >= 8.1），不由代码语法
+#  决定。Composer 会在 autoload 阶段用生成的 platform_check.php 抛 RuntimeException，
+#  所以用旧解释器运行时，用户看到的是一段 Composer 堆栈，而不是本项目的友好提示。
+#  生产机上同时存在发行版自带 PHP 与自编译 PHP 时极易踩到（发行版常年落后）。
+#  本脚本在 preflight 阶段探测版本并拒绝过低的解释器；下限以 config/app.php 的
+#  php_min 为唯一真源，不在脚本里另立一份。
+#
 #  用法
 #  --------------------------------------------------------------------------
 #    ./bin/start.sh <命令> [参数]
@@ -197,12 +206,61 @@ role_listen() {
 # ---------------------------------------------------------------------------
 # 4. 前置检查
 # ---------------------------------------------------------------------------
+# PHP 下限（版本 ID，如 80100 = 8.1.0），取自 config/app.php 的 php_min；
+# 解析不出来时回落到 8.1.0 —— 宁可报错，也不要因读不到配置而放行旧解释器。
+php_min_id() {
+    local v major minor patch
+    v="$(sed -n "s/.*'php_min'[[:space:]]*=>[[:space:]]*'\([0-9][0-9.]*\)'.*/\1/p" \
+            "$ROOT_DIR/config/app.php" 2>/dev/null | head -n 1)"
+    case "$v" in
+        [0-9]*.[0-9]*.[0-9]*) ;;
+        *) v='8.1.0' ;;
+    esac
+    IFS='.' read -r major minor patch <<<"$v"
+    printf '%d' $(( major * 10000 + minor * 100 + patch ))
+}
+
+# 版本 ID -> x.y.z
+fmt_ver() {
+    printf '%d.%d.%d' $(( $1 / 10000 )) $(( ($1 / 100) % 100 )) $(( $1 % 100 ))
+}
+
+# 探测解释器版本 ID；失败时无输出且返回非 0。
+# 用 -r 而不是 -v：只跑一行代码，不触碰本项目文件 —— 版本过低时正是 Composer 的
+# platform_check.php 会抛异常，靠它探测根本拿不到版本号。
+php_version_id() {
+    local out
+    out="$("$1" -r 'echo PHP_VERSION_ID;' 2>/dev/null)" || return 1
+    case "$out" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    printf '%s' "$out"
+}
+
+# 版本校验必须发生在任何 php_run 之前，否则报错会被 Composer 堆栈顶替
+check_php_version() {
+    local min id
+    min="$(php_min_id)"
+    if ! id="$(php_version_id "$PHP_BIN")"; then
+        warn "无法探测 PHP 版本（$PHP_BIN），已跳过版本校验。"
+        return 0
+    fi
+    if (( id < min )); then
+        err "PHP 版本过低：$(fmt_ver "$id")，本项目要求 >= $(fmt_ver "$min")。"
+        err "当前解释器：$(command -v "$PHP_BIN" 2>/dev/null || printf '%s' "$PHP_BIN")"
+        err "请用 PHP_BIN=/path/to/php 指定符合要求的版本后重试。"
+        return 1
+    fi
+    return 0
+}
+
 preflight() {
     if ! command -v "$PHP_BIN" >/dev/null 2>&1; then
         err "未找到 PHP 可执行文件：$PHP_BIN"
         err "请把 PHP 加入 PATH，或用 PHP_BIN=/path/to/php 指定。"
         return 1
     fi
+    check_php_version || return 1
     if [ ! -f "$ROOT_DIR/vendor/autoload.php" ]; then
         err "依赖未安装，请先执行：composer install"
         return 1
