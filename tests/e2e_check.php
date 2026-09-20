@@ -23,6 +23,9 @@
  *   [J] 指令路由表：data.action（echo / session）分发与 4006 / 4007 错误分支
  *   [K] UDP 离线补投：UDP 会话重建时经出站队列补投（offline=1）
  *   [L] 报文级限流：单连接连发超量报文 -> 部分放行、部分 4008 拒绝
+ *   [M] 业务动作契约：参数校验白名单 / 4006 未知动作 / 4007 参数错误
+ *   [N] UDP 通道业务动作：echo 经出站队列回执；report 按声明静默不回执
+ *   [O] 订阅与广播闭环：subscribe -> enqueueTopic -> push -> unsubscribe
  *
  * 退出码：0 = 全部通过，1 = 存在失败项
  */
@@ -66,6 +69,9 @@ $uidI    = $uid . '-I';
 $uidJ    = $uid . '-J';
 $uidK    = $uid . '-K';
 $uidL    = $uid . '-L';
+$uidM    = $uid . '-M';
+$uidN    = $uid . '-N';
+$uidO    = $uid . '-O';
 $deviceE = $deviceId . '-E';
 $deviceF = $deviceId . '-F';
 $deviceG = $deviceId . '-G';
@@ -73,6 +79,9 @@ $deviceI = $deviceId . '-I';
 $deviceJ = $deviceId . '-J';
 $deviceK = $deviceId . '-K';
 $deviceL = $deviceId . '-L';
+$deviceM = $deviceId . '-M';
+$deviceN = $deviceId . '-N';
+$deviceO = $deviceId . '-O';
 
 $tokenE = Auth::issue(array('uid' => $uidE, 'device_id' => $deviceE));
 $tokenF = Auth::issue(array('uid' => $uidF, 'device_id' => $deviceF));
@@ -81,6 +90,18 @@ $tokenI = Auth::issue(array('uid' => $uidI, 'device_id' => $deviceI));
 $tokenJ = Auth::issue(array('uid' => $uidJ, 'device_id' => $deviceJ));
 $tokenK = Auth::issue(array('uid' => $uidK, 'device_id' => $deviceK));
 $tokenL = Auth::issue(array('uid' => $uidL, 'device_id' => $deviceL));
+$tokenM = Auth::issue(array('uid' => $uidM, 'device_id' => $deviceM));
+$tokenN = Auth::issue(array('uid' => $uidN, 'device_id' => $deviceN));
+$tokenO = Auth::issue(array('uid' => $uidO, 'device_id' => $deviceO));
+
+// 上报 / 订阅用例使用独立主题，避免跨轮次互相污染
+$topicM = 'e2e_m_' . bin2hex(random_bytes(3));
+$topicN = 'e2e_n_' . bin2hex(random_bytes(3));
+$topicO = 'e2e_o_' . bin2hex(random_bytes(3));
+
+$nEchoSeq1 = 'n-echo-1';
+$nEchoSeq2 = 'n-echo-2';
+$nReportSeq = 'n-report-1';
 
 $msgIdE = 'e2e-push-' . bin2hex(random_bytes(4));
 $msgIdF = 'e2e-off-' . bin2hex(random_bytes(4));
@@ -104,6 +125,9 @@ $state = array(
     'J' => 'pending', 'J_msg' => '',
     'K' => 'pending', 'K_msg' => '',
     'L' => 'pending', 'L_msg' => '',
+    'M' => 'pending', 'M_msg' => '',
+    'N' => 'pending', 'N_msg' => '',
+    'O' => 'pending', 'O_msg' => '',
 );
 
 /**
@@ -326,7 +350,10 @@ $worker->onWorkerStart = function () use (
     $appConfig, $uidE, $deviceE, $tokenE, $uidF, $deviceF, $tokenF, $uidG, $deviceG, $tokenG,
     $uidI, $deviceI, $tokenI, $msgIdE, $msgIdF, $msgIdG, $msgIdI,
     $uidJ, $deviceJ, $tokenJ, $uidK, $deviceK, $tokenK, $msgIdK,
-    $uidL, $deviceL, $tokenL
+    $uidL, $deviceL, $tokenL,
+    $uidM, $deviceM, $tokenM, $topicM,
+    $uidN, $deviceN, $tokenN, $topicN, $nEchoSeq1, $nEchoSeq2, $nReportSeq,
+    $uidO, $deviceO, $tokenO, $topicO
 ) {
     RedisClient::init($appConfig['redis']);
 
@@ -362,6 +389,9 @@ $worker->onWorkerStart = function () use (
             'J' => '指令路由表（data.action 分发 / 4006 / 4007）',
             'K' => 'UDP 离线补投（会话重建 -> 出站队列 -> offline=1）',
             'L' => '报文级限流（超量连发 -> 部分放行 / 部分 4008）',
+            'M' => '业务动作契约（参数白名单 / 4006 未知动作 / 4007 参数错误）',
+            'N' => 'UDP 通道业务动作（echo 回执 / report 按声明静默）',
+            'O' => '订阅与广播闭环（subscribe -> enqueueTopic -> push）',
         );
         foreach ($labels as $key => $label) {
             $ok  = $state[$key] === true;
@@ -1110,10 +1140,433 @@ $worker->onWorkerStart = function () use (
 
     $connL->connect();
 
+    /* ================= 用例 M：业务动作契约 ================= */
+    // 验证声明式动作清单（config/actions.php）的执行语义：
+    //   1) echo  params='*' 透传            -> ack，回显 params 且带 channel 字段
+    //   2) report 合法入参                  -> ack，返回 accepted / total
+    //   3) report 缺 topic（required）      -> 4007
+    //   4) report topic 含非法字符          -> 4007
+    //   5) action 未注册                    -> 4006
+    //   6) data 缺 action                   -> 4007
+    // 末步回查 Redis，确认 report 确实已写入（回执与落库一致）
+    $connM = new AsyncTcpConnection($wsAddress);
+    $mStep = 0;
+
+    $connM->onConnect = function ($con) use ($uidM, $deviceM, $tokenM, $secret) {
+        echo "[M] WebSocket 已连接\n";
+        $con->send(Message::encode(buildPacket(Message::CMD_AUTH, 'm-auth-1', array(
+            'uid'       => $uidM,
+            'device_id' => $deviceM,
+            'token'     => $tokenM,
+        ), $secret)));
+        echo "[M] -> auth\n";
+    };
+
+    $connM->onMessage = function ($con, $raw) use (&$state, &$mStep, $finish, $secret, $uidM, $deviceM, $topicM) {
+        $packet = json_decode($raw, true);
+        if (!is_array($packet) || !isset($packet['cmd'])) {
+            return;
+        }
+
+        $data = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : array();
+        $code = isset($data['code']) ? (int)$data['code'] : -1;
+        $act  = isset($data['action']) ? (string)$data['action'] : '';
+
+        $fail = function ($msg) use (&$state, $con, $finish) {
+            $state['M']     = false;
+            $state['M_msg'] = $msg;
+            $con->close();
+            $finish();
+        };
+        $send = function ($seq, array $dataBody) use ($con, $secret, $uidM, $deviceM) {
+            $con->send(Message::encode(buildPacket(Message::CMD_DATA, $seq, array(
+                'uid'       => $uidM,
+                'device_id' => $deviceM,
+                'data'      => $dataBody,
+            ), $secret)));
+        };
+
+        switch ($mStep) {
+            case 0:
+                if ($packet['cmd'] !== Message::CMD_ACK) {
+                    $fail('鉴权阶段返回 ' . $packet['cmd']);
+                    return;
+                }
+                $mStep = 1;
+                $send('m-echo-1', array(
+                    'action' => 'echo',
+                    'params' => array('k' => 'v', 'n' => 1, 'deep' => array('a' => 1)),
+                ));
+                echo "[M] -> data/action=echo（params 透传）\n";
+                return;
+
+            case 1:
+                if ($packet['cmd'] !== Message::CMD_ACK
+                    || $act !== 'echo'
+                    || (isset($data['channel']) ? (string)$data['channel'] : '') !== 'ws'
+                    || !isset($data['params']['k']) || (string)$data['params']['k'] !== 'v'
+                    || !isset($data['params']['deep']['a'])) {
+                    $fail('echo 回显异常（期望透传含 channel=ws）：' . $raw);
+                    return;
+                }
+                $mStep = 2;
+                $send('m-report-1', array(
+                    'action' => 'report',
+                    'params' => array('topic' => $topicM, 'count' => 3),
+                ));
+                echo "[M] -> data/action=report（合法入参）\n";
+                return;
+
+            case 2:
+                if ($packet['cmd'] !== Message::CMD_ACK || $act !== 'report'
+                    || (int)(isset($data['accepted']) ? $data['accepted'] : 0) !== 3) {
+                    $fail('report 回执异常：' . $raw);
+                    return;
+                }
+                $mStep = 3;
+                $send('m-report-bad-1', array('action' => 'report', 'params' => array('count' => 1)));
+                echo "[M] -> data/action=report（缺 topic，期望 4007）\n";
+                return;
+
+            case 3:
+                if ($packet['cmd'] !== Message::CMD_ERROR || $code !== Message::CODE_PARAM_MISSING) {
+                    $fail(sprintf('缺 required 未返回 4007：cmd=%s code=%d', $packet['cmd'], $code));
+                    return;
+                }
+                $mStep = 4;
+                $send('m-report-bad-2', array(
+                    'action' => 'report',
+                    'params' => array('topic' => 'bad topic!'),
+                ));
+                echo "[M] -> data/action=report（topic 非法字符，期望 4007）\n";
+                return;
+
+            case 4:
+                if ($packet['cmd'] !== Message::CMD_ERROR || $code !== Message::CODE_PARAM_MISSING) {
+                    $fail(sprintf('非法 topic 未被拦截：cmd=%s code=%d', $packet['cmd'], $code));
+                    return;
+                }
+                $mStep = 5;
+                $send('m-unknown-1', array('action' => 'no_such_action'));
+                echo "[M] -> data/action=no_such_action（期望 4006）\n";
+                return;
+
+            case 5:
+                if ($packet['cmd'] !== Message::CMD_ERROR || $code !== Message::CODE_UNKNOWN_CMD) {
+                    $fail(sprintf('未知动作未返回 4006：cmd=%s code=%d', $packet['cmd'], $code));
+                    return;
+                }
+                $mStep = 6;
+                $send('m-noaction-1', array());
+                echo "[M] -> data（缺 action，期望 4007）\n";
+                return;
+
+            case 6:
+                if ($packet['cmd'] !== Message::CMD_ERROR || $code !== Message::CODE_PARAM_MISSING) {
+                    $fail(sprintf('缺 action 未返回 4007：cmd=%s code=%d', $packet['cmd'], $code));
+                    return;
+                }
+
+                // 回执与落库一致性：report 的回执称已受理 3 条，Redis 计数须相符
+                $key = RedisClient::key('action:report:' . $topicM);
+                RedisClient::connection()->hGet($key, 'count', function ($count) use (&$state, $con, $finish, $topicM) {
+                    $ok = is_numeric($count) && (int)$count >= 3;
+                    $state['M'] = $ok;
+                    if (!$ok) {
+                        $state['M_msg'] = sprintf(
+                            'report 回执成功但 Redis 计数不符（topic=%s，实际 %s）',
+                            $topicM,
+                            var_export($count, true)
+                        );
+                    }
+                    echo $ok
+                        ? "[M] 上报计数已落库（count={$count}）\n"
+                        : "[M] 上报计数未落库\n";
+                    $con->close();
+                    $finish();
+                });
+                return;
+        }
+    };
+
+    $connM->connect();
+
+    /* ================= 用例 N：UDP 通道业务动作 ================= */
+    // 本轮核心：验证 UDP 上报的业务报文能走与 WS 完全一致的动作分发。
+    //   1) echo  在 UDP 上声明 sync -> 经出站队列收到 ack（证明回执通道打通）
+    //   2) report 在 UDP 上声明 none -> 静默处理，不回任何报文
+    //   3) 静默 ≠ 不处理：回查 Redis 确认计数已写入
+    //
+    // 「静默」的判定方式：先发 report 再发 echo#2，若收到 seq 属于 report 的
+    // 任何回执即判失败 —— 这比单纯等待超时更精确。
+    $udpN = new AsyncUdpConnection($udpAddress);
+    $nEcho1Acked = false;
+
+    $udpN->onConnect = function ($con) use ($secret, $uidN, $deviceN, $tokenN, $nEchoSeq1, &$nEcho1Acked) {
+        echo "[N] UDP 通道已就绪\n";
+
+        // 延迟首包 + 应用层重传：规避 UDP 首个报文在 socket 就绪前的静默丢失
+        $attempt = function ($n) use ($con, $secret, $uidN, $deviceN, $tokenN, $nEchoSeq1, &$nEcho1Acked, &$attempt) {
+            if ($nEcho1Acked || $n > 4) {
+                return;
+            }
+            $con->send(Message::encode(buildPacket(Message::CMD_DATA, $nEchoSeq1, array(
+                'uid'       => $uidN,
+                'device_id' => $deviceN,
+                'token'     => $tokenN,
+                'data'      => array('action' => 'echo', 'params' => array('phase' => 1)),
+            ), $secret)));
+            echo "[N] -> data/action=echo#1（建立 UDP 应用层会话，第 {$n} 次）\n";
+
+            Timer::add(1.2, function () use ($n, &$attempt) {
+                $attempt($n + 1);
+            }, array(), false);
+        };
+
+        Timer::add(0.2, function () use (&$attempt) {
+            $attempt(1);
+        }, array(), false);
+    };
+
+    $udpN->onMessage = function ($con, $raw) use (
+        &$state, $finish, $secret, $uidN, $deviceN, $tokenN,
+        $nEchoSeq1, $nEchoSeq2, $nReportSeq, $topicN, &$nEcho1Acked
+    ) {
+        $packet = json_decode($raw, true);
+        if (!is_array($packet) || !isset($packet['cmd'])) {
+            return;
+        }
+
+        $seq  = isset($packet['seq']) ? (string)$packet['seq'] : '';
+        $data = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : array();
+
+        // UDP 上存在两层回执，必须区分，否则会把传输层 ack 误判为业务回执：
+        //   传输层 —— UDP 网关收到合法报文即回 ack（data 为空、不含 action 字段），
+        //             属于「收包确认」，与业务动作的回执策略无关
+        //   业务层 —— 动作执行结果，按 config/actions.php 的 reply 声明发放
+        $isActionReply = isset($data['action']);
+
+        $fail = function ($msg) use (&$state, $con, $finish) {
+            $state['N']     = false;
+            $state['N_msg'] = $msg;
+            $con->close();
+            $finish();
+        };
+
+        // 静默策略校验：只有「业务层回执」才违反 report 在 UDP 上的 none 声明，
+        // 传输层 ack 恒定存在，不算违规。
+        if ($seq === $nReportSeq) {
+            if ($isActionReply) {
+                $fail('report 在 UDP 上声明为静默，却收到业务层回执：' . substr((string)$raw, 0, 120));
+            }
+            return;
+        }
+
+        if ($seq === $nEchoSeq1) {
+            if (!$isActionReply) {
+                return;   // 传输层 ack：收包成功，继续等待业务层回执
+            }
+            if ($nEcho1Acked) {
+                return;   // 忽略重传产生的重复业务回执
+            }
+            $nEcho1Acked = true;
+
+            if ($packet['cmd'] !== Message::CMD_ACK
+                || (string)$data['action'] !== 'echo'
+                || (isset($data['channel']) ? (string)$data['channel'] : '') !== 'udp') {
+                $fail('UDP echo 业务回执异常（期望 ack 且 channel=udp）：' . $raw);
+                return;
+            }
+            echo "[N] <- echo#1 业务回执（UDP 动作回执通道打通，channel=udp）\n";
+
+            // 连发 3 份上报以容忍 UDP 丢包，count 各计 1
+            for ($i = 0; $i < 3; $i++) {
+                $con->send(Message::encode(buildPacket(Message::CMD_DATA, $nReportSeq, array(
+                    'uid'       => $uidN,
+                    'device_id' => $deviceN,
+                    'token'     => $tokenN,
+                    'data'      => array('action' => 'report', 'params' => array('topic' => $topicN, 'count' => 1)),
+                ), $secret)));
+            }
+            echo "[N] -> data/action=report ×3（UDP 声明静默，期望无任何回执）\n";
+
+            // 延迟发 echo#2：若 report 违规回执，必然先于 echo#2 的 ack 到达
+            Timer::add(0.8, function () use ($con, $secret, $uidN, $deviceN, $tokenN, $nEchoSeq2) {
+                $con->send(Message::encode(buildPacket(Message::CMD_DATA, $nEchoSeq2, array(
+                    'uid'       => $uidN,
+                    'device_id' => $deviceN,
+                    'token'     => $tokenN,
+                    'data'      => array('action' => 'echo', 'params' => array('phase' => 2)),
+                ), $secret)));
+                echo "[N] -> data/action=echo#2（此刻前若收到 report 回执即为失败）\n";
+            }, array(), false);
+            return;
+        }
+
+        if ($seq === $nEchoSeq2) {
+            if (!$isActionReply) {
+                return;   // 传输层 ack，继续等待业务层回执
+            }
+            if ($packet['cmd'] !== Message::CMD_ACK) {
+                $fail('echo#2 未返回业务回执：' . $raw);
+                return;
+            }
+            echo "[N] <- echo#2 业务回执（确认期间未收到 report 业务回执）\n";
+
+            // 静默不等于不处理：核对上报计数确实已写入 Redis
+            $check = null;
+            $check = function ($attempt) use (&$check, &$state, $con, $finish, $topicN) {
+                $key = RedisClient::key('action:report:' . $topicN);
+                RedisClient::connection()->hGet($key, 'count', function ($count) use (&$check, &$state, $con, $finish, $attempt, $topicN) {
+                    $ok = is_numeric($count) && (int)$count >= 1;
+
+                    if ($ok || $attempt >= 3) {
+                        $state['N'] = $ok;
+                        if (!$ok) {
+                            $state['N_msg'] = sprintf(
+                                'report 静默执行但计数未写入（topic=%s，实际 %s）',
+                                $topicN,
+                                var_export($count, true)
+                            );
+                        }
+                        echo $ok
+                            ? "[N] 静默上报计数已落库（count={$count}）\n"
+                            : "[N] 静默上报计数未落库\n";
+                        $con->close();
+                        $finish();
+                        return;
+                    }
+
+                    Timer::add(0.4, function () use (&$check, $attempt) {
+                        $check($attempt + 1);
+                    }, array(), false);
+                });
+            };
+            $check(1);
+            return;
+        }
+    };
+
+    $udpN->connect();
+
+    /* ================= 用例 O：订阅与广播闭环 ================= */
+    // subscribe -> Push::enqueueTopic -> 收到 push -> topics 校验 -> unsubscribe
+    $connO = new AsyncTcpConnection($wsAddress);
+    $oStep = 0;
+
+    $connO->onConnect = function ($con) use ($uidO, $deviceO, $tokenO, $secret) {
+        echo "[O] WebSocket 已连接\n";
+        $con->send(Message::encode(buildPacket(Message::CMD_AUTH, 'o-auth-1', array(
+            'uid'       => $uidO,
+            'device_id' => $deviceO,
+            'token'     => $tokenO,
+        ), $secret)));
+        echo "[O] -> auth\n";
+    };
+
+    $connO->onMessage = function ($con, $raw) use (&$state, &$oStep, $finish, $secret, $uidO, $deviceO, $topicO) {
+        $packet = json_decode($raw, true);
+        if (!is_array($packet) || !isset($packet['cmd'])) {
+            return;
+        }
+
+        $data   = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : array();
+        $act    = isset($data['action']) ? (string)$data['action'] : '';
+
+        $fail = function ($msg) use (&$state, $con, $finish) {
+            $state['O']     = false;
+            $state['O_msg'] = $msg;
+            $con->close();
+            $finish();
+        };
+        $send = function ($seq, array $dataBody) use ($con, $secret, $uidO, $deviceO) {
+            $con->send(Message::encode(buildPacket(Message::CMD_DATA, $seq, array(
+                'uid'       => $uidO,
+                'device_id' => $deviceO,
+                'data'      => $dataBody,
+            ), $secret)));
+        };
+
+        switch ($oStep) {
+            case 0:
+                if ($packet['cmd'] !== Message::CMD_ACK) {
+                    $fail('鉴权阶段返回 ' . $packet['cmd']);
+                    return;
+                }
+                $oStep = 1;
+                $send('o-sub-1', array('action' => 'subscribe', 'params' => array('topic' => $topicO)));
+                echo "[O] -> data/action=subscribe topic={$topicO}\n";
+                return;
+
+            case 1:
+                if ($packet['cmd'] !== Message::CMD_ACK || $act !== 'subscribe'
+                    || (int)(isset($data['subscribers']) ? $data['subscribers'] : 0) < 1) {
+                    $fail('订阅回执异常：' . $raw);
+                    return;
+                }
+                $oStep = 2;
+                echo "[O] <- 订阅成功（订阅者 {$data['subscribers']}），触发主题广播\n";
+
+                // 由测试进程侧调用广播入口，模拟外部系统按主题投递
+                Push::enqueueTopic($topicO, array('case' => 'O', 'hello' => 'world'), array('source' => 'e2e'));
+                return;
+
+            case 2:
+                if ($packet['cmd'] !== Message::CMD_PUSH) {
+                    $fail('未收到主题广播推送，实际 ' . $packet['cmd']);
+                    return;
+                }
+                if (!isset($data['hello']) || (string)$data['hello'] !== 'world') {
+                    $fail('广播报文内容不符：' . substr((string)$raw, 0, 120));
+                    return;
+                }
+                $oStep = 3;
+                $send('o-topics-1', array('action' => 'topics'));
+                echo "[O] <- 收到主题广播；查询订阅列表\n";
+                return;
+
+            case 3:
+                $topics = isset($data['topics']) && is_array($data['topics']) ? $data['topics'] : array();
+                if ($packet['cmd'] !== Message::CMD_ACK || $act !== 'topics'
+                    || !in_array($topicO, $topics, true)) {
+                    $fail('订阅列表未包含 ' . $topicO . '：' . substr((string)$raw, 0, 120));
+                    return;
+                }
+                $oStep = 4;
+                $send('o-unsub-1', array('action' => 'unsubscribe', 'params' => array('topic' => $topicO)));
+                echo "[O] -> data/action=unsubscribe\n";
+                return;
+
+            case 4:
+                if ($packet['cmd'] !== Message::CMD_ACK || $act !== 'unsubscribe') {
+                    $fail('取消订阅回执异常：' . $raw);
+                    return;
+                }
+                $oStep = 5;
+                $send('o-topics-2', array('action' => 'topics'));
+                echo "[O] -> data/action=topics（校验已移除）\n";
+                return;
+
+            case 5:
+                $topics = isset($data['topics']) && is_array($data['topics']) ? $data['topics'] : array();
+                if (in_array($topicO, $topics, true)) {
+                    $fail('取消订阅后主题仍在列表中');
+                    return;
+                }
+                $state['O'] = true;
+                echo "[O] 订阅 -> 广播 -> 取消 闭环完成\n";
+                $con->close();
+                $finish();
+                return;
+        }
+    };
+
+    $connO->connect();
+
     /* ================= 超时保护 ================= */
     Timer::add($timeout, function () use (&$state, $timeout) {
         echo "\n[超时] 用例未在 {$timeout} 秒内全部完成。当前状态：\n";
-        foreach (array('A', 'B', 'C', 'D', 'E', 'F', 'G', 'I', 'J', 'K', 'L') as $key) {
+        foreach (array('A', 'B', 'C', 'D', 'E', 'F', 'G', 'I', 'J', 'K', 'L', 'M', 'N', 'O') as $key) {
             echo "  {$key}: " . ($state[$key] === 'pending' ? '未完成' : var_export($state[$key], true)) . "\n";
         }
         exit(1);

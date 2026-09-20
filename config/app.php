@@ -197,6 +197,21 @@ return [
     ],
 
     /* ---------------------------------------------------------------
+     | 订阅关系
+     |
+     | 主题 <-> 用户 的双向索引存于 Redis（Subscribe 类维护），
+     | 按主题广播的投递入口为 Push::enqueueTopic()。
+     |
+     | 注意：业务动作清单本身是结构性配置，声明在 config/actions.php，
+     | 不在此处重复；本节仅承载随环境变化的行为参数。
+     --------------------------------------------------------------- */
+    'subscribe' => [
+        'enable'             => Env::bool('SUBSCRIBE_ENABLE', true),
+        'ttl'                => Env::int('SUBSCRIBE_TTL', 0),            // 订阅关系过期时间（秒），0 = 永不过期
+        'max_topics_per_uid' => Env::int('SUBSCRIBE_MAX_TOPICS', 100),   // 单用户订阅主题数上限，0 = 不限
+    ],
+
+    /* ---------------------------------------------------------------
      | 监控指标
      --------------------------------------------------------------- */
     'monitor' => [
@@ -212,9 +227,14 @@ return [
             'auth_success', 'auth_fail',
             'heartbeat_timeout', 'memory_bytes',
             'push_in', 'push_out', 'push_fail', 'push_offline', 'push_replay', 'push_dedup', 'push_ack',
+            'push_topic', 'push_topic_targets',
             'udp_out_queued', 'udp_out', 'udp_out_fail',
             'conn_error', 'buffer_full', 'buffer_drain',
-            'action_echo', 'action_session',
+            // 业务动作：前四项由 ActionRunner 统一采集（与具体动作无关），
+            // 其余为各处理器内部自采，新增动作时需同步追加
+            'action_in', 'action_ok', 'action_fail', 'action_timeout',
+            'action_echo', 'action_session', 'action_report',
+            'action_subscribe', 'action_unsubscribe', 'action_topics', 'action_notify',
             'rate_limit_hit', 'rate_limit_ip', 'rate_limit_conn', 'rate_limit_uid', 'rate_limit_ping',
         ],
     ],

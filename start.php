@@ -95,6 +95,7 @@ Env::load(BASE_PATH);
 $appConfig      = require BASE_PATH . '/config/app.php';
 $gatewayConfig  = require BASE_PATH . '/config/gateway.php';
 $businessConfig = require BASE_PATH . '/config/business.php';
+$actionConfig   = require BASE_PATH . '/config/actions.php';
 
 date_default_timezone_set($appConfig['app']['timezone']);
 Logger::init($appConfig['log']);
@@ -153,7 +154,7 @@ if ($command === 'push') {
 }
 
 if ($command === 'check') {
-    $result = checkEnvironment($appConfig, $gatewayConfig, $businessConfig, false);
+    $result = checkEnvironment($appConfig, $gatewayConfig, $businessConfig, $actionConfig, false);
     echo $result['text'];
     exit($result['ok'] ? 0 : 1);
 }
@@ -161,7 +162,7 @@ if ($command === 'check') {
 /* ---------------------------------------------------------------------
  | 6. 环境自检（所有 workerman 命令前强制执行）
  --------------------------------------------------------------------- */
-$envResult = checkEnvironment($appConfig, $gatewayConfig, $businessConfig, true);
+$envResult = checkEnvironment($appConfig, $gatewayConfig, $businessConfig, $actionConfig, true);
 if (!$envResult['ok']) {
     echo $envResult['text'];
     fwrite(STDERR, "\n[FATAL] 环境自检未通过，启动终止。修正后可用 php start.php check 复检。\n");
@@ -196,7 +197,7 @@ if (DIRECTORY_SEPARATOR !== '/' && $role === 'all') {
  | 10. 启动
  --------------------------------------------------------------------- */
 GatewayPush\Gateway\Bootstrap::init($gatewayConfig, $appConfig);
-GatewayPush\Business\Bootstrap::init($businessConfig, $appConfig, $gatewayConfig);
+GatewayPush\Business\Bootstrap::init($businessConfig, $appConfig, $gatewayConfig, $actionConfig);
 GatewayPush\Api\Bootstrap::init($appConfig, $businessConfig);
 
 Worker::runAll();
@@ -211,10 +212,11 @@ Worker::runAll();
  * @param array $appConfig
  * @param array $gatewayConfig
  * @param array $businessConfig
- * @param bool  $verbose 是否输出完整报告
+ * @param array $actionConfig   config/actions.php
+ * @param bool  $verbose        是否输出完整报告
  * @return array ['ok' => bool, 'text' => string]
  */
-function checkEnvironment(array $appConfig, array $gatewayConfig, array $businessConfig, $verbose = true)
+function checkEnvironment(array $appConfig, array $gatewayConfig, array $businessConfig, array $actionConfig = array(), $verbose = true)
 {
     $runtime = $appConfig['runtime'];
     $lines   = array();
@@ -439,6 +441,83 @@ function checkEnvironment(array $appConfig, array $gatewayConfig, array $busines
             $lines[] = sprintf(
                 '[WARN] 限流内存桶上限过低（%d），高并发下会频繁淘汰',
                 (int)$rateConf['mem_max_buckets']
+            );
+        }
+    }
+
+    // 业务动作清单（config/actions.php）
+    $actionList = isset($actionConfig['actions']) && is_array($actionConfig['actions'])
+        ? $actionConfig['actions']
+        : array();
+
+    if (!$actionList) {
+        $lines[] = '[FAIL] 业务动作清单为空（config/actions.php 的 actions 段未配置任何动作）';
+        $ok      = false;
+    } else {
+        $invalid  = array();
+        $silent   = array();
+        $noAuth   = array();
+        $noTimeout = array();
+
+        foreach ($actionList as $name => $decl) {
+            $handler = is_array($decl) && isset($decl['handler']) ? (string)$decl['handler'] : '';
+            if ($handler === '' || !class_exists($handler)
+                || !in_array('GatewayPush\\Business\\ActionInterface', class_implements($handler), true)) {
+                $invalid[] = $name;
+                continue;
+            }
+
+            // 回执方式：数组为按通道分别声明，字符串为两通道共用
+            $reply    = is_array($decl) && array_key_exists('reply', $decl) ? $decl['reply'] : null;
+            $udpReply = is_array($reply)
+                ? (isset($reply['udp']) ? (string)$reply['udp'] : 'sync')
+                : (is_string($reply) ? $reply : 'sync');
+            if ($udpReply === 'none') {
+                $silent[] = $name;
+            }
+
+            if (is_array($decl) && array_key_exists('auth', $decl) && empty($decl['auth'])) {
+                $noAuth[] = $name;
+            }
+
+            if (is_array($decl) && array_key_exists('timeout', $decl) && (int)$decl['timeout'] === 0) {
+                $noTimeout[] = $name;
+            }
+        }
+
+        if ($invalid) {
+            $lines[] = sprintf(
+                '[FAIL] 业务动作处理器不可用：%s（类不存在或未实现 ActionInterface）',
+                implode('/', $invalid)
+            );
+            $ok = false;
+        } else {
+            $lines[] = sprintf(
+                '[%-4s] 业务动作清单共 %d 个（%s）',
+                'OK',
+                count($actionList),
+                implode('/', array_keys($actionList))
+            );
+        }
+
+        if ($silent) {
+            $lines[] = sprintf(
+                '[%-4s] UDP 通道静默回执的动作：%s（处理但不下发，避免双向流量放大）',
+                'OK',
+                implode('/', $silent)
+            );
+        }
+        if ($noTimeout) {
+            $lines[] = sprintf(
+                '[WARN] 以下动作关闭了回执超时保护（timeout=0），异步回执丢失时客户端会永久等待：%s',
+                implode('/', $noTimeout)
+            );
+        }
+        if ($noAuth) {
+            $lines[] = sprintf(
+                '[WARN] 以下动作声明为无需鉴权（auth=false）：%s —— UDP 通道没有连接级鉴权闸门，'
+                . '该声明即为其唯一身份校验，请确认确属公开动作',
+                implode('/', $noAuth)
             );
         }
     }

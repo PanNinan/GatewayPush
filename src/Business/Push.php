@@ -248,6 +248,92 @@ class Push
     }
 
     /**
+     * 向指定 UDP 连接下发报文（不经队列）
+     *
+     * 用途：业务动作在 UDP 通道上的回执下发。
+     * UDP 的 clientId 不在 Gateway 连接表内，sendToClient 对其无效，
+     * 因此统一改为写入网关出站队列，由 UDP 网关进程 sendto
+     * —— 与在线推送走同一条已落地的出站通道。
+     *
+     * @param string $clientId 形如 udp:{ip}:{port}
+     * @param array  $packet   已构造的报文数组
+     * @param string $uid      仅用于日志串联
+     * @param string $msgId    仅用于日志串联
+     * @return bool
+     */
+    public static function sendToUdpClient($clientId, array $packet, $uid = '', $msgId = '')
+    {
+        if (strpos((string)$clientId, self::UDP_PREFIX) !== 0) {
+            Logger::warn('非 UDP 连接不可经出站队列投递', array('client_id' => $clientId));
+            return false;
+        }
+
+        self::deliverUdp($clientId, Message::encode($packet), (string)$uid, (string)$msgId);
+
+        return true;
+    }
+
+    /**
+     * 按订阅主题广播（订阅 -> 推送的闭环入口）
+     *
+     * 订阅关系由 Subscribe 维护，本方法只负责把一条消息投递给该主题下的
+     * 全部订阅者。逐个 uid 入队（而非合并下发），使离线缓存 / 幂等 / 指标
+     * 全部复用既有单目标链路，无需为广播单独维护一套逻辑。
+     *
+     * 注意：调用方若指定 msg_id，必须为每个目标派生独立的 msg_id ——
+     * 幂等键是 md5(msg_id)，多目标共用同一 msg_id 会导致除首个目标外
+     * 全部被判定为重复而静默丢弃。本方法已代为派生。
+     *
+     * @param string        $topic
+     * @param array         $payload
+     * @param array         $opts
+     * @param callable|null $cb function(int $targets) 入队目标数
+     * @return void
+     */
+    public static function enqueueTopic($topic, array $payload, array $opts = array(), callable $cb = null)
+    {
+        $topic = (string)$topic;
+        if ($topic === '') {
+            if ($cb) {
+                call_user_func($cb, 0);
+            }
+            return;
+        }
+
+        Subscribe::subscribers($topic, function ($uids) use ($topic, $payload, $opts, $cb) {
+            if (!$uids) {
+                Logger::debug('主题无订阅者，广播跳过', array('topic' => $topic));
+                if ($cb) {
+                    call_user_func($cb, 0);
+                }
+                return;
+            }
+
+            $baseMsgId = isset($opts['msg_id']) ? (string)$opts['msg_id'] : '';
+
+            foreach ($uids as $uid) {
+                $itemOpts = $opts;
+                if ($baseMsgId !== '') {
+                    $itemOpts['msg_id'] = $baseMsgId . ':' . $uid;
+                }
+                self::enqueue(self::TARGET_UID, $uid, $payload, $itemOpts);
+            }
+
+            Monitor::incr('push_topic');
+            Monitor::incr('push_topic_targets', count($uids));
+
+            Logger::info('主题广播已入队', array(
+                'topic'   => $topic,
+                'targets' => count($uids),
+            ));
+
+            if ($cb) {
+                call_user_func($cb, count($uids));
+            }
+        });
+    }
+
+    /**
      * 消费推送队列（定时任务，由业务进程调用）
      *
      * 使用 Lua 原子取批，多进程并发消费不会重复处理同一批任务。

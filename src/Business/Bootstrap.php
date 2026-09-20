@@ -74,9 +74,10 @@ class Bootstrap
      * @param array $businessConfig config/business.php
      * @param array $appConfig      config/app.php
      * @param array $gatewayConfig  config/gateway.php（仅取 UDP 出站队列配置）
+     * @param array $actionConfig   config/actions.php（业务动作清单）
      * @return void
      */
-    public static function init(array $businessConfig, array $appConfig, array $gatewayConfig = array())
+    public static function init(array $businessConfig, array $appConfig, array $gatewayConfig = array(), array $actionConfig = array())
     {
         if (!self::roleEnabled('business')) {
             return;
@@ -89,6 +90,11 @@ class Bootstrap
         Session::init($appConfig['session']);
         Monitor::init($appConfig['monitor']);
         RateLimiter::init(isset($appConfig['rate_limit']) ? $appConfig['rate_limit'] : array());
+        Subscribe::init(isset($appConfig['subscribe']) ? $appConfig['subscribe'] : array());
+
+        // 装载业务动作表：WS 与 UDP 两条链路共用同一份声明，
+        // 差异只在回执方式（见 config/actions.php 的 reply 段）
+        ActionRunner::load($actionConfig);
 
         // UDP 出站队列 key 与网关进程同源（gateway.udp.out_queue），避免两套真源
         Push::init(
@@ -622,8 +628,11 @@ class Bootstrap
      * 处理业务数据指令（二级路由入口）
      *
      * data 报文约定：{"cmd":"data","data":{"action":"<动作名>","params":{...}}}
-     * 按 data.action 查表分发到已注册的业务动作；本方法只做参数校验与错误兜底，
-     * 具体业务逻辑由各 action 处理器实现，新增动作无需改动此处。
+     *
+     * 具体分发、鉴权、参数校验与回执全部交由 ActionRunner 完成 ——
+     * 它是 WS 与 UDP 两条链路共用的执行器，本方法只负责把身份信息透传下去。
+     * 这样做的直接收益：UDP 侧接入业务动作的路径与本方法完全一致，
+     * 不需要为「UDP 上报的业务报文」再维护一套并行的分发逻辑。
      *
      * @param string $clientId
      * @param array  $packet
@@ -631,44 +640,59 @@ class Bootstrap
      */
     protected static function handleData($clientId, array $packet)
     {
-        $action = isset($packet['data']['action']) ? (string)$packet['data']['action'] : '';
-        if ($action === '') {
-            Monitor::incr('msg_fail');
-            Logger::warn('data 指令缺少 action', array('client_id' => $clientId));
-            self::send($clientId, Message::error(
-                Message::CODE_PARAM_MISSING,
-                '缺少 data.action',
-                $packet['seq'],
-                $packet['cmd']
-            ));
-            return;
+        ActionRunner::run(
+            $clientId,
+            $packet,
+            self::resolveUid($clientId, $packet),
+            isset($packet['device_id']) ? (string)$packet['device_id'] : '',
+            self::protocolOf($clientId)
+        );
+    }
+
+    /**
+     * 解析报文归属身份（按通道选择可信来源）
+     *
+     * 两条通道的身份可信来源不同，不能混用：
+     *
+     *   WebSocket —— 以鉴权时写入的进程内映射为准。报文里的 uid 由客户端自行
+     *   填写且不在签名覆盖范围内，若采信则任意连接都能冒充他人身份。
+     *
+     *   UDP —— 无连接实体、无鉴权映射，身份取自报文 Token 的载荷。
+     *   Message::sign() 的签名基串是 cmd|seq|ts|device_id|token|canonicalize(data)，
+     *   uid 不在其中（可被篡改），但 token 参与签名、且 token 载荷本身由服务端
+     *   密钥 HMAC 保护并内含 uid —— 因此 Token 是报文内唯一可信的身份来源。
+     *
+     * Token 不可信时返回空串（不放行），而非回退到报文 uid，避免把伪造身份
+     * 当作合法身份使用。仅当鉴权整体关闭、报文确实不带 Token 时才回退。
+     *
+     * @param string $clientId
+     * @param array  $packet
+     * @return string 解析失败返回空串
+     */
+    protected static function resolveUid($clientId, array $packet)
+    {
+        if (self::protocolOf($clientId) !== Session::PROTOCOL_UDP) {
+            return self::authedUid($clientId);
         }
 
-        $handler = Router::action($action);
-        if ($handler === null) {
-            Monitor::incr('msg_fail');
-            Logger::warn('未注册的业务动作', array('client_id' => $clientId, 'action' => $action));
-            self::send($clientId, Message::error(
-                Message::CODE_UNKNOWN_CMD,
-                '未知业务动作',
-                $packet['seq'],
-                $packet['cmd']
+        $token = isset($packet['token']) ? (string)$packet['token'] : '';
+
+        if (Auth::enabled() && $token !== '') {
+            $result = Auth::verifyLocal($token);
+            if (!empty($result['ok']) && isset($result['claims']['uid'])) {
+                return (string)$result['claims']['uid'];
+            }
+
+            Logger::debug('UDP 报文 Token 不可信，身份置空', array(
+                'client_id' => $clientId,
+                'code'      => isset($result['code']) ? (int)$result['code'] : 0,
+                'msg'       => isset($result['msg']) ? (string)$result['msg'] : '',
             ));
-            return;
+            return '';
         }
 
-        try {
-            call_user_func($handler, $clientId, $packet);
-        } catch (\Throwable $e) {
-            Monitor::incr('msg_fail');
-            Logger::exception($e, 'business.action:' . $action);
-            self::send($clientId, Message::error(
-                Message::CODE_SERVER_ERROR,
-                '',
-                $packet['seq'],
-                $packet['cmd']
-            ));
-        }
+        // 鉴权关闭场景：无 Token 可依，退回报文字段
+        return isset($packet['uid']) ? (string)$packet['uid'] : '';
     }
 
     /* ---------------------------------------------------------------------
@@ -708,70 +732,14 @@ class Bootstrap
             self::handleClientAck($clientId, $packet);
         });
 
-        // 二级：data.action -> 业务动作
-        Router::registerAction('echo', function ($clientId, array $packet) {
-            self::actionEcho($clientId, $packet);
-        });
-        Router::registerAction('session', function ($clientId, array $packet) {
-            self::actionSession($clientId, $packet);
-        });
-
+        // 二级（data.action）不再在此注册：
+        // 业务动作改由 config/actions.php 声明，经 ActionRunner 装载与执行，
+        // 业务模块接入新动作无需改动本类。Router 的二级注册能力保留，
+        // 供需要绕过参数校验等标准流程的特殊场景使用。
         Logger::info('指令路由表注册完成', array(
             'commands' => Router::commands(),
-            'actions'  => Router::actions(),
+            'actions'  => ActionRunner::registered(),
         ));
-    }
-
-    /**
-     * 业务动作：echo（原样回显）
-     *
-     * 用于客户端联通性验证与压测，不触碰任何业务状态。
-     *
-     * @param string $clientId
-     * @param array  $packet
-     * @return void
-     */
-    protected static function actionEcho($clientId, array $packet)
-    {
-        Monitor::incr('action_echo');
-
-        $params = isset($packet['data']['params']) && is_array($packet['data']['params'])
-            ? $packet['data']['params']
-            : array();
-
-        self::respond($clientId, Message::ack($packet['seq'], array(
-            'action' => 'echo',
-            'params' => $params,
-            'at'     => time(),
-        )));
-    }
-
-    /**
-     * 业务动作：session（返回当前连接的会话摘要）
-     *
-     * 只读取本连接的会话，不接受任意 clientId 入参，避免越权探测他人会话。
-     *
-     * @param string $clientId
-     * @param array  $packet
-     * @return void
-     */
-    protected static function actionSession($clientId, array $packet)
-    {
-        Monitor::incr('action_session');
-
-        Session::get($clientId, function ($session) use ($clientId, $packet) {
-            $connectAt = isset($session['connect_at']) ? (int)$session['connect_at'] : 0;
-
-            self::respond($clientId, Message::ack($packet['seq'], array(
-                'action'      => 'session',
-                'client_id'   => $clientId,
-                'uid'         => isset($session['uid']) ? (string)$session['uid'] : '',
-                'device_id'   => isset($session['device_id']) ? (string)$session['device_id'] : '',
-                'protocol'    => isset($session['protocol']) ? (string)$session['protocol'] : '',
-                'connect_at'  => $connectAt,
-                'online_secs' => $connectAt > 0 ? max(0, time() - $connectAt) : 0,
-            )));
-        });
     }
 
     /* ---------------------------------------------------------------------
@@ -949,13 +917,44 @@ class Bootstrap
             });
         }
 
-        // P1 扩展点：在此接入 UDP 业务处理（上报数据落库、定向推送等）
-        Logger::debug('UDP 业务任务已消费', array(
-            'client_id' => $clientId,
-            'cmd'       => isset($job['packet']['cmd']) ? (string)$job['packet']['cmd'] : '',
-            'uid'       => $uid,
-            'device_id' => $deviceId,
-        ));
+        // 业务分发：与 WebSocket 共用同一张指令路由表，业务动作的声明式清单
+        // （config/actions.php）在两条链路上完全一致，不存在「WS 能跑、UDP 跑不通」。
+        //
+        // 但只放行真正需要业务层介入的两类指令：
+        //   data —— 业务动作
+        //   ack  —— 客户端对下行推送的确认
+        // 其余指令在此不重复处理：auth 所需的会话绑定已在上方完成，
+        // ping 已由 UDP 网关在收包时即时回执，再走一遍会造成重复回执与重复补投。
+        $packet = isset($job['packet']) && is_array($job['packet']) ? $job['packet'] : array();
+        $cmd    = isset($packet['cmd']) ? (string)$packet['cmd'] : '';
+
+        if ($cmd !== Message::CMD_DATA && $cmd !== Message::CMD_ACK) {
+            Logger::debug('UDP 报文无需业务层处理', array(
+                'client_id' => $clientId,
+                'cmd'       => $cmd,
+                'uid'       => $uid,
+                'device_id' => $deviceId,
+            ));
+            return;
+        }
+
+        $handler = Router::command($cmd);
+        if ($handler === null) {
+            Monitor::incr('msg_fail');
+            Logger::warn('UDP 报文指令未注册，已丢弃', array(
+                'client_id' => $clientId,
+                'cmd'       => $cmd,
+            ));
+            return;
+        }
+
+        // 处理器异常统一兜底：单条 UDP 报文异常不得影响进程与后续队列消费
+        try {
+            call_user_func($handler, $clientId, $packet);
+        } catch (\Throwable $e) {
+            Monitor::incr('msg_fail');
+            Logger::exception($e, 'business.udp.route:' . $cmd);
+        }
     }
 
     /* ---------------------------------------------------------------------
@@ -1005,6 +1004,15 @@ class Bootstrap
     {
         Monitor::incr('msg_out');
         try {
+            // UDP 的 clientId 形如 udp:{ip}:{port}，不在 Gateway 连接表内，
+            // sendToClient 对其静默无效。统一改走网关出站队列，由 UDP 网关
+            // 进程 sendto —— 这样本方法的调用方（含既有 cmd 处理器）无需
+            // 感知协议差异，双通道自动兼容。
+            if (self::protocolOf($clientId) === Session::PROTOCOL_UDP) {
+                Push::sendToUdpClient($clientId, $packet);
+                return;
+            }
+
             GatewayClient::sendToClient($clientId, Message::encode($packet));
         } catch (\Throwable $e) {
             Monitor::incr('msg_fail');
@@ -1025,6 +1033,17 @@ class Bootstrap
      */
     protected static function closeClient($clientId, $code = 0, $msg = '')
     {
+        // UDP 无连接实体，不存在「断开」动作，也不会进入 Gateway 连接表。
+        // 其会话回收依赖心跳超时巡检（Session::checkHeartbeatTimeout），
+        // 此处仅记录并返回，避免对 UDP 下发无效的关闭指令。
+        if (self::protocolOf($clientId) === Session::PROTOCOL_UDP) {
+            Logger::debug('UDP 会话无连接可关闭，改由心跳超时回收', array(
+                'client_id' => $clientId,
+                'code'      => $code,
+            ));
+            return;
+        }
+
         try {
             if ($code > 0) {
                 GatewayClient::closeClient($clientId, Message::encode(Message::error($code, $msg)));
