@@ -438,6 +438,30 @@ function checkEnvironment(array $appConfig, array $gatewayConfig, array $busines
         if ($signTtl <= 0) {
             $lines[] = '[WARN] 接口时间戳窗口为 0（关闭防重放校验），生产环境不建议';
         }
+
+        // 接口验签。关闭仅在回环监听时生效（见 Bootstrap::signEnabled）：
+        // 开关被护栏拦下时只告警不阻断 —— 运行时仍是「强制验签」，属安全侧，
+        // 没必要因此拒绝启动，但必须让配置者知道自己的配置没生效。
+        $apiListen  = (string)$appConfig['api']['listen'];
+        $apiSignOff = empty($appConfig['api']['sign_enable']);
+        $apiLoop    = \GatewayPush\Api\Bootstrap::isLoopbackHost($apiListen);
+
+        if (!$apiSignOff) {
+            $lines[] = '[OK  ] 接口验签已开启';
+        } elseif ($apiLoop) {
+            $lines[] = sprintf(
+                '[%-4s] 接口验签已关闭（API_SIGN_ENABLE=false，监听 %s），所有请求无需签名即可调用；'
+                . '该开关仅回环监听生效，生产环境务必开启',
+                'WARN',
+                $apiListen
+            );
+        } else {
+            $lines[] = sprintf(
+                '[%-4s] API_SIGN_ENABLE=false 被忽略：接口监听地址非回环（%s），已强制开启验签',
+                'WARN',
+                $apiListen
+            );
+        }
     } else {
         $lines[] = '[WARN] HTTP 推送接口已关闭（API_ENABLE=false），仅支持队列触发';
     }
@@ -788,6 +812,18 @@ function startupBanner(array $appConfig, array $gatewayConfig, array $businessCo
         $lines[] = '启动模式  : ' . $modeLabel;
     }
     $lines[] = '环境配置  : ' . $appConfig['app']['env'] . '（' . $envDesc . '）';
+
+    // 接口验签状态。免签是安全相关状态，必须在启动时就可见 —— 它不像日志级别
+    // 那样只影响可观测性，而是直接影响接口的对外开放程度。
+    if (!empty($appConfig['api']['enable'])) {
+        $apiSignOn = empty($appConfig['api']['sign_enable'])
+            ? !\GatewayPush\Api\Bootstrap::isLoopbackHost((string)$appConfig['api']['listen'])
+            : true;
+        $lines[] = '接口验签  : ' . ($apiSignOn
+            ? '已开启'
+            : '已关闭（本地调试免签，仅回环监听生效）');
+    }
+
     $lines[] = '时区      : ' . date_default_timezone_get();
     $lines[] = '运行目录  : ' . rtrim($relative($appConfig['runtime']['runtime_path']), '/') . '/'
         . '  (日志 ' . rtrim($relative($appConfig['runtime']['log_path']), '/') . '/'

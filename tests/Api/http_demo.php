@@ -36,6 +36,11 @@
  *
  * 退出码：0 = 全部断言通过；1 = 存在失败项（含前置条件不满足）。
  *
+ * 脚本开头的 [0] 会先探测服务端验签模式（不带签名请求 /stats）：当服务端处于
+ * **免签模式**（API_SIGN_ENABLE=false 且监听回环地址）时，第 3 场景
+ * 「错误签名必须被拒」不成立，会被标记为 SKIP 而非失败，退出码仍为 0。
+ * 其余场景在两种模式下都成立。
+ *
  * ---------------------------------------------------------------------
  * 密钥
  * ---------------------------------------------------------------------
@@ -93,16 +98,50 @@ echo "动作等待窗: {$actionWaitMs} ms（客户端超时取 {$httpTimeout}s�
 echo '演示身份  : uid=' . $uid . ' device_id=' . $deviceId . "\n";
 echo str_repeat('=', 70) . "\n\n";
 
-if ($secret === '') {
-    fwrite(STDERR, "[FATAL] 未从 .env 读到 API_SECRET / AUTH_SECRET，无法构造签名。\n");
+$results = array();
+
+/**
+ * @param bool $skip 免签模式下不适用的断言：既不算通过也不算失败，显式标记
+ */
+$check = function (string $name, bool $ok, string $detail = '', bool $skip = false) use (&$results): void {
+    $results[] = array('name' => $name, 'ok' => $ok, 'skip' => $skip);
+    if ($skip) {
+        printf("  [SKIP] %s%s\n", $name, $detail !== '' ? '  ' . $detail : '');
+        return;
+    }
+    printf("  [%s] %s%s\n", $ok ? 'PASS' : 'FAIL', $name, $detail !== '' ? '  ' . $detail : '');
+};
+
+/* =====================================================================
+ | 0. 探测服务端验签模式
+ |
+ | 不带签名请求 /stats：验签开启时必被拒（401 / 4001），免签模式直接 200。
+ | 第 3 场景断言的是「错误签名必须被拒」，免签模式下该断言不成立 —— 按 SKIP 处理，
+ | 否则本地调试环境会一直误报失败。其余场景两种模式下均成立。
+ ===================================================================== */
+
+echo "[0] 探测验签模式 —— 不带签名请求 /stats\n";
+$probe = httpCall('GET', $baseUrl . '/stats', array(), '', $httpTimeout);
+if (!$probe['ok']) {
+    fwrite(STDERR, '[FATAL] 接口不可达：' . $probe['error'] . "\n");
+    fwrite(STDERR, "       请确认 api 角色已启动，且地址为 {$baseUrl}\n");
     exit(1);
 }
 
-$results = array();
-$check   = function (string $name, bool $ok, string $detail = '') use (&$results): void {
-    $results[] = array('name' => $name, 'ok' => $ok, 'detail' => $detail);
-    printf("  [%s] %s%s\n", $ok ? 'PASS' : 'FAIL', $name, $detail !== '' ? '  ' . $detail : '');
-};
+$freeMode = $probe['status'] === 200;
+printf(
+    "    HTTP %d -> %s\n\n",
+    $probe['status'],
+    $freeMode
+        ? '免签模式（API_SIGN_ENABLE=false 且监听回环地址），第 3 场景将 SKIP'
+        : '验签模式'
+);
+
+// 免签模式下密钥不参与校验，为空也能正常演示
+if ($secret === '' && !$freeMode) {
+    fwrite(STDERR, "[FATAL] 未从 .env 读到 API_SECRET / AUTH_SECRET，无法构造签名。\n");
+    exit(1);
+}
 
 /* =====================================================================
  | 1. 存活探测 —— 唯一免鉴权接口
@@ -142,7 +181,7 @@ echo "\n";
  | 3. 错误签名 —— 必须被拒
  ===================================================================== */
 
-echo "[3] GET /stats —— 错误签名（期望 401）\n";
+echo "[3] GET /stats —— 错误签名" . ($freeMode ? "（免签模式，本项 SKIP）\n" : "（期望 401）\n");
 $ts  = (string)time();
 $bad = array(
     'X-Timestamp: ' . $ts,
@@ -152,7 +191,10 @@ $res = httpCall('GET', $baseUrl . '/stats', $bad, '', $httpTimeout);
 $check(
     '错误签名被拒绝',
     $res['status'] === 401,
-    "HTTP {$res['status']} / code " . json_encode($res['json']['code'] ?? null)
+    $freeMode
+        ? '免签模式下签名不参与校验，本项不适用'
+        : "HTTP {$res['status']} / code " . json_encode($res['json']['code'] ?? null),
+    $freeMode
 );
 echo "\n";
 
@@ -342,17 +384,29 @@ echo "\n";
  ===================================================================== */
 
 $fail = 0;
+$skip = 0;
 foreach ($results as $item) {
+    if (!empty($item['skip'])) {
+        $skip++;
+        continue;
+    }
     if (!$item['ok']) {
         $fail++;
     }
 }
 
+$checked = count($results) - $skip;
 echo str_repeat('=', 70) . "\n";
-printf("示例执行结论：%s（%d/%d）\n", $fail === 0 ? '全部通过' : "失败 {$fail} 项", count($results) - $fail, count($results));
+printf(
+    "示例执行结论：%s（%d/%d%s）\n",
+    $fail === 0 ? '全部通过' : "失败 {$fail} 项",
+    $checked - $fail,
+    $checked,
+    $skip > 0 ? "，另 SKIP {$skip} 项（免签模式）" : ''
+);
 if ($fail > 0) {
     foreach ($results as $item) {
-        if (!$item['ok']) {
+        if (!$item['ok'] && empty($item['skip'])) {
             echo '  [FAIL] ' . $item['name'] . ($item['detail'] !== '' ? '  ' . $item['detail'] : '') . "\n";
         }
     }

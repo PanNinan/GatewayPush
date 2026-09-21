@@ -153,6 +153,17 @@ return [
         'listen'    => Env::str('API_LISTEN', 'http://127.0.0.1:8290'),
         'name'      => 'GW-API',                                 // 进程名，结构性
         'secret'    => Env::str('API_SECRET', ''),
+
+        // 接口验签开关。**仅供本地调试**，默认开启。
+        //
+        // 关闭只对回环监听生效：listen 绑定非回环地址（0.0.0.0 / 具体网卡 / 域名）时
+        // 本开关被忽略，强制按开启处理。护栏意义在于：即使误把 API_SIGN_ENABLE=false
+        // 写进了生产 .env，只要接口对外监听就仍然验签 —— /push 可推任意消息、
+        // /action 可执行动作，无鉴权暴露到网络等于业务入口裸奔。
+        //
+        // 建议只写进 .env.local（已 gitignore，优先级高于 .env），不要动 .env。
+        'sign_enable' => Env::bool('API_SIGN_ENABLE', true),
+
         'sign_ttl'  => Env::int('API_SIGN_TTL', 300),            // 请求时间戳有效窗口（秒）
         'rate'      => Env::int('API_RATE_LIMIT', 600),          // 单 IP 每分钟请求上限，0 = 不限
         'body_max'  => Env::int('API_BODY_MAX', 65536),          // 请求体上限（字节）

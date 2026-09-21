@@ -7,6 +7,9 @@
  * 该用例在事件循环启动前**同步**执行（Harness::httpRequest 为阻塞实现），
  * 因此不参与超时保护；若 api 角色未启动，会在结果汇总中标记为 SKIP。
  *
+ * 服务端处于**免签模式**（API_SIGN_ENABLE=false 且监听回环地址）时，
+ * 「伪造签名被拒」这一断言不成立，用例会先探测模式并跳过它。
+ *
  * 兼容 PHP 8.1 ~ 8.5
  */
 
@@ -32,6 +35,16 @@ final class CaseHttpApi
         }
 
         if (!$hErrors) {
+            // 验签模式探测：不带签名请求 /stats
+            //   验签开启 → 401 / 4001；免签模式（API_SIGN_ENABLE=false + 回环监听）→ 200
+            // 免签下「伪造签名被拒」不成立，须跳过而非判失败 —— 否则本地调试环境
+            // 会持续报用例 H 失败，把真正的回归淹没在噪声里。
+            $probe    = Harness::httpRequest('GET', $h->apiAddress . '/stats');
+            $freeMode = $probe['ok'] && $probe['status'] === 200;
+            if ($freeMode) {
+                echo "      API_SIGN_ENABLE=false 且监听回环：免签模式，跳过「伪造签名被拒」断言\n";
+            }
+
             $pushBody = json_encode(array(
                 'target_type' => 'uid',
                 'target'      => $h->ctx('H')['uid'],
@@ -53,15 +66,17 @@ final class CaseHttpApi
                 $hErrors[] = sprintf('合法签名请求被拒绝：HTTP %d，响应 %s', $accepted['status'], $accepted['body']);
             }
 
-            $denied = Harness::httpRequest('POST', $h->apiAddress . '/push', array(
-                'Content-Type' => 'application/json',
-                'X-Timestamp'  => $timestamp,
-                'X-Sign'       => str_repeat('0', 64),
-            ), $pushBody);
+            if (!$freeMode) {
+                $denied = Harness::httpRequest('POST', $h->apiAddress . '/push', array(
+                    'Content-Type' => 'application/json',
+                    'X-Timestamp'  => $timestamp,
+                    'X-Sign'       => str_repeat('0', 64),
+                ), $pushBody);
 
-            $deniedCode = is_array($denied['json']) && isset($denied['json']['code']) ? (int)$denied['json']['code'] : 0;
-            if ($denied['status'] !== 401 || $deniedCode !== 4001) {
-                $hErrors[] = sprintf('伪造签名未被拒绝：HTTP %d，业务码 %d（期望 401 / 4001）', $denied['status'], $deniedCode);
+                $deniedCode = is_array($denied['json']) && isset($denied['json']['code']) ? (int)$denied['json']['code'] : 0;
+                if ($denied['status'] !== 401 || $deniedCode !== 4001) {
+                    $hErrors[] = sprintf('伪造签名未被拒绝：HTTP %d，业务码 %d（期望 401 / 4001）', $denied['status'], $deniedCode);
+                }
             }
         }
 

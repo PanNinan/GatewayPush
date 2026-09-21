@@ -886,6 +886,7 @@ composer demo:http      # php tests/Api/http_demo.php（HTTP 接口调用示例�
 | `API_ENABLE`         | `true`                  |                                                                                                                                                                  |
 | `API_LISTEN`         | `http://127.0.0.1:8290` | 生产应仅监听内网地址或置于反向代理之后                                                                                                                                              |
 | `API_SECRET`         | 空                       | 接口密钥；留空回退复用 `AUTH_SECRET`                                                                                                                                        |
+| `API_SIGN_ENABLE`    | `true`                  | 接口验签开关。**仅供本地调试**：设为 `false` 后请求无需 `X-Timestamp` / `X-Sign`。<br>⚠️ 关闭**只在监听回环地址时生效**；监听 `0.0.0.0` / 具体网卡 / 域名时该开关被忽略并强制验签（`start.php check` 与启动日志都会告警）。<br>⚠️ 与 `AUTH_ENABLE` / `AUTH_SIGN_ENABLE` **无关** —— 那两个是 WS/UDP 报文层开关，对 HTTP 接口无任何影响；唯一关联是 `API_SECRET` 留空时复用 `AUTH_SECRET`（只共用密钥，不共用开关）                                                                                  |
 | `API_SIGN_TTL`       | `300`                   | 请求时间戳有效窗口（秒），防重放；0 = 关闭校验                                                                                                                                        |
 | `API_RATE_LIMIT`     | `600`                   | 单 IP 每分钟请求上限；0 = 不限                                                                                                                                              |
 | `API_BODY_MAX`       | `65536`                 | 请求体上限（字节）                                                                                                                                                        |
@@ -1588,6 +1589,32 @@ curl -s -X POST http://127.0.0.1:8290/action \
 > `/stats` 需要 HMAC 验签，浏览器无法安全持有密钥 —— 这是必须单开一个**免鉴权**监控面板  
 > 端点（`/metrics.json`）的原因。
 
+#### 本地调试免签（`API_SIGN_ENABLE`）
+
+`API_SIGN_ENABLE=false` 后，接口不再要求 `X-Timestamp` / `X-Sign`：
+
+```bash
+curl -s http://127.0.0.1:8290/stats
+curl -s -X POST http://127.0.0.1:8290/action \
+  -H "Content-Type: application/json" \
+  -d '{"action":"echo","uid":"local","params":{"probe":1}}'
+```
+
+⚠️ **关闭只在监听回环地址时生效。** `listen` 绑 `0.0.0.0` / 具体网卡 / 域名时该开关会被
+忽略并强制验签 —— `/push` 能推任意消息、`/action` 能执行动作，把开关暴露到网络上等于
+业务入口裸奔。被护栏拦下时 `php start.php check` 与 api 启动日志都会明确告警。
+
+> **与 `AUTH_ENABLE` / `AUTH_SIGN_ENABLE` 无关** —— 这两个属于 `config/app.php` 的  
+> `auth` 段，作用点是 `Auth::enabled()`（连接鉴权）与 `Message::verify()`（八字段报文  
+> `sign` 校验），**只作用于 WS / UDP 报文层**。HTTP 验签走独立的 `api` 段，  
+> `authenticate()` 里不读 auth 段的任何开关。唯一关联是 `API_SECRET` 留空时回退复用  
+> `AUTH_SECRET`：**只共用密钥，不共用开关** —— 这也是「关了 `AUTH_*` 却仍提示缺少  
+> `X-Timestamp`」这一常见困惑的来源。
+
+改完需**重启 api 角色**（配置在进程启动时读取）；启动横幅的「接口验签」行会显示实际
+生效状态。两个 HTTP 自检脚本（`http_demo.php` / `api_sign_check.js`）与 e2e 用例 H 会先
+探测模式，免签时把「错误签名必须被拒」类断言标记为 **SKIP** 而非失败。
+
 #### 两类接口的差异（最容易误判的地方）
 
 | 维度     | 推送类 `/push`           | 动作类 `/action`                                              |
@@ -2145,6 +2172,20 @@ bin\start.bat restart gateway      # 重建网关到 BusinessWorker 的路由
 > **UDP 侧「错误静默」+「身份缺失拒绝」叠加会制造无日志故障**：UDP 错误一律静默是刻意设计  
 > （避免反射放大），但一旦叠加身份拒绝，客户端只见超时、服务端也无异常日志，极易误判为链路故障。  
 > **排查 UDP 动作问题必须对照运行日志（`runtime/logs/`），不能依赖客户端超时。**
+
+#### HTTP 提示「缺少 X-Timestamp 或 X-Sign 请求头」
+
+| 想做的事                     | 判断依据                                                                                                                                          |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| 是不是「关了 `AUTH_*` 却没生效」     | **两者与 HTTP 验签无关**（属 WS / UDP 报文层）。`authenticate()` 只读 `api` 段，不读 auth 段的任何开关。详见 9.9「本地调试免签」                                                          |
+| 本地想免签                    | `API_SIGN_ENABLE=false`，**且** `API_LISTEN` 绑回环地址；改完需重启 api 角色。启动横幅的「接口验签」行显示实际生效状态                                                                   |
+| 设了 `false` 却仍要签名         | 看 api 启动日志有无「`API_SIGN_ENABLE=false` 未生效：监听地址非回环」—— 那是护栏拦下，**属预期行为而非故障**                                                                       |
+| 密钥到底用的哪个                 | `API_SECRET` 为空时回退 `AUTH_SECRET`（本机即此状态）。验签失败搜日志「接口验签失败」                                                                                       |
+| 签名怎么算                    | `X-Sign = hex(hmac_sha256("{X-Timestamp}\|{原始请求体}", secret))`；`GET` 无 body 时对**空串**签名；时间戳窗口 `API_SIGN_TTL`（默认 300s）                      |
+
+> 直接跑 `php tests/Api/http_demo.php`（自动探测模式、打印签名构造全过程）或
+> `node tests/Api/api_sign_check.js`，比手工排查快。两者在免签模式下会把
+> 「错误签名必须被拒」标记为 SKIP，不会误报失败。
 
 #### HTTP 动作调用不成功（POST /action）
 
