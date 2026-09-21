@@ -63,6 +63,8 @@
   button:hover { background: #f0f2f5; }
   button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
   button.on:hover { background: #1d4ed8; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button:disabled:hover { background: var(--panel); }
 
   /* ---------------- KPI ---------------- */
   .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
@@ -231,6 +233,8 @@
   var onlyNonZero = false;
   var autoTimer = null;
   var autoOn = true;
+  /* 当前定时器实际生效的间隔（毫秒），0 = 当前无定时器 */
+  var autoIv = 0;
 
   var $ = function (id) { return document.getElementById(id); };
 
@@ -607,6 +611,11 @@
         renderTasks(d);
         renderGroups(d);
 
+        // 首轮拉取前 last 为空，间隔只能按默认值建定时器；拿到 meta 后才知晓
+        // 服务端真实配置，此处同步一次。间隔未变则不重建，避免每次拉取都把
+        // 计时器归零 —— 否则 DASHBOARD_REFRESH 大于默认值时会永远推迟。
+        if ((autoOn ? autoInterval() : 0) !== autoIv) { setAuto(autoOn); }
+
         $('foot').textContent =
           '数据源 Redis ' + (d.meta && d.meta.enable ? 'metrics:gauge + metrics:counter' : '(采集已关闭)') +
           ' · 页面拉取于 ' + new Date().toLocaleTimeString('zh-CN') +
@@ -618,14 +627,46 @@
       });
   }
 
+  /**
+   * 自动刷新间隔（毫秒）
+   *
+   * 数据源为服务端 meta.refresh（秒，源自 DASHBOARD_REFRESH）。语义必须与
+   * config/app.php 的注释一致：0 = 不自动刷新。因此这里不能用 `|| 5` 兜底 ——
+   * 它会把 0 吞成 5，使「关闭自动刷新」永远不生效；仅当字段缺失或非法时
+   * 才回落到默认 5 秒。返回 0 表示调用方必须停掉定时器。
+   */
+  function autoInterval() {
+    var sec = (last && last.meta && last.meta.refresh != null) ? num(last.meta.refresh) : 5;
+    return sec > 0 ? sec * 1000 : 0;
+  }
+
+  function clearAuto() {
+    if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+    autoIv = 0;
+  }
+
   function setAuto(on) {
     autoOn = on;
-    $('btn-auto').className = on ? 'on' : '';
-    if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+    clearAuto();
+
+    var iv  = autoInterval();
+    var btn = $('btn-auto');
+
+    // 服务端已禁用自动刷新：按钮置灰并说明原因，只保留手动「立即刷新」
+    if (iv <= 0) {
+      btn.className = '';
+      btn.disabled  = true;
+      btn.title     = '服务端已关闭自动刷新（DASHBOARD_REFRESH=0），请手动点击「立即刷新」';
+      return;
+    }
+
+    btn.disabled  = false;
+    btn.className = on ? 'on' : '';
+    btn.title     = on ? '每 ' + (iv / 1000) + ' 秒自动拉取一次' : '已暂停，点击恢复自动刷新';
     if (!on) { return; }
-    var iv = ((last && last.meta && last.meta.refresh) || 5) * 1000;
-    if (iv < 1000) { iv = 5000; }
+
     autoTimer = setInterval(refresh, iv);
+    autoIv    = iv;
   }
 
   $('btn-refresh').addEventListener('click', refresh);

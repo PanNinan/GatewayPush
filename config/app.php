@@ -170,7 +170,7 @@ return [
         'listen'    => Env::str('DASHBOARD_LISTEN', 'http://127.0.0.1:8291'),
         'name'      => 'GW-DASH',                                // 进程名，结构性
         'view_path' => $basePath . '/resources/dashboard',       // 页面模板目录，结构性
-        'refresh'   => Env::int('DASHBOARD_REFRESH', 5),         // 页面轮询间隔（秒），0 = 不自动刷新
+        'refresh'   => Env::int('DASHBOARD_REFRESH', 30),         // 页面轮询间隔（秒），0 = 不自动刷新
     ],
 
     /* ---------------------------------------------------------------

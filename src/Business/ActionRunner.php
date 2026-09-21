@@ -208,7 +208,7 @@ class ActionRunner
     public static function declaration($action)
     {
         $action = (string)$action;
-        return isset(self::$declarations[$action]) ? self::$declarations[$action] : null;
+        return self::$declarations[$action] ?? null;
     }
 
     /* ---------------------------------------------------------------------
@@ -247,7 +247,7 @@ class ActionRunner
         // 动作级鉴权要求。
         // UDP 通道没有「连接」概念，也就没有连接级鉴权闸门，其身份完全依赖
         // 报文内 uid + 签名校验 —— 因此这道检查对 UDP 是唯一的业务侧鉴权防线。
-        if (!empty($decl['auth']) && Auth::enabled() && (string)$uid === '') {
+        if (!empty($decl['auth']) && (string)$uid === '' && Auth::enabled()) {
             Monitor::incr('action_fail');
             Logger::warn('动作要求鉴权但身份缺失，已拒绝', array(
                 'action'    => $action,
@@ -274,9 +274,7 @@ class ActionRunner
             }
         }
 
-        $replyMode = isset($decl['reply'][$channel])
-            ? $decl['reply'][$channel]
-            : ActionContext::REPLY_SYNC;
+        $replyMode = $decl['reply'][$channel] ?? ActionContext::REPLY_SYNC;
 
         $ctx = new ActionContext(
             $action,
@@ -412,8 +410,8 @@ class ActionRunner
     {
         if (is_array($reply)) {
             return array(
-                ActionContext::CHANNEL_WS  => self::pickReply(isset($reply[ActionContext::CHANNEL_WS]) ? $reply[ActionContext::CHANNEL_WS] : null),
-                ActionContext::CHANNEL_UDP => self::pickReply(isset($reply[ActionContext::CHANNEL_UDP]) ? $reply[ActionContext::CHANNEL_UDP] : null),
+                ActionContext::CHANNEL_WS  => self::pickReply($reply[ActionContext::CHANNEL_WS] ?? null),
+                ActionContext::CHANNEL_UDP => self::pickReply($reply[ActionContext::CHANNEL_UDP] ?? null),
             );
         }
 

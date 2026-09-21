@@ -27,6 +27,8 @@
 
 namespace GatewayPush\Business;
 
+use JsonException;
+
 class Message
 {
     /* ---------------------- 指令 ---------------------- */
@@ -228,6 +230,7 @@ class Message
      *
      * @param mixed $data
      * @return string
+     * @throws JsonException
      */
     public static function canonicalize($data)
     {
@@ -235,7 +238,7 @@ class Message
             return (string)$data;
         }
         self::recursiveKsort($data);
-        $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $json = json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         return $json === false ? '' : $json;
     }
 
@@ -271,7 +274,7 @@ class Message
             isset($packet['ts']) ? (string)$packet['ts'] : '',
             isset($packet['device_id']) ? (string)$packet['device_id'] : '',
             isset($packet['token']) ? (string)$packet['token'] : '',
-            self::canonicalize(isset($packet['data']) ? $packet['data'] : array()),
+            self::canonicalize($packet['data'] ?? array()),
         ));
         return hash_hmac('sha256', $base, (string)$secret);
     }
