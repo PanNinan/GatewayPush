@@ -176,7 +176,10 @@ final class CasePushOnline
         $iReported = false;
         $iAttempt  = 0;
 
-        $sendReport = function () use ($h, $udpI, $c, &$iAttempt, &$iReported) {
+        // 必须按引用捕获自身（&$sendReport）：闭包体在**赋值之前**求值，
+        // 若外层 use 列表不含它，内层闭包捕获到的将是一个新建的 null 变量，
+        // 重传时触发 "Value of type null is not callable" 并中断整个用例。
+        $sendReport = function () use ($h, $udpI, $c, &$iAttempt, &$iReported, &$sendReport) {
             if ($iAttempt >= 3 || $iReported) {
                 return;
             }

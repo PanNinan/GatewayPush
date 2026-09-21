@@ -1,16 +1,25 @@
 /**
  * HTTP API 验签校验（Api 进程，默认 127.0.0.1:8290）
  *
- * 覆盖 HTTP 集成（Postman / 业务系统对接）实际会用到的四种请求形态：
- *   1) POST /push  带 body + 正确签名   -> 期望 200
- *   2) GET  /stats 空 body + 正确签名   -> 期望 200（空串参与签名）
- *   3) GET  /stats 错误签名             -> 期望 401
- *   4) GET  /health 无签名              -> 期望 200（免鉴权）
+ * 覆盖 HTTP 集成（Postman / 业务系统对接）实际会用到的八种请求形态：
+ *   1) POST /push            带 body + 正确签名  -> 期望 200
+ *   2) GET  /stats           空 body + 正确签名  -> 期望 200（空串参与签名）
+ *   3) GET  /stats           错误签名            -> 期望 401
+ *   4) GET  /health          无签名              -> 期望 200（免鉴权）
+ *   5) POST /action          echo + 正确签名     -> 期望 200（同步等待动作回执）
+ *   6) POST /action          session（未开放）   -> 期望 400 / 业务码 4006
+ *   7) POST /action          错误签名            -> 期望 401
+ *   8) GET  /action/{id}     不存在的 id         -> 期望 404
+ *
+ * 注意 6)：/action 的拒绝分两层 —— 入队前的失败给 HTTP 4xx（本条），
+ * 动作执行后的业务失败给 **HTTP 200 + 响应体 code=4007 等**。详见
+ * tests/Api/http_demo.php 与 src/Api/Bootstrap.php 的类注释。
  *
  * 密钥从 .env 读取但**不打印**。签名规则与可直接导入的 Postman 集合见
  * postman/GatewayWorker.postman_collection.json。
  *
- * 前置条件：api 角色已启动（`bin/start.bat start api`，或随 all 一起起）。
+ * 前置条件：api 角色已启动（`bin/start.bat start api`，或随 all 一起起）；
+ * 用例 5) 还需 business 角色（动作由业务进程执行）。
  *
  * 运行：
  *     node tests/Api/api_sign_check.js
@@ -101,6 +110,41 @@ function mkSign(ts, body) {
     name: '4) GET /health 无签名',
     expect: '200',
     got: await call('GET', '/health', null, {})
+  });
+
+  // POST /action 为同步等待语义：服务端最长等待 API_ACTION_WAIT_MS 后回落 202。
+  // 用例 5) 的动作应在本机上毫秒级完成，故这里无需额外超时设置。
+  const actionBody = JSON.stringify({
+    action: 'echo',
+    uid: 'sign-check',
+    params: { probe: 'api_sign_check' }
+  });
+  cases.push({
+    name: '5) POST /action echo 正确签名',
+    expect: '200',
+    got: await call('POST', '/action', actionBody, { 'X-Timestamp': ts, 'X-Sign': mkSign(ts, actionBody) })
+  });
+
+  // session 依赖 clientId 语义，config/actions.php 中刻意未开放 HTTP 通道，
+  // 因此应在「入队前」就被白名单拦下（HTTP 400 + 业务码 4006）
+  const sessionBody = JSON.stringify({ action: 'session', uid: 'sign-check' });
+  cases.push({
+    name: '6) POST /action session 未开放 HTTP 通道',
+    expect: '400',
+    got: await call('POST', '/action', sessionBody, { 'X-Timestamp': ts, 'X-Sign': mkSign(ts, sessionBody) })
+  });
+
+  cases.push({
+    name: '7) POST /action 错误签名',
+    expect: '401',
+    got: await call('POST', '/action', actionBody, { 'X-Timestamp': ts, 'X-Sign': mkSign(ts, 'garbage') })
+  });
+
+  // GET /action/{id} 无请求体，签名基于空串；合法格式但必然不存在的 id 应回 404
+  cases.push({
+    name: '8) GET /action/{不存在} 正确签名',
+    expect: '404',
+    got: await call('GET', '/action/ffffffffffffffff', null, { 'X-Timestamp': ts, 'X-Sign': mkSign(ts, '') })
   });
 
   let fail = 0;

@@ -42,7 +42,8 @@
         "baseline": "phpstan analyse --memory-limit=512M --generate-baseline",
         "test": "phpunit",
         "test:e2e": "php tests/e2e_check.php",
-        "test:client-e2e": "php client/tests/E2E/ClientE2E.php"
+        "test:client-e2e": "php client/tests/E2E/ClientE2E.php",
+        "demo:http": "php tests/Api/http_demo.php"
     },
     "require-dev": {
         "phpstan/phpstan": "^2.0",

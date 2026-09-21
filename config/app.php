@@ -155,6 +155,12 @@ return [
         'sign_ttl'  => Env::int('API_SIGN_TTL', 300),            // 请求时间戳有效窗口（秒）
         'rate'      => Env::int('API_RATE_LIMIT', 600),          // 单 IP 每分钟请求上限，0 = 不限
         'body_max'  => Env::int('API_BODY_MAX', 65536),          // 请求体上限（字节）
+
+        // POST /action 的同步等待窗口（毫秒）。动作由业务进程经队列执行，
+        // 本进程只轮询结果，故等待窗必须**大于**动作自身的回执超时
+        // （ACTION_TIMEOUT），否则会在动作还能给出结果时先行返回 202。
+        // 超窗后不视为失败：任务仍在执行，结果可经 GET /action/{id} 补查。
+        'action_wait' => Env::int('API_ACTION_WAIT_MS', 6000),
     ],
 
     /* ---------------------------------------------------------------
@@ -249,10 +255,14 @@ return [
             'udp_out_queued', 'udp_out', 'udp_out_fail',
             'conn_error', 'buffer_full', 'buffer_drain',
             // 业务动作：前四项由 ActionRunner 统一采集（与具体动作无关），
-            // 其余为各处理器内部自采，新增动作时需同步追加
+            // 其余为各处理器内部自采，新增动作时需同步追加。
+            // action_http_* 为 HTTP 通道的分通道计数 —— 既有 ws / udp 沿用上面的
+            // 聚合指标，只有 HTTP 单独计数，便于从合计值中区分调用来源。
             'action_in', 'action_ok', 'action_fail', 'action_timeout',
             'action_echo', 'action_session', 'action_report',
             'action_subscribe', 'action_unsubscribe', 'action_topics', 'action_notify',
+            'action_http_in', 'action_http_ok', 'action_http_fail', 'action_http_timeout',
+            'action_http_dequeue',
             'rate_limit_hit', 'rate_limit_ip', 'rate_limit_conn', 'rate_limit_uid', 'rate_limit_ping',
         ],
     ],

@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "GatewayWorker HTTP API",
-    "description": "GatewayWorker Api 进程（默认 http://127.0.0.1:8290）的三个 HTTP 接口。\n\n【鉴权】\n/stats 与 /push 需 HMAC 验签，签名为 hex(hmac_sha256(\"{X-Timestamp}|{rawBody}\", secret))。\n本集合已内置集合级 Pre-request Script，自动写入 X-Timestamp 与 X-Sign，无需手工计算。\n\n【apiSecret 变量】\n请填入 .env 中的 API_SECRET。注意：本项目的 API_SECRET 当前为空，此时服务端按 Api\\Bootstrap::apiSecret() 回退使用 AUTH_SECRET —— 这种情况请填 AUTH_SECRET 的值。\n\n【不要使用 {{变量}} 写请求体】\nPostman 的动态变量（{{$timestamp}}、{{$guid}} 等）在 Pre-request Script 之后才解析，会导致签名与实际发送字节不一致而返回 401。需要唯一 msg_id 时请直接写死字符串后手工修改。\n\n【msg_id 与幂等】\n服务端按 msg_id 做幂等去重（push:dedup:*）。重复发送同一 msg_id 时第二次不会再次投递 —— 需要重投请修改 msg_id。修改 body 后无需重算签名，Pre-request Script 会基于实际 body 重新计算。\n\n【token 不在此处使用】\nWS/UDP 报文的 token 用于客户端 cmd=auth 鉴权；HTTP /push 只用 uid 定位目标，不接收 token 字段。\n\n【时间窗口】\nX-Timestamp 与服务器时间偏差需在 API_SIGN_TTL（默认 300 秒）以内。",
+    "description": "GatewayWorker Api 进程（默认 http://127.0.0.1:8290）的 HTTP 接口集合。\n\n【接口清单】\nGET  /health          存活探测，唯一免鉴权接口\nGET  /stats           指标快照\nPOST /push            提交定向推送任务（异步受理）\nPOST /action          调用业务动作（同步等待执行结果）\nGET  /action/{id}     按 request_id 补查动作执行结果\n\n【两类接口的语义差异（重要）】\n推送类 /push 是「异步受理」：入队即返回，不等待真实投递结果。\n动作类 /action 是「同步等待」：驱动 BusinessWorker 真正执行业务动作，并把动作回执带回 HTTP 响应；超过等待窗（API_ACTION_WAIT_MS，默认 6000ms）尚未完成则以 202 + request_id 响应，调用方凭该 id 查询 GET /action/{id} 取得最终结果。\n\n【错误分层（/action 最容易踩的坑）】\n入队前的失败 -> HTTP 4xx/5xx，如未知动作 / 未开放 HTTP 通道回 400 + 业务码 4006，队列积压回 503 + 5030。\n动作执行后的业务失败 -> **HTTP 200** + 响应体 code 为业务码（如参数缺失 4007，data.status=failed）。\n因此判断动作成败必须看响应体的 code（0 才是成功），不能只看 HTTP 状态码。\n\n【鉴权】\n除 /health 外其余接口均需 HMAC 验签，签名为 hex(hmac_sha256(\"{X-Timestamp}|{rawBody}\", secret))。\n本集合已内置集合级 Pre-request Script，自动写入 X-Timestamp 与 X-Sign，无需手工计算。\n\n【apiSecret 变量】\n请填入 .env 中的 API_SECRET。注意：本项目的 API_SECRET 当前为空，此时服务端按 Api\\Bootstrap::apiSecret() 回退使用 AUTH_SECRET —— 这种情况请填 AUTH_SECRET 的值。\n\n【不要使用 {{变量}} 写请求体】\nPostman 的动态变量（{{$timestamp}}、{{$guid}} 等）在 Pre-request Script 之后才解析，会导致签名与实际发送字节不一致而返回 401。需要唯一 msg_id 时请直接写死字符串后手工修改。\n\n【msg_id 与幂等】\n服务端按 msg_id 做幂等去重（push:dedup:*）。重复发送同一 msg_id 时第二次不会再次投递 —— 需要重投请修改 msg_id。修改 body 后无需重算签名，Pre-request Script 会基于实际 body 重新计算。\n\n【token 不在此处使用】\nWS/UDP 报文的 token 用于客户端 cmd=auth 鉴权；HTTP /push 与 /action 只用 uid 定位身份与目标，不接收 token 字段。\n\n【时间窗口】\nX-Timestamp 与服务器时间偏差需在 API_SIGN_TTL（默认 300 秒）以内。\n\n【动作白名单】\nPOST /action 只接受 config/actions.php 中显式声明 http=true 的动作。当前为 echo / report / subscribe / unsubscribe / topics / notify；session 未开放（其语义依赖当前连接，HTTP 通道下无意义）。\n\n【可直接运行的样例】\nphp tests/Api/http_demo.php            # 全接口调用示例（含签名构造与断言）\nphp tests/Api/http_demo.php --curl     # 额外打印等价 curl 命令\nnode tests/Api/api_sign_check.js       # 验签与错误分支断言",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -12,6 +12,11 @@
     {
       "key": "apiSecret",
       "value": ""
+    },
+    {
+      "key": "requestId",
+      "value": "ffffffffffffffff",
+      "description": "POST /action 响应中的 data.request_id，用于 GET /action/{id} 补查。先执行 action 请求，再把返回值贴到这里。"
     }
   ],
   "event": [
@@ -74,7 +79,7 @@
       "response": []
     },
     {
-      "name": "push 定向推送",
+      "name": "push 定向推送（异步受理）",
       "request": {
         "method": "POST",
         "header": [
@@ -101,7 +106,186 @@
             "push"
           ]
         },
-        "description": "提交定向推送任务。\n\ntarget_type: uid / device / client\ntarget: 对应目标标识\npayload: 任意 JSON 对象或数组，原样下发\noffline_mode: 可选，drop（离线丢弃）/ queue（离线入队，默认）\nmsg_id: 可选，用于幂等去重；留空由服务端生成\n\n实测通过示例（uid 维度）：\n{\"target_type\":\"uid\",\"target\":\"user-1\",\"payload\":{\"action\":\"notify\",\"from\":\"postman\",\"title\":\"Postman 测试\",\"content\":\"hello from postman\"},\"msg_id\":\"pm-postman-001\"}"
+        "description": "提交定向推送任务。响应 200 仅表示「任务已入队」，真实投递由业务进程异步完成。\n\ntarget_type: uid / device / client\ntarget: 对应目标标识\npayload: 任意 JSON 对象或数组，原样下发\noffline_mode: 可选，drop（离线丢弃）/ queue（离线入队，默认）\nmsg_id: 可选，用于幂等去重；留空由服务端生成\n\n实测通过示例（uid 维度）：\n{\"target_type\":\"uid\",\"target\":\"user-1\",\"payload\":{\"action\":\"notify\",\"from\":\"postman\",\"title\":\"Postman 测试\",\"content\":\"hello from postman\"},\"msg_id\":\"pm-postman-001\"}"
+      },
+      "response": []
+    },
+    {
+      "name": "action 业务动作调用（echo，同步等待）",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"action\":\"echo\",\"uid\":\"user-1\",\"params\":{\"probe\":\"postman\",\"n\":42}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/action",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "action"
+          ]
+        },
+        "description": "调用业务动作，同步等待 BusinessWorker 执行结果。\n\n链路：POST /action -> 白名单校验 -> RPUSH queue:action:in -> business 进程取批 -> ActionRunner::run(channel=http) -> 回执写 action:result:{request_id} -> api 轮询取回 -> HTTP 响应。\n\n请求字段：\naction  动作名，必须在 config/actions.php 中声明 http=true\nuid     调用方身份；白名单内动作 auth 均为 true，必填\ndevice_id  可选（默认空）\nparams  动作参数，必须是 JSON 对象；各动作的参数规则见 config/actions.php\n\n成功响应：HTTP 200，code=0，data.status=done，data.result 为动作回执数据体，data.request_id 可用于补查。\n\n实测通过示例：\n{\"action\":\"echo\",\"uid\":\"user-1\",\"params\":{\"probe\":\"postman\",\"n\":42}}\n回执中 result.channel 应为 \"http\"，result.params 应原样回显 {\"probe\":\"postman\",\"n\":42}。\n\n注意：uid 参与 HMAC 签名覆盖，即「密钥持有者可代表任意 uid 发起动作」，与 /push 同权，不构成提权。"
+      },
+      "response": []
+    },
+    {
+      "name": "action 有状态动作（report，计数递增）",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"action\":\"report\",\"uid\":\"user-1\",\"params\":{\"topic\":\"postman_topic\",\"count\":1}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/action",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "action"
+          ]
+        },
+        "description": "连续执行两次，观察 data.result.total 是否递增 1 —— 这证明动作确实在业务进程执行并写入了 Redis（action:report:{topic}），而不是 api 进程自造的回执。\n\ntopic 规则：^[A-Za-z0-9_:.\\-]{1,64}$（会参与 Redis 键拼接，故限制字符集）\ncount  可选，1~10000，默认 1\nvalue  可选，任意 JSON\n\n注意：同一处理器在 WS 上回执、在 UDP 上静默（reply=none）、在 HTTP 上回执 —— 差异完全由 config/actions.php 的 reply 声明表达，处理器内不含任何通道判断。"
+      },
+      "response": []
+    },
+    {
+      "name": "action 订阅闭环（subscribe -> topics -> unsubscribe）",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"action\":\"subscribe\",\"uid\":\"user-1\",\"params\":{\"topic\":\"postman_topic\"}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/action",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "action"
+          ]
+        },
+        "description": "订阅主题。把 body 里的 action 依次改为 subscribe / topics / unsubscribe 即可验证「跨请求状态保持」：\n  topics 应能在每次调用返回 data.result.topics 里找到刚订阅的主题。\n\ntopics 与 session 一样不接受 uid 入参，只能查调用方自己的订阅集合（越权防护）。"
+      },
+      "response": []
+    },
+    {
+      "name": "action 错误分支：未开放 HTTP 通道（session，预期 400/4006）",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"action\":\"session\",\"uid\":\"user-1\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/action",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "action"
+          ]
+        },
+        "description": "session 在 config/actions.php 中刻意未开放 HTTP 通道（其语义锚点是「当前连接」，HTTP 下无连接实体），应在入队前被白名单拦下。\n\n预期：HTTP 400，code=4006，msg 中列出当前可用动作。\n\n这也是白名单的第二道防线：即便请求方绕过 api 直接向 queue:action:in 写入任务，ActionRunner 仍会拒绝执行未开放 HTTP 的动作。"
+      },
+      "response": []
+    },
+    {
+      "name": "action 错误分支：参数缺失（report 缺 topic，预期 200/4007）",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"action\":\"report\",\"uid\":\"user-1\",\"params\":{}}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/action",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "action"
+          ]
+        },
+        "description": "参数校验在业务进程执行，属「动作执行后的业务失败」，因此：\n\n预期：**HTTP 200**，code=4007，msg=\"缺少必要参数：topic\"，data.status=failed。\n\n这是动作接口最容易被误判的地方 —— HTTP 200 只代表「报文被正确受理并执行完毕」，业务成败必须看响应体的 code（0 才是成功）。"
+      },
+      "response": []
+    },
+    {
+      "name": "action 结果补查（GET /action/{request_id}）",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/action/{{requestId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "action",
+            "{{requestId}}"
+          ]
+        },
+        "description": "按 request_id 取回动作执行结果。\n\n使用步骤：先执行上面任一 action 请求，把响应里的 data.request_id 复制到集合变量 requestId，再发本请求。\n\n响应：\n  200 + code 0 + data.status=done    结果已就绪（TTL 内可重复读取）\n  404 + code 4004                    结果不存在或已过期（data.status=pending，hint 说明原因）\n  400 + code 4000                    request_id 格式非法\n\nGET 无请求体，签名基于空串计算：hmac_sha256(\"{ts}|\", secret)。\n\n该接口不是可选装饰：POST /action 超过等待窗（API_ACTION_WAIT_MS）未完成时返回 202 + request_id + status=pending，此时必须靠它取最终结果。结果存续时长由 ACTION_RESULT_TTL（默认 60 秒）决定。\n\n集合变量 requestId 的默认值是 ffffffffffffffff（合法格式但必然不存在），直接发请求会得到 404 —— 可用来观察 pending 分支。"
       },
       "response": []
     }

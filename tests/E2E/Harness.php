@@ -54,6 +54,7 @@ final class Harness
         'M' => '业务动作契约（参数白名单 / 4006 未知动作 / 4007 参数错误）',
         'N' => 'UDP 通道业务动作（echo 回执 / report 按声明静默）',
         'O' => '订阅与广播闭环（subscribe -> enqueueTopic -> push）',
+        'P' => 'HTTP 动作调用（POST /action -> BusinessWorker -> 回执）',
     );
 
     /**
@@ -249,7 +250,7 @@ final class Harness
         // H 使用基准 uid 的 -H 后缀，身份在用例内即时签发
         $this->ctx['H'] = array('uid' => $uid . '-H');
 
-        $suffixes = array('E', 'F', 'G', 'I', 'J', 'K', 'L', 'M', 'N', 'O');
+        $suffixes = array('E', 'F', 'G', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P');
         foreach ($suffixes as $case) {
             $cu = $uid . '-' . $case;
             $cd = $deviceId . '-' . $case;
@@ -264,6 +265,7 @@ final class Harness
         $this->ctx['M']['topic'] = 'e2e_m_' . bin2hex(random_bytes(3));
         $this->ctx['N']['topic'] = 'e2e_n_' . bin2hex(random_bytes(3));
         $this->ctx['O']['topic'] = 'e2e_o_' . bin2hex(random_bytes(3));
+        $this->ctx['P']['topic'] = 'e2e_p_' . bin2hex(random_bytes(3));
 
         // 用例 N 的三条报文序号
         $this->ctx['N']['seq1']       = 'n-echo-1';
@@ -468,9 +470,12 @@ final class Harness
      * @param string $url
      * @param array  $headers
      * @param string $body
+     * @param int    $timeout 连接与读取超时（秒）。默认 3s 覆盖普通接口；
+     *                        POST /action 为同步等待语义，需按等待窗放宽
+     *                        （API_ACTION_WAIT_MS + 动作超时余量）。
      * @return array ['ok' => bool, 'status' => int, 'body' => string, 'json' => array|null, 'error' => string]
      */
-    public static function httpRequest($method, $url, array $headers = array(), $body = '')
+    public static function httpRequest($method, $url, array $headers = array(), $body = '', $timeout = 3)
     {
         $parts = parse_url($url);
         $host  = isset($parts['host']) ? $parts['host'] : '127.0.0.1';
@@ -482,7 +487,7 @@ final class Harness
 
         $errno  = 0;
         $errstr = '';
-        $fp     = @stream_socket_client("tcp://{$host}:{$port}", $errno, $errstr, 3);
+        $fp     = @stream_socket_client("tcp://{$host}:{$port}", $errno, $errstr, (float)$timeout);
         if (!$fp) {
             return array('ok' => false, 'status' => 0, 'body' => '', 'json' => null, 'error' => $errstr);
         }
@@ -502,7 +507,7 @@ final class Harness
 
         // 服务端默认 keep-alive，不能依赖读到 EOF，需按 Content-Length 精确读取
         $head = '';
-        stream_set_timeout($fp, 3);
+        stream_set_timeout($fp, (int)$timeout);
         while (($line = fgets($fp, 4096)) !== false) {
             $head .= $line;
             if (strpos($head, "\r\n\r\n") !== false) {

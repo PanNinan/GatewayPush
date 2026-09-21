@@ -198,6 +198,8 @@
     push_topic: '主题广播次数', push_topic_targets: '广播目标数',
     udp_out_queued: 'UDP 出站入队', udp_out: 'UDP 实际下发', udp_out_fail: 'UDP 下发失败',
     action_in: '动作受理', action_ok: '动作成功', action_fail: '动作失败', action_timeout: '动作超时',
+    action_http_in: 'HTTP 受理', action_http_ok: 'HTTP 成功', action_http_fail: 'HTTP 失败',
+    action_http_timeout: 'HTTP 超时', action_http_dequeue: 'HTTP 出队',
     action_echo: 'echo', action_session: 'session', action_report: 'report',
     action_subscribe: 'subscribe', action_unsubscribe: 'unsubscribe',
     action_topics: 'topics', action_notify: 'notify',
@@ -219,6 +221,8 @@
     { title: '业务动作',  keys: ['action_in', 'action_ok', 'action_fail', 'action_timeout',
                                  'action_echo', 'action_session', 'action_report',
                                  'action_subscribe', 'action_unsubscribe', 'action_topics', 'action_notify'] },
+    { title: '动作·HTTP 通道', keys: ['action_http_in', 'action_http_ok', 'action_http_fail',
+                                     'action_http_timeout', 'action_http_dequeue'] },
     { title: '限流',      keys: ['rate_limit_hit', 'rate_limit_ip', 'rate_limit_conn',
                                  'rate_limit_uid', 'rate_limit_ping'] },
     { title: '发送背压',  keys: ['buffer_full', 'buffer_drain'] }
@@ -226,7 +230,8 @@
 
   var FAIL_KEYS = {
     msg_fail: 1, auth_fail: 1, push_fail: 1, udp_out_fail: 1,
-    action_fail: 1, action_timeout: 1, conn_error: 1, heartbeat_timeout: 1
+    action_fail: 1, action_timeout: 1, conn_error: 1, heartbeat_timeout: 1,
+    action_http_fail: 1, action_http_timeout: 1
   };
 
   var last = null;

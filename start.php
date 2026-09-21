@@ -245,7 +245,7 @@ if (in_array($command, array('start', 'restart'), true) && !in_array('-q', $clea
  --------------------------------------------------------------------- */
 GatewayPush\Gateway\Bootstrap::init($gatewayConfig, $appConfig);
 GatewayPush\Business\Bootstrap::init($businessConfig, $appConfig, $gatewayConfig, $actionConfig);
-GatewayPush\Api\Bootstrap::init($appConfig, $businessConfig);
+GatewayPush\Api\Bootstrap::init($appConfig, $businessConfig, $actionConfig);
 GatewayPush\Dashboard\Bootstrap::init($appConfig);
 
 Worker::runAll();
