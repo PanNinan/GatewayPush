@@ -33,6 +33,18 @@ class Monitor
     const COUNTER_KEEP_DAYS = 7;
 
     /**
+     * gauge Hash 中「按 PID 独立」的字段前缀
+     *
+     * 写入侧（report / flushProcessMeta）与清理侧（purgeExitedProcesses）共用，
+     * 避免两处各写一份字面量而漂移 —— 前缀一旦不一致，清理就会漏删（残留累积）
+     * 或误删（活进程字段被清）。
+     */
+    const FIELD_PID_AT       = 'pid_at:';
+    const FIELD_PROC         = 'proc:';
+    const FIELD_TASKS        = 'tasks:';
+    const FIELD_MEMORY_BYTES = 'memory_bytes:';
+
+    /**
      * 监控配置
      *
      * @var array
@@ -119,20 +131,26 @@ class Monitor
         self::flushCounters();
 
         // 覆盖型指标：内存占用按进程粒度上报
-        $pid   = getmypid();
-        $ttl   = (int)self::$config['ttl'];
+        $pid      = getmypid();
+        $now      = time();
+        $ttl      = (int)self::$config['ttl'];
         $gaugeKey = RedisKeys::METRICS_GAUGE;
 
-        RedisClient::hSet($gaugeKey, 'memory_bytes:' . $pid, Logger::memoryUsage());
+        RedisClient::hSet($gaugeKey, self::FIELD_MEMORY_BYTES . $pid, Logger::memoryUsage());
 
         // 进程元信息：pid_at 用于判定进程存活（gauge TTL 远长于上报周期，
         // 进程退出后其字段仍会残留，面板必须靠时间戳识别幽灵进程）；
         // tasks 为定时任务健康度 —— 纯进程内状态，跨进程读不到，必须随指标落库。
         // 二者按 PID 独立成字段（与 memory_bytes:{pid} 同一命名风格），多 worker 不会互相覆盖。
-        self::flushProcessMeta($gaugeKey, $pid);
+        self::flushProcessMeta($gaugeKey, $pid, $now);
 
-        RedisClient::hSet($gaugeKey, 'report_at', time());
+        RedisClient::hSet($gaugeKey, 'report_at', $now);
         RedisClient::expire($gaugeKey, $ttl);
+
+        // 必须显式清理：Hash 的 field 没有独立 TTL，而上面的 expire() 每次上报都会
+        // 刷新整个 key 的存活时间 —— 只要还有活进程在写，key 就永不过期，已退出进程
+        // 的字段会无限累积（实测残留可达 4780s+，而 TTL 仅 600s）。
+        self::purgeExitedProcesses($gaugeKey, $ttl, $now);
 
         if (!$withOnline) {
             return;
@@ -226,14 +244,15 @@ class Monitor
      *
      * @param string $gaugeKey
      * @param int    $pid
+     * @param int    $now
      * @return void
      */
-    protected static function flushProcessMeta($gaugeKey, $pid)
+    protected static function flushProcessMeta($gaugeKey, $pid, $now)
     {
         $workerId = Task::workerId();
         $role     = defined('APP_ROLE') ? APP_ROLE : 'all';
 
-        RedisClient::hSet($gaugeKey, 'pid_at:' . $pid, time());
+        RedisClient::hSet($gaugeKey, self::FIELD_PID_AT . $pid, $now);
 
         // 进程身份：光有 PID 无法判断它是什么进程 —— PID 会被系统回收复用，
         // 同一角色下的多个 worker 也肉眼不可分。APP_ROLE 由 start.php 定义，
@@ -244,7 +263,7 @@ class Monitor
         ), JSON_UNESCAPED_UNICODE);
 
         if ($proc !== false) {
-            RedisClient::hSet($gaugeKey, 'proc:' . $pid, $proc);
+            RedisClient::hSet($gaugeKey, self::FIELD_PROC . $pid, $proc);
         }
 
         $payload = json_encode(array(
@@ -253,7 +272,105 @@ class Monitor
         ), JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
 
         if ($payload !== false) {
-            RedisClient::hSet($gaugeKey, 'tasks:' . $pid, $payload);
+            RedisClient::hSet($gaugeKey, self::FIELD_TASKS . $pid, $payload);
         }
+    }
+
+    /**
+     * 清理已退出进程在 gauge 中残留的字段
+     *
+     * 为什么必须主动清理：Redis 的 Hash field 没有独立 TTL（HSET 不支持 field 级
+     * 过期），而 gauge 的 TTL 是 key 级的。report() 每次上报都 expire(gaugeKey, ttl)
+     * 刷新 key —— 只要还有任意一个活进程在写，key 就永不过期，已退出进程的
+     * proc / pid_at / tasks / memory_bytes 四个字段会无限累积：面板进程列表越拉
+     * 越长、Redis 内存缓慢增长、`HGETALL` 的返回体也越来越大。
+     *
+     * 判定口径：`pid_at < now - ttl` 视为已退出 —— ttl 与 gauge 自身的 TTL 同源，
+     * 语义就是「数据保留时长」，超过它即当过期数据丢弃。
+     *
+     * 刻意**不**复用面板的 `interval * 2` 阈值：那只是「多久没上报就在界面上标灰」
+     * 的展示阈值，只有秒级；拿来做删除判据过于激进 —— 一次长任务阻塞、一次 GC
+     * 停顿就会把活进程的字段删掉，表现为面板进程反复闪烁。用 ttl 则天然留出
+     * 足够宽限，且「已退出」的可见性仍由面板按 interval*2 标注，两者互补不冲突。
+     *
+     * 多进程并发调用是安全的：hDel 幂等，重复删除同一批 field 只会返回 0。
+     *
+     * @param string $gaugeKey
+     * @param int    $ttl
+     * @param int    $now
+     * @return void
+     */
+    protected static function purgeExitedProcesses($gaugeKey, $ttl, $now)
+    {
+        if ($ttl <= 0) {
+            return;
+        }
+
+        RedisClient::hGetAll($gaugeKey, function ($gauge) use ($gaugeKey, $ttl, $now) {
+            if (!is_array($gauge)) {
+                return;
+            }
+
+            $fields = self::staleFields($gauge, $ttl, $now);
+            if (!$fields) {
+                return;
+            }
+
+            RedisClient::hDel($gaugeKey, $fields, function () use ($gaugeKey, $fields) {
+                Logger::info('已清理已退出进程的残留指标字段', array(
+                    'key'    => $gaugeKey,
+                    'fields' => $fields,
+                ));
+            });
+        });
+    }
+
+    /**
+     * 从 gauge 快照中挑出「已退出进程」的残留字段名
+     *
+     * 纯计算、零 IO —— 与 Redis 读写解耦，便于单测覆盖各类边界
+     * （缺时间戳 / 脏 PID / 恰好落在阈值上 / 非进程字段混入）。
+     *
+     * 判定：`pid_at` 存在且 `0 < pid_at < now - ttl` 即视为已退出。
+     * 只认以 pid_at: 开头且后缀为纯数字的字段，其余（report_at、conn_total 等
+     * 全局字段）一律不动 —— 它们不属于任何进程，没有「退出」概念。
+     *
+     * @param array $gauge HGETALL 结果
+     * @param int   $ttl   存活宽限（秒），<=0 时视为不清理
+     * @param int   $now   当前时间戳
+     * @return array 待删除的 field 列表；无需清理时为空数组
+     */
+    public static function staleFields(array $gauge, $ttl, $now)
+    {
+        if ($ttl <= 0 || !$gauge) {
+            return array();
+        }
+
+        $deadline = $now - $ttl;
+        $fields   = array();
+
+        foreach ($gauge as $field => $value) {
+            if (strpos($field, self::FIELD_PID_AT) !== 0) {
+                continue;
+            }
+
+            $pid = substr($field, strlen(self::FIELD_PID_AT));
+            if ($pid === '' || !ctype_digit($pid)) {
+                continue;
+            }
+
+            $at = (int)$value;
+            // at <= 0：时间戳缺失/损坏的字段不删，避免把来源不明的东西误清
+            if ($at <= 0 || $at >= $deadline) {
+                continue;
+            }
+
+            $fields[] = self::FIELD_PID_AT . $pid;
+            $fields[] = self::FIELD_PROC . $pid;
+            $fields[] = self::FIELD_TASKS . $pid;
+            $fields[] = self::FIELD_MEMORY_BYTES . $pid;
+        }
+
+        return $fields;
     }
 }
