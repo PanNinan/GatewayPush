@@ -539,6 +539,7 @@ GatewayWorker 实时数据推送服务 —— Linux 服务管理脚本
                       / 角色名(register gateway udp business api dashboard all app)
                       -f 持续跟随；行数默认 60
   check               仅执行环境自检，不启动服务
+  info [角色列表]     打印启动信息：环境 / 框架版本 / 服务清单（含端口探测）
   env:init            生成 .env（首部署必执行，自动注入随机密钥）
   token <uid> [device] [ttl]      生成调试用 Token
   push <类型> <目标> [payload] [msg_id] [offline_mode]
@@ -576,6 +577,7 @@ case "$cmd" in
     status|svc-status) cmd_status "$@" ;;
     log|logs|tail)     cmd_log "$@" ;;
     check)      preflight && php_run check ;;
+    info)       preflight && php_run info "$@" ;;
     env:init)   preflight && php_run env:init ;;
     token)      preflight && php_run token "$@" ;;
     push)       preflight && php_run push "$@" ;;

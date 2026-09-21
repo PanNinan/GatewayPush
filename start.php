@@ -162,6 +162,23 @@ if ($command === 'check') {
     exit($result['ok'] ? 0 : 1);
 }
 
+if ($command === 'info') {
+    // 可选参数为逗号分隔的角色列表，供管理脚本按实际启动范围过滤；
+    // 非角色名一律忽略而非报错 —— 该命令是只读展示，不应因参数写法失败。
+    $infoRoles = array();
+    if (isset($cleanArgv[2]) && trim((string)$cleanArgv[2]) !== '') {
+        foreach (explode(',', strtolower((string)$cleanArgv[2])) as $infoItem) {
+            $infoItem = trim($infoItem);
+            if ($infoItem !== '' && $infoItem !== 'all' && in_array($infoItem, $validRoles, true)) {
+                $infoRoles[] = $infoItem;
+            }
+        }
+    }
+
+    echo startupBanner($appConfig, $gatewayConfig, $businessConfig, $infoRoles, true);
+    exit(0);
+}
+
 /* ---------------------------------------------------------------------
  | 6. 环境自检（所有 workerman 命令前强制执行）
  --------------------------------------------------------------------- */
@@ -198,6 +215,29 @@ if (DIRECTORY_SEPARATOR !== '/' && $role === 'all') {
     fwrite(STDERR, "\n[FATAL] Windows 下不支持单文件启动全部组件（workerman 限制）。\n");
     fwrite(STDERR, "        请按角色分别启动，或改用 Linux 部署。\n");
     exit(1);
+}
+
+/* ---------------------------------------------------------------------
+ | 9.5 启动信息横幅
+ |
+ | 打印点必须在 Worker::runAll() 之前：daemonize() 由 runAll() 内部执行，
+ | 在此之前 STDOUT 仍然连接终端，因此守护模式（-d）下同样可见。
+ |
+ | 这是本项目自建横幅而非依赖 workerman displayUI() 的原因 —— 后者全程走
+ | Worker::log()，而 log() 首行即判断 !$daemonize，守护模式下整块 UI
+ | （版本行 + WORKERS 表）只落 runtime/logs/workerman.log，终端上完全看不到。
+ |
+ | 带 -q 时跳过，与 workerman 自身的静默语义保持一致。
+ --------------------------------------------------------------------- */
+if (in_array($command, array('start', 'restart'), true) && !in_array('-q', $cleanArgv, true)) {
+    echo startupBanner(
+        $appConfig,
+        $gatewayConfig,
+        $businessConfig,
+        $role === 'all' ? array() : array($role),
+        false,
+        in_array('-d', $cleanArgv, true) ? 'DAEMON' : 'DEBUG'
+    );
 }
 
 /* ---------------------------------------------------------------------
@@ -567,6 +607,19 @@ function probePort($listen)
 {
     $isUdp  = stripos($listen, 'udp://') === 0;
     $target = preg_replace('#^[a-z]+://#i', '', $listen);
+
+    // Windows 的 socket 默认允许重复 bind（PHP 未暴露 SO_EXCLUSIVEADDRUSE，
+    // stream_socket_server 也不会设置它），端口已被监听时本地 bind 依然成功 ——
+    // 用 bind 判定会恒返回"未占用"，使占用提示与监听状态彻底失效。
+    // 故 Windows 改用 netstat 快照判定；Linux 无此特性，bind 探测即准确。
+    if (DIRECTORY_SEPARATOR !== '/' && function_exists('exec')) {
+        $colon = strrpos($target, ':');
+        if ($colon !== false) {
+            $ports = usedPortsByNetstat($isUdp ? 'udp' : 'tcp');
+            return isset($ports[(int)substr($target, $colon + 1)]);
+        }
+    }
+
     $target = str_replace('0.0.0.0', '127.0.0.1', $target);
 
     $errno  = 0;
@@ -583,6 +636,278 @@ function probePort($listen)
     }
     @fclose($socket);
     return false;
+}
+
+/**
+ * 本机已占用端口快照（仅 Windows 使用）
+ *
+ * netstat 输出的状态列在中文 Windows 下仍为英文（LISTENING），可安全匹配。
+ * 结果按协议缓存，多个端口共用一次进程调用 —— check 要探测 5 个端口，
+ * 逐端口调用 netstat 会带来数百毫秒的无谓开销。
+ *
+ * @param string $protocol 'tcp' 或 'udp'
+ * @return array 端口号 => true
+ */
+function usedPortsByNetstat($protocol)
+{
+    static $cache = array();
+
+    if (isset($cache[$protocol])) {
+        return $cache[$protocol];
+    }
+
+    $ports = array();
+    $lines = array();
+    @exec('netstat -a -n -p ' . strtoupper($protocol), $lines);
+
+    foreach ($lines as $line) {
+        $parts = preg_split('/\s+/', trim($line));
+        if (!is_array($parts) || count($parts) < 3) {
+            continue;
+        }
+        if (strcasecmp($parts[0], $protocol) !== 0) {
+            continue;
+        }
+        // TCP 只认监听态：ESTABLISHED 行里的"本地地址"是本机客户端用的临时端口，
+        // 与服务监听无关，计入会凭空制造端口冲突假象。
+        if ($protocol === 'tcp' && !in_array('LISTENING', $parts, true)) {
+            continue;
+        }
+
+        $colon = strrpos($parts[1], ':');
+        if ($colon === false) {
+            continue;
+        }
+        $port = (int)substr($parts[1], $colon + 1);
+        if ($port > 0) {
+            $ports[$port] = true;
+        }
+    }
+
+    $cache[$protocol] = $ports;
+    return $ports;
+}
+
+/**
+ * 启动信息横幅
+ *
+ * 打印时机必须早于 Worker::runAll() —— daemonize() 由 runAll() 内部执行，
+ * 在此之前 STDOUT 仍连接终端，因此守护模式（-d）下同样可见。
+ *
+ * 这正是本项目需要自建横幅的原因：workerman 自带的 displayUI() 全程走
+ * Worker::log()，而 log() 首行即判断 !$daemonize，守护模式下整块 UI
+ * （版本行 + WORKERS 表）只落 runtime/logs/workerman.log，终端上看不到。
+ *
+ * @param array  $appConfig      config/app.php
+ * @param array  $gatewayConfig  config/gateway.php
+ * @param array  $businessConfig config/business.php
+ * @param array  $roles          只列这些角色；空数组 = 按配置列出全部相关角色
+ * @param bool   $withProbe      是否探测端口监听状态（启动前端口必然空闲，故仅 info 命令启用）
+ * @param string $modeLabel      启动模式标签（DAEMON / DEBUG），空串则不显示该行
+ * @return string
+ */
+function startupBanner(array $appConfig, array $gatewayConfig, array $businessConfig, array $roles = array(), $withProbe = false, $modeLabel = '')
+{
+    $isLinux  = DIRECTORY_SEPARATOR === '/';
+    $basePath = defined('BASE_PATH') ? BASE_PATH : dirname(__DIR__);
+
+    // 进程数必须与各 Bootstrap 的 resolveCount() 口径一致：Windows 下 workerman
+    // 单启动文件只允许 1 个 Worker 实例，会强制降级为 1。若直接展示 .env 的配置值，
+    // 横幅会与真实进程数不符 —— 这类"展示值不等于实际值"正是最误导人的地方。
+    $count = function ($configured) use ($isLinux) {
+        return $isLinux ? max(1, (int)$configured) : 1;
+    };
+
+    $registerListen = 'text://' . $gatewayConfig['register']['listen'];
+
+    $services = array(
+        'register' => array(
+            'name'   => $gatewayConfig['register']['name'],
+            'listen' => $registerListen,
+            'probe'  => $registerListen,
+            'count'  => 1,                                     // 注册中心必须单进程
+            'enable' => !empty($gatewayConfig['register']['enable']),
+        ),
+        'gateway' => array(
+            'name'   => $gatewayConfig['websocket']['name'],
+            'listen' => $gatewayConfig['websocket']['listen']
+                . (!empty($gatewayConfig['websocket']['ssl']['enable']) ? '  (WSS)' : ''),
+            'probe'  => $gatewayConfig['websocket']['listen'],
+            'count'  => $count($gatewayConfig['websocket']['count']),
+            'enable' => !empty($gatewayConfig['websocket']['enable']),
+        ),
+        'udp' => array(
+            'name'   => $gatewayConfig['udp']['name'],
+            'listen' => $gatewayConfig['udp']['listen'],
+            'probe'  => $gatewayConfig['udp']['listen'],
+            'count'  => $count($gatewayConfig['udp']['count']),
+            'enable' => !empty($gatewayConfig['udp']['enable']),
+        ),
+        'business' => array(
+            'name'   => $businessConfig['worker']['name'],
+            'listen' => '-（注册中心 ' . $businessConfig['register_address'] . '）',
+            'probe'  => '',                                    // 不监听端口，无法探测
+            'count'  => $count($businessConfig['worker']['count']),
+            'enable' => true,
+        ),
+        'api' => array(
+            'name'   => $appConfig['api']['name'],
+            'listen' => $appConfig['api']['listen'],
+            'probe'  => $appConfig['api']['listen'],
+            'count'  => 1,                                     // 接口层无状态，单进程
+            'enable' => !empty($appConfig['api']['enable']),
+        ),
+        'dashboard' => array(
+            'name'   => $appConfig['dashboard']['name'],
+            'listen' => $appConfig['dashboard']['listen'],
+            'probe'  => $appConfig['dashboard']['listen'],
+            'count'  => 1,
+            'enable' => !empty($appConfig['dashboard']['enable']),
+        ),
+    );
+
+    // 项目内路径显示为相对形式，避免横幅里反复出现本机绝对路径
+    $relative = function ($path) use ($basePath) {
+        $path = str_replace('\\', '/', (string)$path);
+        $root = rtrim(str_replace('\\', '/', $basePath), '/') . '/';
+        return strncmp($path, $root, strlen($root)) === 0 ? substr($path, strlen($root)) : $path;
+    };
+
+    $envFiles = Env::loadedFiles();
+    $envDesc  = $envFiles
+        ? implode(' -> ', array_map($relative, $envFiles))
+        : '（未找到，全部使用代码内默认值）';
+
+    $lines   = array();
+    $lines[] = 'GatewayWorker 实时数据推送服务 - 启动信息';
+    $lines[] = str_repeat('=', 70);
+    $lines[] = 'PHP 版本  : ' . PHP_VERSION . ' (' . PHP_SAPI . ') / ' . PHP_OS_FAMILY
+        . ($isLinux ? ' [多进程模式]' : ' [单进程模式]');
+    $lines[] = '启动角色  : ' . (defined('APP_ROLE') ? APP_ROLE : 'all');
+    if ($modeLabel !== '') {
+        $lines[] = '启动模式  : ' . $modeLabel;
+    }
+    $lines[] = '环境配置  : ' . $appConfig['app']['env'] . '（' . $envDesc . '）';
+    $lines[] = '时区      : ' . date_default_timezone_get();
+    $lines[] = '运行目录  : ' . rtrim($relative($appConfig['runtime']['runtime_path']), '/') . '/'
+        . '  (日志 ' . rtrim($relative($appConfig['runtime']['log_path']), '/') . '/'
+        . '，进程 ' . rtrim($relative($appConfig['runtime']['pid_path']), '/') . '/)';
+    $lines[] = '框架版本  : workerman ' . packageVersion('workerman/workerman')
+        . ' / gateway-worker ' . packageVersion('workerman/gateway-worker');
+    $lines[] = '依赖版本  : workerman/redis ' . packageVersion('workerman/redis')
+        . ' / vlucas/phpdotenv ' . packageVersion('vlucas/phpdotenv');
+    $lines[] = str_repeat('-', 70);
+    $lines[] = '服务清单  :';
+    $lines[] = '  ' . padDisplay('角色', 12) . padDisplay('进程名', 18)
+        . padDisplay('监听', 36) . padDisplay('进程数', 8) . '状态';
+
+    $running   = 0;
+    $probeable = 0;
+    foreach ($services as $roleName => $service) {
+        if ($roles && !in_array($roleName, $roles, true)) {
+            continue;
+        }
+
+        if (empty($service['enable'])) {
+            $status = '未启用';
+        } elseif (!$withProbe || $service['probe'] === '') {
+            $status = '-';
+        } else {
+            $probeable++;
+            if (probePort($service['probe'])) {
+                $status = '监听中';
+                $running++;
+            } else {
+                $status = '未监听';
+            }
+        }
+
+        $lines[] = '  ' . padDisplay($roleName, 12) . padDisplay($service['name'], 18)
+            . padDisplay($service['listen'], 36) . padDisplay((string)$service['count'], 8) . $status;
+    }
+
+    if ($withProbe) {
+        $lines[] = '';
+        $lines[] = sprintf(
+            '端口探测：%d / %d 个可探测服务处于监听状态（business 无监听端口，不参与判断）',
+            $running,
+            $probeable
+        );
+    }
+
+    $lines[] = str_repeat('=', 70);
+    $lines[] = '';
+
+    return implode("\n", $lines);
+}
+
+/**
+ * 读取 Composer 已安装包的真实版本号
+ *
+ * 不硬编码版本，避免升级依赖后横幅与 composer.lock 漂移；
+ * InstalledVersions 不可用（手工裁剪 vendor）或包不存在时降级为 '-'。
+ *
+ * @param string $package 形如 workerman/workerman
+ * @return string
+ */
+function packageVersion($package)
+{
+    if (!class_exists('Composer\\InstalledVersions')) {
+        return '-';
+    }
+
+    try {
+        $version = \Composer\InstalledVersions::getPrettyVersion($package);
+    } catch (\Throwable $e) {
+        return '-';
+    }
+
+    return is_string($version) && $version !== '' ? $version : '-';
+}
+
+/**
+ * 字符串在等宽终端下的显示宽度
+ *
+ * 中文等全角字符占 2 列，ASCII 占 1 列。不能直接用 str_pad() 补空格 ——
+ * 它按字节数计算，含中文的列会整体错位（bin/start.ps1 的 Format-Pad
+ * 处理的是同一个问题，两处口径需保持一致）。
+ *
+ * @param string $text
+ * @return int
+ */
+function displayWidth($text)
+{
+    $width  = 0;
+    $length = strlen($text);
+
+    for ($i = 0; $i < $length;) {
+        $byte = ord($text[$i]);
+        if ($byte < 0x80) {          // ASCII
+            $width += 1;
+            $i     += 1;
+        } elseif ($byte < 0xE0) {    // 2 字节序列（拉丁扩展等），按窄字符计
+            $width += 1;
+            $i     += 2;
+        } else {                     // 3 / 4 字节序列（CJK 等），按宽字符计
+            $width += 2;
+            $i     += $byte < 0xF0 ? 3 : 4;
+        }
+    }
+
+    return $width;
+}
+
+/**
+ * 按显示宽度右侧补空格
+ *
+ * @param string $text
+ * @param int    $width
+ * @return string
+ */
+function padDisplay($text, $width)
+{
+    $pad = $width - displayWidth($text);
+    return $pad > 0 ? $text . str_repeat(' ', $pad) : $text;
 }
 
 /**
@@ -795,6 +1120,8 @@ function usageText()
     $text[]  = '  svc-status    查看进程运行状态';
     $text[]  = '  connections   查看连接状态';
     $text[]  = '  check         仅执行环境自检';
+    $text[]  = '  info          打印启动信息：环境 / 框架版本 / 服务清单（含端口探测）';
+    $text[]  = '                可选参数为角色列表，例：php start.php info gateway,udp';
     $text[]  = '  env:init      生成 .env 配置（不存在则从模板创建并注入随机密钥）';
     $text[]  = '  token <uid> [device_id] [ttl]   生成调试用 Token';
     $text[]  = '  push <uid|device|client> <target> [payload-json] [msg_id] [offline_mode]';

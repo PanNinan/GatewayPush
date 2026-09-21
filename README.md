@@ -301,6 +301,59 @@ php start.php start --role=api
 php start.php start --role=dashboard
 ```
 
+#### 启动信息输出
+
+`start` / `restart` 在装配 Worker 之前会打印一段启动信息，用于启动后立刻确认
+「跑的是哪份配置、哪个版本的框架、哪些组件」：
+
+```text
+GatewayWorker 实时数据推送服务 - 启动信息
+======================================================================
+PHP 版本  : 8.2.9 (cli) / Linux [多进程模式]
+启动角色  : all
+启动模式  : DAEMON
+环境配置  : dev（.env -> .env.local）
+时区      : Asia/Shanghai
+运行目录  : runtime/  (日志 runtime/logs/，进程 runtime/pid/)
+框架版本  : workerman v5.2.2 / gateway-worker v3.1.4
+依赖版本  : workerman/redis v2.0.6 / vlucas/phpdotenv v5.7.0
+----------------------------------------------------------------------
+服务清单  :
+  角色        进程名            监听                                进程数  状态
+  register    Register          text://127.0.0.1:1238               1       -
+  gateway     GW-WS             websocket://0.0.0.0:8282            1       -
+  udp         GW-UDP            udp://0.0.0.0:8283                  1       -
+  business    BusinessWorker    -（注册中心 127.0.0.1:1238）        1       -
+  api         GW-API            http://127.0.0.1:8290               1       -
+  dashboard   GW-DASH           http://127.0.0.1:8291               1       -
+======================================================================
+```
+
+`php start.php info [角色列表]` 可随时单独打印同一份信息，并把「状态」列换成
+实时端口探测结果：
+
+```bash
+php start.php info                    # 全部角色
+php start.php info gateway,udp        # 只看网关与 UDP
+./bin/start.sh info                   # 经 Linux 管理脚本（等价透传）
+bin\start.bat info                    # 经 Windows 管理脚本
+```
+
+> **为什么不直接用 workerman 自带的启动横幅**：它的版本行与 WORKERS 表全程走
+> `Worker::log()`，而该方法首行即判断 `!$daemonize` —— 守护模式（`-d`）下整块输出
+> 只落 `runtime/logs/workerman.log`，终端上完全看不到。本项目选择在
+> `Worker::runAll()` **之前**打印：此时尚未 daemonize，STDOUT 仍连接终端，因此
+> 前台与守护两种模式都能看到。
+>
+> Windows 下 `bin\start.bat start` 让每个角色开独立窗口，横幅打印在各自窗口里；
+> 管理脚本会在主窗口额外补打印一份汇总，范围取本次实际启动的角色。
+>
+> 需要静默时加 `-q`：`php start.php start -d -q`（与 workerman 的静默语义一致）。
+>
+> 「状态」列依赖端口探测：`start` 时进程尚未启动，该列恒为 `-`；`info` 时才是真实结果。
+> Windows 的 socket 默认允许重复 bind，`bind` 探测无法判定占用，故该平台改用 `netstat`
+> 快照判定（`exec` 被禁用时退回 `bind`）。
+
 ### 5.5 验证服务
 
 ```bash
@@ -341,6 +394,7 @@ php tests/e2e_check.php e2e-uid-0001
 | 状态 | `status` / `svc-status` | `status` / `svc-status` | PID / 内存 / 运行时长 / 监听地址 |
 | 看日志 | `log [-f] [类型] [行数]` | `log [-f] [类型] [行数]` | 类型：`workerman`(默认) / `info` / `warn` / `error` / `stdout` |
 | 环境自检 | `check` | `check` | 透传到 `php start.php check` |
+| 启动信息 | `info [角色列表]` | `info [角色列表]` | 透传到 `php start.php info`；`start` 时自动打印 |
 | 生成配置 | `env:init` | `env:init` | 透传到 `php start.php env:init` |
 | 生成 Token | `token <uid> [device] [ttl]` | `token <uid> [device] [ttl]` | 透传 |
 | 提交推送 | `push <类型> <目标> [payload] ...` | `push <类型> <目标> [payload] ...` | 透传 |
@@ -467,6 +521,7 @@ bin\start.bat push uid 1001 "{\"title\":\"hello\"}" msg-1
 |---|---|---|
 | `help` | `php start.php help` | 打印用法（等价 `-h` / `--help`） |
 | `check` | `php start.php check` | **仅执行环境自检**，不启动服务。退出码 0/1 |
+| `info` | `php start.php info [角色列表]` | **打印启动信息**：环境 / 框架版本 / 服务清单（含端口探测）。只读，不启动服务 |
 | `env:init` | `php start.php env:init` | 生成 `.env`，自动注入随机密钥 |
 | `token` | `php start.php token <uid> [device_id] [ttl]` | 生成调试用 Token |
 | `push` | `php start.php push <uid\|device\|client> <target> [payload-json] [msg_id] [offline_mode]` | 提交一条定向推送任务 |

@@ -584,6 +584,12 @@ function Invoke-Start {
     }
     Write-Ok ('全部 ' + $roles.Count + ' 个角色已就绪')
     Write-Host ('       面板地址：' + (Get-EnvValue 'DASHBOARD_LISTEN'))
+    Write-Host ''
+
+    # 各角色的启动横幅打印在各自的新窗口里，本窗口收不到；这里补一份汇总到主窗口
+    # （环境 / 框架版本 / 服务清单 + 端口探测状态），使本窗口的观感与
+    # `php start.php start` 前台启动一致。角色列表按本次实际启动范围传入。
+    & $script:PhpExe (Join-Path $Root 'start.php') info ($roles -join ',') | Out-Host
     return 0
 }
 
@@ -718,6 +724,7 @@ GatewayWorker 实时数据推送服务 —— Windows 服务管理脚本
                       / 角色名(register gateway udp business api dashboard all app)
                       -f 持续跟随；行数默认 60
   check               仅执行环境自检，不启动服务
+  info [角色列表]     打印启动信息：环境 / 框架版本 / 服务清单（含端口探测）
   env:init            生成 .env（首部署必执行，自动注入随机密钥）
   token <uid> [device] [ttl]      生成调试用 Token
   push <类型> <目标> [payload] [msg_id] [offline_mode]
@@ -767,6 +774,7 @@ switch ($cmd) {
     'logs'                       { exit (Invoke-Log $Arguments) }
     'tail'                       { exit (Invoke-Log $Arguments) }
     'check'                      { & $script:PhpExe (Join-Path $Root 'start.php') check; exit $LASTEXITCODE }
+    'info'                       { & $script:PhpExe (Join-Path $Root 'start.php') info @Arguments; exit $LASTEXITCODE }
     'env:init'                   { & $script:PhpExe (Join-Path $Root 'start.php') env:init; exit $LASTEXITCODE }
     'token'                      { & $script:PhpExe (Join-Path $Root 'start.php') token @Arguments; exit $LASTEXITCODE }
     'push'                       { & $script:PhpExe (Join-Path $Root 'start.php') push @Arguments; exit $LASTEXITCODE }
