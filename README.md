@@ -528,6 +528,48 @@ bin\start.bat push uid 1001 "{\"title\":\"hello\"}" msg-1
 | `start`  | 守护模式 `-d`                                      | 每个角色一个独立窗口，`cmd /k` 保持窗口不关闭                                             |
 | 端口探测     | `kill -0` / 直接判断                               | `Test-PortListening` + 就绪轮询                                             |
 
+#### 被配置关闭的角色会被自动跳过
+
+`.env` 里把某个角色对应的开关设为 `false`（如 `WS_ENABLE=false`）后，脚本会在**进入就绪
+轮询之前**识别并跳过它，其余角色照常启动，退出码仍为 0：
+
+```
+==> 启动 5 个角色（每个角色一个窗口，按依赖顺序）
+  gateway     已禁用（WS_ENABLE=false），跳过
+
+  register    已在运行（PID 37772）
+  udp         已在运行（PID 2472）
+  business    已在运行（PID 38828）
+  api         已在运行（PID 32652）
+  dashboard   已在运行（PID 30892）
+
+[OK]    全部 5 个角色已就绪（1 个角色已禁用，未启动）
+```
+
+不加这层过滤会怎样：被关闭角色的进程会立刻以 `@@@no worker inited@@@` 退出（workerman
+在 Windows 单 Worker 模式下的行为），而脚本照常进入就绪轮询 → 白等满 25s 就绪超时 →
+把「配置关闭」误报成「启动失败」 → 最终以非 0 退出码收尾。一个开关就能让整条启动链失效。
+
+角色级开关与角色的对应关系：
+
+| 角色级开关              | 对应角色      | 关闭后的后果                                        |
+| ------------------ | --------- | --------------------------------------------- |
+| `REGISTER_ENABLE`  | register  | 无注册中心，其余角色无法完成地址发现（集群部署时才应关闭）                  |
+| `WS_ENABLE`        | gateway   | WebSocket 长连接不可用                              |
+| `UDP_ENABLE`       | udp       | UDP 上报 / 推送不可用                                |
+| `API_ENABLE`       | api       | HTTP 接口与动作调用不可用                               |
+| `DASHBOARD_ENABLE` | dashboard | 监控面板不可用（面板本身就是可选组件）                           |
+
+`business` 没有独立开关 —— 它是消息处理的唯一载体，关闭它等于服务整体不可用。
+
+启用状态由 `php start.php roles` 提供，脚本**不自行解析 `.env`**：  
+`.env < .env.{APP_ENV} < .env.local < 真实环境变量` 的叠加语义只有 `Env` 类能还原，  
+脚本再实现一遍必然与之漂移（脚本读 `.env` 取监听地址属于「展示用」，而启用状态会直接  
+决定启不启动某个进程，错不得）。
+
+`status` 会把这类角色标为「已禁用」并列出开关名，与「已停止」（进程曾存在、当前不在）  
+区分开 —— 否则排查时会把配置关闭误读成进程异常。
+
 ### 6.4 `php start.php` 内置命令
 
 这些命令由 `start.php` 自身实现，不经 workerman：
@@ -537,6 +579,7 @@ bin\start.bat push uid 1001 "{\"title\":\"hello\"}" msg-1
 | `help`     | `php start.php help`                                                                       | 打印用法（等价 `-h` / `--help`）                    |
 | `check`    | `php start.php check`                                                                      | **仅执行环境自检**，不启动服务。退出码 0/1                   |
 | `info`     | `php start.php info [角色列表]`                                                                | **打印启动信息**：环境 / 框架版本 / 服务清单（含端口探测）。只读，不启动服务 |
+| `roles`    | `php start.php roles`                                                                      | 输出各角色的启用清单（JSON），供管理脚本判断哪些角色被配置关闭。只读，不启动服务 |
 | `env:init` | `php start.php env:init`                                                                   | 生成 `.env`，自动注入随机密钥                          |
 | `token`    | `php start.php token <uid> [device_id] [ttl]`                                              | 生成调试用 Token                                 |
 | `push`     | `php start.php push <uid\|device\|client> <target> [payload-json] [msg_id] [offline_mode]` | 提交一条定向推送任务                                  |
@@ -1651,6 +1694,7 @@ curl -s -X POST http://127.0.0.1:8290/action \
     ├─ HSET metrics:gauge tasks:{pid}         {"worker_id":..,"jobs":[...]}
     ├─ HSET metrics:gauge report_at           {时间戳}
     ├─ EXPIRE metrics:gauge MONITOR_TTL(600)
+    ├─ HGETALL + HDEL 清理已退出进程的残留字段（判定见下）
     └─ 仅 worker 0：conn_total / conn_ws / conn_udp（走 SCARD online:clients）
         │
         ▼
@@ -1660,9 +1704,22 @@ curl -s -X POST http://127.0.0.1:8290/action \
 **为什么业务侧不直接写 Redis**：每报文一次 `HINCRBY` 会把 Redis 变成瓶颈。  
 进程内累加 + 定时批量刷入，把 Redis 写入从「每报文」降到「每 60 秒 × 进程数」。
 
-**为什么需要 `pid_at`**：gauge 的 TTL（600s）是上报周期（60s）的 10 倍，进程退出后  
-`memory_bytes:{pid}` / `tasks:{pid}` 会残留到 TTL 结束 —— 刚重启时面板上会出现一批「幽灵进程」。  
-面板必须以 `pid_at:{pid}` 为存活判据（阈值取「连续两个上报周期」）。
+**进程存活判定与残留清理（两个阈值，刻意不同）**：
+
+`metrics:gauge` 的 TTL 是 **key 级**的，而**Hash 的 field 没有独立 TTL** ——  
+只要还有任意一个活进程在 `HSET`，`EXPIRE` 就把整个 key 续期，已退出进程的  
+`pid_at` / `proc` / `tasks` / `memory_bytes` 四个字段会**永久残留**  
+（实测残留时长可达 4780s+，而 `MONITOR_TTL` 仅 600s），面板进程列表越拉越长、  
+`HGETALL` 返回体持续膨胀。因此必须由采集侧主动清理：
+
+| 层次       | 判定                                              | 作用                             |
+| -------- | ----------------------------------------------- | ------------------------------ |
+| 面板（展示）   | `now - pid_at > MONITOR_INTERVAL × 2`（最小 5s）     | 超出即标「已退出」并置灰，秒级灵敏              |
+| 采集（删除）   | `pid_at < now - MONITOR_TTL`（即超过宽限期 600s）       | 归入待删列表，随下次 `report()` 一并 `HDEL` |
+
+两者**不可互换**：展示阈值只有秒级，拿来做删除判据会在一次长任务阻塞或 GC 停顿时  
+误删活进程字段，表现为面板进程反复闪烁；删除阈值则必须留足宽限。  
+清理是幂等的（`HDEL` 重复执行只返回 0），多进程并发触发无副作用。
 
 **采集分布的差异**：
 
@@ -1818,7 +1875,8 @@ redis-cli -n 0 LLEN gwpush:queue:push:out
   导致 mtime 比较恒等、模板永不重载。
 - **数值列右对齐必须同时覆盖 `th.num` 与 `td.num`**，只写 `td.num` 会让表头左对齐、  
   数据右对齐，整列视觉错位。
-- 页面存活判定用 `pid_at:{pid}` 而非 gauge 的 TTL（原因见 9.10）。
+- 页面存活判定用 `pid_at:{pid}`（阈值 `MONITOR_INTERVAL × 2`），**不**用 gauge 的 key 级 TTL ——  
+  后者是删除阈值（`MONITOR_TTL`，600s），两者语义不同不可互换，详见 9.10。
 
 ---
 
@@ -1952,7 +2010,7 @@ class OrderQueryAction implements ActionInterface
 
 ```bash
 composer analyse        # PHPStan（level 5，baseline 冻结 11 条存量告警）
-composer test           # PHPUnit（397 tests / 1119 assertions；含 client/tests/Unit）
+composer test           # PHPUnit（443 tests / 1246 assertions；含 client/tests/Unit）
 composer test:e2e       # 端到端自检（16 个用例）
 composer test:client-e2e # 客户端 SDK 端到端对齐（A~O 共 15 个用例，需五角色 + Redis）
 ```
@@ -2046,7 +2104,7 @@ php tests/e2e_check.php <uid> [device_id] [timeout]
 
 ```bash
 composer test
-# OK (397 tests, 1119 assertions)
+# OK (443 tests, 1246 assertions)
 ```
 
 **只测「纯函数 / 零 IO」组件**：
@@ -2061,8 +2119,10 @@ composer test
 | `ActionReply`    | `clientId` ↔ `request_id` 双向转换、键空间校验、TTL 下界保护 |
 | `ActionContext`  | 回执抑制语义                                        |
 | `RedisKeys`      | 键名金标（拦截误改）、前缀↔完整键分隔符约定、队列键唯一性、动态后缀编码方式        |
+| `RoleCatalog`    | `roles` 命令契约（角色顺序 / `enabled` / `env` 字段）、真实环境变量覆盖语义、开关名与 `config` 双向一致、启动脚本的过滤点 |
+| `Monitor`        | `staleFields()` 残留判定（边界保活 / 全局字段与脏字段越界保护 / 四字段同删）、字段前缀金标、面板 JS 前缀一致性、清理调用未被摘除 |
 
-> **未覆盖**：`ActionRunner::run()`、`RateLimiter::acquire()`、全部 Redis 路径 ——  
+> **未覆盖**：`ActionRunner::run()`、`RateLimiter::acquire()`、`Monitor::purgeExitedProcesses()`、全部 Redis 路径 ——  
 > 它们依赖 workerman 生命周期与异步回调，mock 成本过高（静态类 + 回调），由 e2e 覆盖。
 
 **写测试的两个硬性坑**（`phpunit.xml` 开了 `beStrictAboutOutputDuringTests` + `failOnWarning` + `failOnRisky`）：
@@ -2153,6 +2213,27 @@ bin\start.bat status                     # 已按角色归并（读命令行反�
 
 ```bash
 bin\start.bat restart gateway      # 重建网关到 BusinessWorker 的路由
+```
+
+#### 面板显示「指标采集已关闭」
+
+`MONITOR_ENABLE` 在 `.env` 里已是 `true`，但行为没变 —— 常驻进程**只在启动时加载配置一次**，无热重载。  
+面板徽章读的是 **dashboard 进程的启动快照**，且 `Monitor::incr()` / `report()` 首行即短路，  
+所以此时采集是**真的完全停摆**，不只是文案问题（直接症状：`report_at` 长时间不更新）。
+
+```bash
+bin\start.bat restart dashboard               # 或重启全部角色
+curl -s http://127.0.0.1:8291/metrics.json    # 看 data.meta.enable 与 gauge.report_at
+```
+
+#### 面板出现多余的「已退出」进程
+
+进程退出后其 4 个字段会保留一段宽限期（默认 600s，即 `MONITOR_TTL`），好让你看到「刚刚退出了谁」；  
+超过宽限期未上报的字段会在下一次 `report()` 时被 `HDEL` 清掉（判定见 9.10）。  
+若重启后旧进程**长期**堆积不消失，查采集进程有没有清理记录：
+
+```bash
+grep "已清理已退出进程" runtime/logs/*.log
 ```
 
 #### 消息发了没反应

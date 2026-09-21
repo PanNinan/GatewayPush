@@ -502,7 +502,7 @@
 
     html += '<div style="margin-top:6px;font-size:11px;color:var(--text-mute)">' +
             live.length + ' 个进程在线 · 合计 ' + bytes(total) +
-            (dead.length ? ' · ' + dead.length + ' 个已退出（超过 ' + list[0].stale + 's 未上报；残留字段待 gauge 过期后自动消失）' : '') +
+            (dead.length ? ' · ' + dead.length + ' 个已退出（超过 ' + list[0].stale + 's 未上报；残留字段在超过 TTL ' + num((d.meta || {}).ttl) + 's 未上报后由采集进程清理）' : '') +
             '</div>';
     $('procs').innerHTML = html;
   }
