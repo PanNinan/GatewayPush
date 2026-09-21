@@ -8,6 +8,7 @@
  */
 
 use GatewayPush\Common\Env;
+use GatewayPush\Common\RedisKeys;
 
 $basePath = defined('BASE_PATH') ? BASE_PATH : dirname(__DIR__);
 
@@ -48,7 +49,7 @@ return [
      --------------------------------------------------------------- */
     'udp_queue' => [
         'enable'   => Env::bool('UDP_QUEUE_ENABLE', true),
-        'key'      => Env::str('UDP_QUEUE_KEY', 'queue:udp:in'),
+        'key'      => Env::str('UDP_QUEUE_KEY', RedisKeys::QUEUE_UDP_IN),
         'batch'    => Env::int('UDP_QUEUE_BATCH', 100),      // 单次批量消费条数
         'interval' => $udpQueueInterval,                     // 消费周期（秒）
         'max_len'  => Env::int('UDP_QUEUE_MAX_LEN', 10000),
@@ -64,7 +65,7 @@ return [
      --------------------------------------------------------------- */
     'push_queue' => [
         'enable'   => Env::bool('PUSH_QUEUE_ENABLE', true),
-        'key'      => Env::str('PUSH_QUEUE_KEY', 'queue:push:out'),
+        'key'      => Env::str('PUSH_QUEUE_KEY', RedisKeys::QUEUE_PUSH_OUT),
         'batch'    => Env::int('PUSH_QUEUE_BATCH', 200),
         'interval' => $pushQueueInterval,
         'max_len'  => Env::int('PUSH_QUEUE_MAX_LEN', 10000),  // 积压告警阈值
@@ -86,7 +87,7 @@ return [
      --------------------------------------------------------------- */
     'action_queue' => [
         'enable'     => Env::bool('ACTION_QUEUE_ENABLE', true),
-        'key'        => Env::str('ACTION_QUEUE_KEY', 'queue:action:in'),
+        'key'        => Env::str('ACTION_QUEUE_KEY', RedisKeys::QUEUE_ACTION_IN),
         'batch'      => Env::int('ACTION_QUEUE_BATCH', 100),
         'interval'   => $actionQueueInterval,
         'max_len'    => Env::int('ACTION_QUEUE_MAX_LEN', 10000),   // 积压告警 / 拒绝阈值

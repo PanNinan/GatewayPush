@@ -20,6 +20,8 @@
  * ---------------------------------------------------------------------
  *   action:result:{request_id}   String   TTL = action_queue.result_ttl
  *
+ * 键名声明于 RedisKeys（见 RedisKeys::ACTION_RESULT），本类只负责读写语义。
+ *
  * 值即动作回执报文本身（Message::ack / Message::error 的 JSON 文本），
  * 因此 api 进程可以直接把它作为 packet 字段透出，不需要二次映射。
  *

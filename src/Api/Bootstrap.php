@@ -58,7 +58,6 @@ use GatewayPush\Common\Logger;
 use GatewayPush\Common\RedisClient;
 use GatewayPush\Common\RedisKeys;
 use GatewayPush\Common\WorkerEvents;
-use Random\RandomException;
 use Workerman\Protocols\Http\Request;
 use Workerman\Protocols\Http\Response;
 use Workerman\Timer;
@@ -352,7 +351,9 @@ class Bootstrap
      * @param mixed $connection
      * @param Request $request
      * @return void
-     * @throws RandomException
+     * @throws \Exception random_bytes() 熵源异常
+     *                    （8.2+ 抛 Random\RandomException，其为 \Exception 子类；
+     *                      此处标注基类，以兼容项目 PHP 8.1 下限）
      */
     protected static function handleAction($connection, Request $request)
     {

@@ -115,11 +115,12 @@ return [
 
     /* ---------------------------------------------------------------
      | 会话管理（断线重连 / 会话保持）
+     |
+     | 键名（session: / heartbeat: / uid:clients: / device:client: / online:*）
+     | 统一声明于 RedisKeys，此处不再重复定义。
      --------------------------------------------------------------- */
     'session' => [
         'ttl'           => Env::int('SESSION_TTL', 7200),          // 会话 Redis 过期时间（秒）
-        'prefix'        => 'session',                              // 键名约定，结构性
-        'online_key'    => 'online:clients',                       // 在线 client_id 集合
         'heartbeat_ttl' => Env::int('SESSION_HEARTBEAT_TTL', 90),  // 与 gateway.heartbeat.session_timeout 一致
         'restore'       => Env::bool('SESSION_RESTORE', true),     // 断线重连自动恢复历史会话
     ],
@@ -242,7 +243,6 @@ return [
         'enable'   => Env::bool('MONITOR_ENABLE', true),
         'interval' => Env::int('MONITOR_INTERVAL', 60),   // 上报周期（秒）
         'ttl'      => Env::int('MONITOR_TTL', 600),       // 指标数据保留时长（秒）
-        'key'      => 'metrics',                          // 键名约定，结构性
 
         // 结构性配置：需要采集的指标名列表
         'metrics'  => [

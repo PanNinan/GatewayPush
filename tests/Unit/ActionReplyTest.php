@@ -88,12 +88,6 @@ class ActionReplyTest extends TestCase
         );
     }
 
-    public function testResultKeyUsesDedicatedPrefix(): void
-    {
-        $this->assertSame('action:result:abc123', ActionReply::resultKey('abc123'));
-        $this->assertStringStartsWith(ActionReply::KEY_RESULT, ActionReply::resultKey('abc123'));
-    }
-
     /* ---------------------------------------------------------------------
      | TTL
      --------------------------------------------------------------------- */

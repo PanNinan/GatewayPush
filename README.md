@@ -173,6 +173,7 @@ GatewayWorker/
 │   │   ├── Logger.php                分级日志 + 全局异常捕获 + 过期清理
 │   │   ├── RateLimiter.php           两级限流（内存桶 + Redis 桶）
 │   │   ├── RedisClient.php           异步 Redis 客户端（连接池 + Lua 脚本）
+│   │   ├── RedisKeys.php             Redis 键空间唯一声明处（全部逻辑键名）
 │   │   └── WorkerEvents.php          Worker 事件统一绑定（含背压观测）
 │   ├── Dashboard/Bootstrap.php       监控面板进程
 │   └── Gateway/
@@ -1670,6 +1671,15 @@ BusinessWorker ── 调 Gateway::sendToClient / sendToUid / closeClient 时经
 ## 10. Redis 键空间
 
 所有键都会再拼接 `REDIS_PREFIX`（默认 `gwpush:`）。
+
+**键名的唯一声明处是 `src/Common/RedisKeys.php`** —— 全部逻辑键名（不含全局前缀）在该类中以
+常量集中定义，带动态后缀的键（`{clientId}` / `{uid}` / `{md5(msg_id)}` / `{YYYYMMDD}` 等）
+经其静态方法拼装，业务代码不再出现键字面量。跨进程共享的队列键由 config 引用同一常量作
+`Env::str` 的回落值，使「生产者与消费者指向同一键」这一不变量不可能被破坏。
+
+> 键名受 `tests/Unit/RedisKeysTest.php` 的金标断言保护 —— 任何改动都会使该测试失败，
+> 这是刻意设计：改键 = 存量数据失配（在线的会话、挂起的离线消息、已撤销的 Token 名单），
+> 必须配 `RENAME` 迁移脚本并全角色重启，不可单独发版。
 
 ### 会话与索引
 

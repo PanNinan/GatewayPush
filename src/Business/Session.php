@@ -4,7 +4,7 @@
  *
  * 会话数据全部落在 Redis，服务节点无本地状态，为后期集群横向扩容预留能力（文档 3.1.3 / 7.2）。
  *
- * Redis 键设计（实际 key 会再拼接 app.redis.prefix 全局前缀）：
+ * Redis 键（键名声明于 RedisKeys，此处只描述语义；实际 key 会再拼接 app.redis.prefix 全局前缀）：
  *   session:{clientId}          Hash   会话主体：uid / device_id / protocol / ip / 时间戳
  *   heartbeat:{clientId}        String 最近一次活跃时间戳（高频写入，单独成键降低写放大）
  *   uid:clients:{uid}           Set    uid -> clientId 集合（多设备在线）
@@ -21,23 +21,11 @@ namespace GatewayPush\Business;
 
 use GatewayPush\Common\Logger;
 use GatewayPush\Common\RedisClient;
+use GatewayPush\Common\RedisKeys;
 use GatewayWorker\Lib\Gateway as GatewayClient;
 
 class Session
 {
-    /** 会话主体 key 前缀 */
-    const KEY_SESSION = 'session:';
-    /** 心跳 key 前缀 */
-    const KEY_HEARTBEAT = 'heartbeat:';
-    /** uid 索引 key 前缀 */
-    const KEY_UID = 'uid:clients:';
-    /** 设备索引 key 前缀 */
-    const KEY_DEVICE = 'device:client:';
-    /** 全量在线集合 */
-    const KEY_ONLINE = 'online:clients';
-    /** 协议维度在线集合前缀 */
-    const KEY_ONLINE_PREFIX = 'online:';
-
     /** 支持的协议标识 */
     const PROTOCOL_WS  = 'ws';
     const PROTOCOL_UDP = 'udp';
@@ -49,7 +37,6 @@ class Session
      */
     protected static $config = array(
         'ttl'           => 7200,
-        'online_key'    => self::KEY_ONLINE,
         'heartbeat_ttl' => 90,
         'restore'       => true,
     );
@@ -103,18 +90,18 @@ class Session
             'last_active' => $now,
         );
 
-        RedisClient::hMSet(self::KEY_SESSION . $clientId, $fields);
-        RedisClient::expire(self::KEY_SESSION . $clientId, $ttl);
-        RedisClient::set(self::KEY_HEARTBEAT . $clientId, $now, $ttl);
-        RedisClient::sAdd(self::onlineKey(), $clientId);
-        RedisClient::sAdd(self::KEY_ONLINE_PREFIX . $protocol, $clientId);
+        RedisClient::hMSet(RedisKeys::session($clientId), $fields);
+        RedisClient::expire(RedisKeys::session($clientId), $ttl);
+        RedisClient::set(RedisKeys::heartbeat($clientId), $now, $ttl);
+        RedisClient::sAdd(RedisKeys::online(''), $clientId);
+        RedisClient::sAdd(RedisKeys::online($protocol), $clientId);
 
         if ($uid !== '') {
-            RedisClient::sAdd(self::KEY_UID . $uid, $clientId);
-            RedisClient::expire(self::KEY_UID . $uid, $ttl);
+            RedisClient::sAdd(RedisKeys::uidClients($uid), $clientId);
+            RedisClient::expire(RedisKeys::uidClients($uid), $ttl);
         }
         if ($deviceId !== '') {
-            RedisClient::set(self::KEY_DEVICE . $deviceId, $clientId, $ttl);
+            RedisClient::set(RedisKeys::deviceClient($deviceId), $clientId, $ttl);
         }
 
         Logger::info('会话绑定完成', array(
@@ -141,7 +128,7 @@ class Session
     public static function touch($clientId, callable $cb = null)
     {
         RedisClient::set(
-            self::KEY_HEARTBEAT . $clientId,
+            RedisKeys::heartbeat($clientId),
             time(),
             (int)self::$config['ttl'],
             $cb
@@ -160,17 +147,17 @@ class Session
      */
     public static function markOffline($clientId, callable $cb = null)
     {
-        RedisClient::hGetAll(self::KEY_SESSION . $clientId, function ($session) use ($clientId, $cb) {
+        RedisClient::hGetAll(RedisKeys::session($clientId), function ($session) use ($clientId, $cb) {
             $protocol = is_array($session) && isset($session['protocol']) ? (string)$session['protocol'] : '';
 
-            RedisClient::sRem(self::onlineKey(), $clientId);
+            RedisClient::sRem(RedisKeys::online(''), $clientId);
             if ($protocol !== '') {
-                RedisClient::sRem(self::KEY_ONLINE_PREFIX . $protocol, $clientId);
+                RedisClient::sRem(RedisKeys::online($protocol), $clientId);
             }
-            RedisClient::del(self::KEY_HEARTBEAT . $clientId);
+            RedisClient::del(RedisKeys::heartbeat($clientId));
 
             if (is_array($session) && $session) {
-                RedisClient::hSet(self::KEY_SESSION . $clientId, 'offline_at', time());
+                RedisClient::hSet(RedisKeys::session($clientId), 'offline_at', time());
             }
 
             Logger::info('会话已标记离线，等待断线重连', array(
@@ -194,28 +181,28 @@ class Session
      */
     public static function unbind($clientId, callable $cb = null)
     {
-        RedisClient::hGetAll(self::KEY_SESSION . $clientId, function ($session) use ($clientId, $cb) {
+        RedisClient::hGetAll(RedisKeys::session($clientId), function ($session) use ($clientId, $cb) {
             $uid      = is_array($session) && isset($session['uid']) ? (string)$session['uid'] : '';
             $deviceId = is_array($session) && isset($session['device_id']) ? (string)$session['device_id'] : '';
             $protocol = is_array($session) && isset($session['protocol']) ? (string)$session['protocol'] : '';
 
             RedisClient::del(array(
-                self::KEY_SESSION . $clientId,
-                self::KEY_HEARTBEAT . $clientId,
+                RedisKeys::session($clientId),
+                RedisKeys::heartbeat($clientId),
             ));
-            RedisClient::sRem(self::onlineKey(), $clientId);
+            RedisClient::sRem(RedisKeys::online(''), $clientId);
             if ($protocol !== '') {
-                RedisClient::sRem(self::KEY_ONLINE_PREFIX . $protocol, $clientId);
+                RedisClient::sRem(RedisKeys::online($protocol), $clientId);
             }
             if ($uid !== '') {
-                RedisClient::sRem(self::KEY_UID . $uid, $clientId);
+                RedisClient::sRem(RedisKeys::uidClients($uid), $clientId);
             }
 
             // 设备映射仅在指向当前连接时才移除，避免误删新连接的映射
             if ($deviceId !== '') {
-                RedisClient::get(self::KEY_DEVICE . $deviceId, function ($current) use ($clientId, $deviceId) {
+                RedisClient::get(RedisKeys::deviceClient($deviceId), function ($current) use ($clientId, $deviceId) {
                     if (is_string($current) && $current !== '' && $current === (string)$clientId) {
-                        RedisClient::del(self::KEY_DEVICE . $deviceId);
+                        RedisClient::del(RedisKeys::deviceClient($deviceId));
                     }
                 });
             }
@@ -245,7 +232,7 @@ class Session
      */
     public static function get($clientId, callable $cb)
     {
-        RedisClient::hGetAll(self::KEY_SESSION . $clientId, function ($session) use ($cb) {
+        RedisClient::hGetAll(RedisKeys::session($clientId), function ($session) use ($cb) {
             call_user_func($cb, is_array($session) ? $session : array());
         });
     }
@@ -262,7 +249,7 @@ class Session
      */
     public static function exists($clientId, callable $cb)
     {
-        RedisClient::exists(self::KEY_SESSION . $clientId, function ($result) use ($cb) {
+        RedisClient::exists(RedisKeys::session($clientId), function ($result) use ($cb) {
             call_user_func($cb, !empty($result));
         });
     }
@@ -276,7 +263,7 @@ class Session
      */
     public static function findByDevice($deviceId, callable $cb)
     {
-        RedisClient::get(self::KEY_DEVICE . $deviceId, function ($clientId) use ($cb) {
+        RedisClient::get(RedisKeys::deviceClient($deviceId), function ($clientId) use ($cb) {
             call_user_func($cb, is_string($clientId) ? $clientId : '');
         });
     }
@@ -290,7 +277,7 @@ class Session
      */
     public static function findByUid($uid, callable $cb)
     {
-        RedisClient::sMembers(self::KEY_UID . $uid, function ($members) use ($cb) {
+        RedisClient::sMembers(RedisKeys::uidClients($uid), function ($members) use ($cb) {
             call_user_func($cb, is_array($members) ? $members : array());
         });
     }
@@ -333,7 +320,7 @@ class Session
             $cb = function () {
             };
         }
-        $key = $protocol === '' ? self::onlineKey() : self::KEY_ONLINE_PREFIX . $protocol;
+        $key = RedisKeys::online($protocol);
         RedisClient::sCard($key, function ($count) use ($cb) {
             call_user_func($cb, is_int($count) ? $count : 0);
         });
@@ -356,7 +343,7 @@ class Session
         }
         $now = time();
 
-        RedisClient::sMembers(self::onlineKey(), function ($members) use ($threshold, $now) {
+        RedisClient::sMembers(RedisKeys::online(''), function ($members) use ($threshold, $now) {
             if (!is_array($members) || !$members) {
                 return;
             }
@@ -364,7 +351,7 @@ class Session
             $clientIds = array_values($members);
             $keys      = array();
             foreach ($clientIds as $clientId) {
-                $keys[] = RedisClient::key(self::KEY_HEARTBEAT . $clientId);
+                $keys[] = RedisClient::key(RedisKeys::heartbeat($clientId));
             }
 
             // 批量取值，避免逐条命令放大 Redis 压力
@@ -403,7 +390,7 @@ class Session
      */
     public static function cleanExpired()
     {
-        RedisClient::sMembers(self::onlineKey(), function ($members) {
+        RedisClient::sMembers(RedisKeys::online(''), function ($members) {
             if (!is_array($members) || !$members) {
                 return;
             }
@@ -411,7 +398,7 @@ class Session
             $clientIds = array_values($members);
             $keys      = array();
             foreach ($clientIds as $clientId) {
-                $keys[] = RedisClient::key(self::KEY_SESSION . $clientId);
+                $keys[] = RedisClient::key(RedisKeys::session($clientId));
             }
 
             RedisClient::mGet($keys, function ($values) use ($clientIds) {
@@ -429,9 +416,9 @@ class Session
                     return;
                 }
 
-                RedisClient::sRem(self::onlineKey(), $stale);
-                RedisClient::sRem(self::KEY_ONLINE_PREFIX . self::PROTOCOL_WS, $stale);
-                RedisClient::sRem(self::KEY_ONLINE_PREFIX . self::PROTOCOL_UDP, $stale);
+                RedisClient::sRem(RedisKeys::online(''), $stale);
+                RedisClient::sRem(RedisKeys::online(self::PROTOCOL_WS), $stale);
+                RedisClient::sRem(RedisKeys::online(self::PROTOCOL_UDP), $stale);
 
                 Logger::info('清理过期会话索引完成', array('count' => count($stale)));
             });
@@ -463,16 +450,5 @@ class Session
         }
 
         self::unbind($clientId);
-    }
-
-    /**
-     * 全量在线集合 key
-     *
-     * @return string
-     */
-    protected static function onlineKey()
-    {
-        $key = isset(self::$config['online_key']) ? (string)self::$config['online_key'] : '';
-        return $key !== '' ? $key : self::KEY_ONLINE;
     }
 }
