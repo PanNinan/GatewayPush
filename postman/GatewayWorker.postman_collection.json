@@ -1,0 +1,109 @@
+{
+  "info": {
+    "name": "GatewayWorker HTTP API",
+    "description": "GatewayWorker Api 进程（默认 http://127.0.0.1:8290）的三个 HTTP 接口。\n\n【鉴权】\n/stats 与 /push 需 HMAC 验签，签名为 hex(hmac_sha256(\"{X-Timestamp}|{rawBody}\", secret))。\n本集合已内置集合级 Pre-request Script，自动写入 X-Timestamp 与 X-Sign，无需手工计算。\n\n【apiSecret 变量】\n请填入 .env 中的 API_SECRET。注意：本项目的 API_SECRET 当前为空，此时服务端按 Api\\Bootstrap::apiSecret() 回退使用 AUTH_SECRET —— 这种情况请填 AUTH_SECRET 的值。\n\n【不要使用 {{变量}} 写请求体】\nPostman 的动态变量（{{$timestamp}}、{{$guid}} 等）在 Pre-request Script 之后才解析，会导致签名与实际发送字节不一致而返回 401。需要唯一 msg_id 时请直接写死字符串后手工修改。\n\n【msg_id 与幂等】\n服务端按 msg_id 做幂等去重（push:dedup:*）。重复发送同一 msg_id 时第二次不会再次投递 —— 需要重投请修改 msg_id。修改 body 后无需重算签名，Pre-request Script 会基于实际 body 重新计算。\n\n【token 不在此处使用】\nWS/UDP 报文的 token 用于客户端 cmd=auth 鉴权；HTTP /push 只用 uid 定位目标，不接收 token 字段。\n\n【时间窗口】\nX-Timestamp 与服务器时间偏差需在 API_SIGN_TTL（默认 300 秒）以内。",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8290"
+    },
+    {
+      "key": "apiSecret",
+      "value": ""
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const ts = Math.floor(Date.now() / 1000).toString();",
+          "const secret = pm.variables.get('apiSecret');",
+          "const raw = (pm.request.body && pm.request.body.raw) ? pm.request.body.raw : '';",
+          "",
+          "if (!secret) {",
+          "  console.warn('[签名] apiSecret 为空：请填写 .env 中的 API_SECRET；该项目 API_SECRET 留空时服务端回退使用 AUTH_SECRET，此时填 AUTH_SECRET 的值');",
+          "}",
+          "",
+          "const sign = CryptoJS.HmacSHA256(ts + '|' + raw, secret).toString();",
+          "pm.request.headers.upsert({ key: 'X-Timestamp', value: ts });",
+          "pm.request.headers.upsert({ key: 'X-Sign', value: sign });",
+          "console.log('[签名] ts=' + ts + ' sign=' + sign + ' bodyLen=' + raw.length);"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "health 存活探测（免鉴权）",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        },
+        "description": "唯一免鉴权接口，供负载均衡 / 容器探针使用。返回服务名与服务器时间。"
+      },
+      "response": []
+    },
+    {
+      "name": "stats 指标快照",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/stats",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "stats"
+          ]
+        },
+        "description": "返回 Redis 中的指标快照（gauge / counter / task）。GET 无请求体，签名基于空串计算：hmac_sha256(\"{ts}|\", secret)。"
+      },
+      "response": []
+    },
+    {
+      "name": "push 定向推送",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"target_type\":\"uid\",\"target\":\"user-1\",\"payload\":{\"action\":\"notify\",\"from\":\"postman\",\"title\":\"Postman 测试\",\"content\":\"hello from postman\"},\"msg_id\":\"pm-postman-001\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/push",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "push"
+          ]
+        },
+        "description": "提交定向推送任务。\n\ntarget_type: uid / device / client\ntarget: 对应目标标识\npayload: 任意 JSON 对象或数组，原样下发\noffline_mode: 可选，drop（离线丢弃）/ queue（离线入队，默认）\nmsg_id: 可选，用于幂等去重；留空由服务端生成\n\n实测通过示例（uid 维度）：\n{\"target_type\":\"uid\",\"target\":\"user-1\",\"payload\":{\"action\":\"notify\",\"from\":\"postman\",\"title\":\"Postman 测试\",\"content\":\"hello from postman\"},\"msg_id\":\"pm-postman-001\"}"
+      },
+      "response": []
+    }
+  ]
+}
