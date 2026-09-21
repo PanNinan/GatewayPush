@@ -44,6 +44,13 @@
  *
  * 采用原始请求体参与签名（而非解析后的数组），避免键序/转义差异导致的验签失败。
  *
+ * 与 WS / UDP 的鉴权**没有任何关系**：`AUTH_ENABLE` / `AUTH_SIGN_ENABLE`
+ * 作用于报文层（Auth::enabled / Message::verify），本进程完全不读这两个开关。
+ * 唯一的耦合是 api.secret 留空时回退复用 auth.secret —— 只共用密钥，不共用开关。
+ *
+ * 本地调试可经 `API_SIGN_ENABLE=false` 免签，但**仅在 listen 绑定回环地址时生效**
+ * （见 signEnabled()）；绑非回环地址时该开关被忽略，强制验签。
+ *
  * 兼容 PHP 8.1 ~ 8.5
  */
 
@@ -96,6 +103,7 @@ class Bootstrap
         'listen'      => 'http://127.0.0.1:8290',
         'name'        => 'GW-API',
         'secret'      => '',
+        'sign_enable' => true,
         'sign_ttl'    => 300,
         'rate'        => 600,
         'body_max'    => 65536,
@@ -170,9 +178,12 @@ class Bootstrap
             Monitor::init(self::$appConfig['monitor']);
 
             $secret = self::apiSecret();
+            $signOn = self::signEnabled();
+            $socket = $worker->getSocketName();
 
             Logger::info('HTTP 接口已启动', array(
-                'listen'       => $worker->getSocketName(),
+                'listen'       => $socket,
+                'sign_enable'  => $signOn ? 1 : 0,
                 'sign_ttl'     => (int)self::$config['sign_ttl'],
                 'rate_limit'   => (int)self::$config['rate'],
                 'secret_set'   => $secret !== '' ? 1 : 0,
@@ -181,7 +192,18 @@ class Bootstrap
                 'result_ttl'   => ActionReply::ttl(),
             ));
 
-            if ($secret === '') {
+            if (!$signOn) {
+                Logger::warn('接口验签已关闭（本地调试），所有请求无需签名即可调用', array(
+                    'listen' => $socket,
+                    'tip'    => '仅回环监听可关闭验签，请勿用于生产环境',
+                ));
+            } elseif (empty(self::$config['sign_enable'])) {
+                // 配置想关但被护栏拦下 —— 必须明确告知，否则调用方会困惑
+                // 「为什么我关了验签还是要签名」
+                Logger::warn('API_SIGN_ENABLE=false 未生效：监听地址非回环，已强制开启验签', array(
+                    'listen' => $socket,
+                ));
+            } elseif ($secret === '') {
                 Logger::warn('接口密钥为空，所有请求都会被拒绝。请配置 API_SECRET（留空时会回退复用 AUTH_SECRET）');
             }
 
@@ -273,9 +295,10 @@ class Bootstrap
     /**
      * 推送任务受理
      *
-     * @param mixed   $connection
+     * @param mixed $connection
      * @param Request $request
      * @return void
+     * @throws \JsonException
      */
     protected static function handlePush($connection, Request $request)
     {
@@ -678,14 +701,22 @@ class Bootstrap
      */
     protected static function authenticate(Request $request)
     {
+        $free   = !self::signEnabled();
         $secret = self::apiSecret();
-        if ($secret === '') {
+
+        // 免签模式下密钥不参与校验，故「未配置密钥」不再是拒绝理由
+        if (!$free && $secret === '') {
             return self::json(500, self::CODE_SERVER_ERROR, '服务端未配置接口密钥', null, 500);
         }
 
-        // 限流前置：避免无效请求持续消耗验签开销
+        // 限流前置：避免无效请求持续消耗验签开销。
+        // 免签模式下同样保留 —— 限流是防误压/防扫描的最后一道闸，与鉴权是两件事。
         if (!self::rateLimit($request)) {
             return self::json(429, self::CODE_RATE_LIMIT, '请求频率超限', null, 429);
+        }
+
+        if ($free) {
+            return null;
         }
 
         $timestamp = self::header($request, 'x-timestamp');
@@ -715,6 +746,82 @@ class Bootstrap
         }
 
         return null;
+    }
+
+    /**
+     * 接口验签是否启用
+     *
+     * 关闭验签需同时满足两个条件：
+     *   ① 配置显式关闭（api.sign_enable = false，即 API_SIGN_ENABLE=false）
+     *   ② 监听地址为回环（127.0.0.0/8 / ::1 / localhost）
+     *
+     * 条件 ② 是刻意设的硬护栏：/push 可推任意消息、/action 可执行已开放动作，
+     * 一旦接口对外监听，无鉴权就等于业务入口裸奔。故即便 .env 被误改，
+     * 只要不是本机回环监听就仍然强制验签 —— 不因一处配置失误而开口子。
+     *
+     * @return bool
+     */
+    protected static function signEnabled()
+    {
+        // 必须显式判键是否存在：empty() 区分不了「键缺失」与「显式 false」，
+        // 而键缺失（早期 .env 未含该项、或调用方传入精简配置）的语义是「开启」。
+        // 只判 empty() 会让缺键等同于关闭 —— 一个静默扩大开放面的失配。
+        $explicitOff = array_key_exists('sign_enable', self::$config)
+            && empty(self::$config['sign_enable']);
+
+        if (!$explicitOff) {
+            return true;
+        }
+
+        return !self::isLoopbackHost(isset(self::$config['listen']) ? (string)self::$config['listen'] : '');
+    }
+
+    /**
+     * 判断监听地址是否绑定回环
+     *
+     * 纯函数（不读静态状态），便于单测直接覆盖各类 listen 写法。
+     *
+     * 声明为 public 是为让 start.php 的环境自检与启动横幅复用**同一份**判定 ——
+     * 「能不能免签」这件事一旦出现两套实现，就必然出现"启动提示已关闭、实际仍在验签"
+     * 这类自相矛盾的输出。
+     *
+     * 刻意不用 parse_url()：它对「省略协议」（workerman 允许 0.0.0.0:8290 这类写法）
+     * 与「裸 IPv6」（::1）的解析结果不稳定，前者靠补 scheme 能救、后者直接取不到
+     * host。这是安全相关的判定，可预测性优先于写法上的"标准"，故手工解析。
+     *
+     * @param string $listen 形如 http://127.0.0.1:8290 / 0.0.0.0:8290 / http://[::1]:8290
+     * @return bool
+     */
+    public static function isLoopbackHost($listen)
+    {
+        $rest = trim((string)$listen);
+        if ($rest === '') {
+            // 判定不了就按「非回环」处理，即保留验签 —— 出错时偏向安全侧
+            return false;
+        }
+
+        // 剥掉协议头，得到 host[:port] / [::1]:port
+        $rest = preg_replace('#^[a-z][a-z0-9+.\-]*://#i', '', $rest);
+        $rest = strtolower(trim((string)$rest));
+
+        if (str_starts_with($rest, '[')) {
+            // IPv6 字面量：方括号内即 host
+            $end  = strpos($rest, ']');
+            $host = $end === false ? substr($rest, 1) : substr($rest, 1, $end - 1);
+        } elseif (substr_count($rest, ':') === 1) {
+            // 有且仅有一个冒号 → host:port
+            $host = substr($rest, 0, (int)strrpos($rest, ':'));
+        } else {
+            // 无端口，或裸 IPv6（冒号不止一个且无方括号）
+            $host = $rest;
+        }
+
+        if ($host === 'localhost' || $host === '::1') {
+            return true;
+        }
+
+        // 127.0.0.0/8 整段都是回环，不止 127.0.0.1
+        return str_starts_with($host, '127.');
     }
 
     /**
