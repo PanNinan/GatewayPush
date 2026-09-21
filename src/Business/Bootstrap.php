@@ -134,6 +134,7 @@ class Bootstrap
         // 该回调在 BusinessWorker 内部事件绑定之前执行，用于完成进程级初始化
         $worker->onWorkerStart = function ($worker) {
             Logger::init(self::$appConfig['log']);
+            Logger::useChannel('business');
             RedisClient::init(self::$appConfig['redis']);
 
             // Lib\Gateway 不会自动继承 BusinessWorker 的注册中心配置，需显式设置，

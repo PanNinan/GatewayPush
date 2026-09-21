@@ -4,7 +4,11 @@
  *
  * 设计要点：
  *  - 分级：debug / info / warn / error，低于配置阈值的日志直接丢弃
- *  - 分割：按天 + 按级别落盘，文件名 {level}_YYYY-MM-DD.log
+ *  - 分割：按天 + 按角色落盘，文件名 {role}_YYYY-MM-DD.log
+ *          role 即当前进程的日志通道（register / gateway / udp / business / api /
+ *          dashboard）；未设置时为 app。同角色的多个进程共写一个文件，靠行内
+ *          pid 区分 —— 与 pid 文件 workerman_{role}.pid 的命名维度保持一致。
+ *  - 汇总：error 级额外双写 error_YYYY-MM-DD.log，便于不经角色维度速览全局错误
  *  - 兜底：注册 error / exception / shutdown 处理器，避免异常导致进程静默退出
  *  - 清理：cleanup() 删除超过 keep_days 的历史日志，由定时任务调用
  *
@@ -22,6 +26,12 @@ class Logger
     const INFO  = 'info';
     const WARN  = 'warn';
     const ERROR = 'error';
+
+    /** 未显式切换日志通道时的默认角色名 */
+    const CHANNEL_DEFAULT = 'app';
+
+    /** 跨角色错误汇总通道前缀（error_{date}.log），保留字，不可作为角色名 */
+    const CHANNEL_ERROR_DIGEST = 'error';
 
     /**
      * 级别权重，数值越大越严重
@@ -43,6 +53,7 @@ class Logger
     protected static $config = array(
         'path'      => '',
         'level'     => self::DEBUG,
+        'role'      => self::CHANNEL_DEFAULT,
         'keep_days' => 30,
         'stdout'    => true,
     );
@@ -77,10 +88,33 @@ class Logger
     public static function init(array $config = array())
     {
         self::$config = array_merge(self::$config, $config);
+        self::$config['role'] = self::sanitizeRole(self::$config['role']);
         if (!is_dir(self::$config['path'])) {
             @mkdir(self::$config['path'], 0755, true);
         }
         self::$processTag = 'pid:' . getmypid();
+    }
+
+    /**
+     * 切换当前进程的日志通道（角色）
+     *
+     * 每个角色进程须在自己的 onWorkerStart 内调用一次：
+     *   - Windows 下按角色独立启动，进程级 init 已由 start.php 传入 APP_ROLE，
+     *     此处为幂等的再确认；
+     *   - Linux --role=all 时 APP_ROLE 为 'all'，各组件被 workerman fork 到独立
+     *     进程，子进程继承父进程的静态状态、无法自知属于哪个角色，必须在此显式
+     *     切换，否则全部角色的日志都会挤进 all_*.log，分角色便告失效。
+     *
+     * 同时刷新进程标识：同角色的多进程共写一个文件，pid 是唯一的区分手段，
+     * fork 后若不刷新将残留父进程 pid。
+     *
+     * @param string $role
+     * @return void
+     */
+    public static function useChannel($role)
+    {
+        self::$config['role'] = self::sanitizeRole($role);
+        self::$processTag     = 'pid:' . getmypid();
     }
 
     /**
@@ -197,8 +231,15 @@ class Logger
             $context ? ' ' . self::stringifyContext($context) : ''
         );
 
-        $file = rtrim(self::$config['path'], '/\\') . DIRECTORY_SEPARATOR . $level . '_' . date('Y-m-d') . '.log';
-        @file_put_contents($file, $line, FILE_APPEND | LOCK_EX);
+        $base = rtrim(self::$config['path'], '/\\') . DIRECTORY_SEPARATOR;
+        $date = date('Y-m-d');
+
+        @file_put_contents($base . self::$config['role'] . '_' . $date . '.log', $line, FILE_APPEND | LOCK_EX);
+
+        // error 级额外落入跨角色汇总通道：排查全局故障时无需逐个角色翻文件
+        if ($level === self::ERROR) {
+            @file_put_contents($base . self::CHANNEL_ERROR_DIGEST . '_' . $date . '.log', $line, FILE_APPEND | LOCK_EX);
+        }
 
         if (self::$config['stdout']) {
             echo $line;
@@ -256,6 +297,27 @@ class Logger
     /* ---------------------------------------------------------------------
      | 内部辅助
      --------------------------------------------------------------------- */
+
+    /**
+     * 角色名归一化
+     *
+     * 角色名会直接拼进文件名，必须限制字符集以防路径穿越；同时 'error' 被
+     * 跨角色汇总通道占用，若作为角色名会与之撞名，一并回落到默认通道。
+     *
+     * @param mixed $role
+     * @return string
+     */
+    protected static function sanitizeRole($role)
+    {
+        $role = strtolower(trim((string)$role));
+        if ($role === '' || !preg_match('/^[a-z][a-z0-9_-]{0,15}$/', $role)) {
+            return self::CHANNEL_DEFAULT;
+        }
+        if ($role === self::CHANNEL_ERROR_DIGEST) {
+            return self::CHANNEL_DEFAULT;
+        }
+        return $role;
+    }
 
     /**
      * context 序列化并做长度截断

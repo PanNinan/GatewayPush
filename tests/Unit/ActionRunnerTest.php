@@ -34,6 +34,7 @@ class ActionRunnerTest extends TestCase
         Logger::init(array(
             'path'   => sys_get_temp_dir(),
             'level'  => Logger::ERROR,
+            'role'   => 'test',
             'stdout' => false,
         ));
     }

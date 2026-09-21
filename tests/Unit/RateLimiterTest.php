@@ -58,6 +58,7 @@ class RateLimiterTest extends TestCase
         Logger::init(array(
             'path'   => $this->logDir,
             'level'  => Logger::ERROR,
+            'role'   => 'test',
             'stdout' => false,
         ));
     }
@@ -271,7 +272,7 @@ class RateLimiterTest extends TestCase
     public function testLogRejectSamplesPerDimensionWithinOneSecond(): void
     {
         $this->ensureLogDir();
-        Logger::init(array('path' => $this->logDir, 'level' => Logger::WARN, 'stdout' => false));
+        Logger::init(array('path' => $this->logDir, 'level' => Logger::WARN, 'role' => 'test', 'stdout' => false));
         RateLimiter::reset();
         $this->configure(array('ip' => array('rate' => 1, 'burst' => 3)));
 
@@ -279,7 +280,7 @@ class RateLimiterTest extends TestCase
         RateLimiter::logReject('ip', '10.0.0.12');   // 同维度、1 秒内 -> 被采样抑制
         RateLimiter::logReject('conn', 'cid-1');     // 不同维度独立采样 -> 落盘
 
-        $file  = $this->logDir . DIRECTORY_SEPARATOR . Logger::WARN . '_' . date('Y-m-d') . '.log';
+        $file  = $this->logDir . DIRECTORY_SEPARATOR . 'test_' . date('Y-m-d') . '.log';
         $this->assertFileExists($file);
 
         $lines = file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);

@@ -99,6 +99,9 @@ $actionConfig   = require BASE_PATH . '/config/actions.php';
 
 date_default_timezone_set($appConfig['app']['timezone']);
 Logger::init($appConfig['log']);
+// 进程级日志通道取启动角色：Windows 下即具体角色；Linux --role=all 时为 'all'，
+// 各组件会在自身 onWorkerStart 内再次 useChannel 切到真实角色。
+Logger::useChannel($role);
 
 // 内部通信密钥归一化：Register / Gateway / BusinessWorker 三方必须一致，
 // 未单独配置时回退复用业务鉴权密钥
@@ -182,6 +185,10 @@ if (!empty($appConfig['log']['global_handler'])) {
 Worker::$pidFile    = $appConfig['runtime']['pid_path'] . '/workerman_' . $role . '.pid';
 Worker::$logFile    = $appConfig['runtime']['log_path'] . '/workerman.log';
 Worker::$stdoutFile = $appConfig['runtime']['log_path'] . '/stdout.log';
+
+// workerman 框架日志单文件上限：超出后原地截断、仅保留后半（前半丢弃），0 = 不轮转。
+// 显式赋值而非依赖 vendor 默认值，便于经 .env 调整；workerman 不提供归档式轮转。
+Worker::$logFileMaxSize = (int)$appConfig['log']['max_size_mb'] * 1024 * 1024;
 
 /* ---------------------------------------------------------------------
  | 9. 平台约束校验

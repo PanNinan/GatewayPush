@@ -132,7 +132,7 @@ GatewayWorker/
 ├── resources/
 │   └── dashboard/index.html          监控面板页面（自包含，零外链）
 ├── runtime/                          运行时目录（.gitignore 排除）
-│   ├── logs/                         {level}_YYYY-MM-DD.log / workerman.log / stdout.log
+│   ├── logs/                         {role}_YYYY-MM-DD.log / error_YYYY-MM-DD.log / workerman.log / stdout.log
 │   └── pid/                          workerman_{role}.pid（Linux）/ win_{role}.pid（Windows 承载窗口）
 ├── src/
 │   ├── Api/Bootstrap.php             HTTP 推送接口进程
@@ -401,19 +401,20 @@ dashboard   已停止      http://127.0.0.1:8291       -         -         -    
 仅重载代码，**不重建长连接**。适合业务代码更新后使用。若改动了 `config/*.php` 的
 结构性配置（扩展清单、任务注册表等），需要 `restart` 而非 `reload`。
 
-#### `./bin/start.sh log [-f] [类型] [行数]`
+#### `./bin/start.sh log [-f] [通道] [行数]`
 
 ```bash
 ./bin/start.sh log                    # workerman.log 最后 60 行
-./bin/start.sh log -f warn            # 跟随告警日志
-./bin/start.sh log error 200          # 错误日志最后 200 行
+./bin/start.sh log -f gateway         # 跟随网关进程日志
+./bin/start.sh log error 200          # 跨角色错误汇总最后 200 行
 ./bin/start.sh log stdout             # workerman 的 stdout.log
 ```
 
-| 类型 | 实际文件 |
+| 通道 | 实际文件 |
 |---|---|
 | `workerman`（默认） | `runtime/logs/workerman.log` |
-| `info` / `warn` / `error` | `runtime/logs/{level}_YYYY-MM-DD.log`（自动取最新一个） |
+| `error` | `runtime/logs/error_YYYY-MM-DD.log`（**跨角色错误汇总**，自动取最新一个） |
+| 角色名 | `runtime/logs/{role}_YYYY-MM-DD.log`，可选 `register` / `gateway` / `udp` / `business` / `api` / `dashboard` / `all` / `app`（自动取最新一个） |
 | `stdout` | `runtime/logs/stdout.log`（daemon 模式下 PHP 的屏幕输出） |
 
 > 用 `less` 看日志请加 `-R`，否则中文会显示为乱码（`less` 不自动按 UTF-8 解码）。
@@ -690,8 +691,18 @@ composer test:client-e2e # php client/tests/E2E/ClientE2E.php（客户端 SDK �
 | `LOG_LEVEL` | `debug` | `debug` / `info` / `warn` / `error` |
 | `LOG_STDOUT` | `true` | 是否同时输出到控制台，生产建议 `false` |
 | `LOG_KEEP_DAYS` | `30` | 日志保留天数，超期由定时任务清理 |
+| `LOG_MAX_MB` | `10` | `workerman.log` 单文件上限（MB）。**超出后原地截断、仅保留后半（前半丢弃），非归档轮转**；`0` = 不轮转 |
 
-日志文件命名：`runtime/logs/{level}_{YYYY-MM-DD}.log`。
+日志文件命名：`runtime/logs/{role}_{YYYY-MM-DD}.log` —— 按 **角色** 与日期分割。
+`role` 即进程的日志通道（`register` / `gateway` / `udp` / `business` / `api` / `dashboard`；
+启动期及 Linux `--role=all` 下为 `all`，未指定时为 `app`）。同角色的多个进程共写
+一个文件，行内 `[pid:N]` 用于区分 —— 与 pid 文件 `workerman_{role}.pid` 同一命名维度。
+
+`error` 级日志额外双写一份跨角色汇总通道 `runtime/logs/error_{YYYY-MM-DD}.log`，
+无需按角色逐个翻文件即可速览全局错误。
+
+> 通道在进程启动时定型：改代码或调整角色后需**重启对应角色进程**才会写入新文件，
+> 旧文件停止写入并按 `LOG_KEEP_DAYS` 自然淘汰，不需要迁移。
 
 #### Redis
 

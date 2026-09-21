@@ -58,6 +58,7 @@ return [
         'path'           => $basePath . '/runtime/logs',
         'level'          => Env::str('LOG_LEVEL', 'debug'),    // debug | info | warn | error
         'rotate'         => 'daily',                           // 按天分割
+        'max_size_mb'    => Env::int('LOG_MAX_MB', 10),        // workerman.log 单文件上限（MB），0 = 不轮转
         'keep_days'      => Env::int('LOG_KEEP_DAYS', 30),     // 自动清理超过 N 天的日志文件
         'stdout'         => Env::bool('LOG_STDOUT', true),     // 同时输出到控制台
         'global_handler' => true,                              // 注册全局异常 / 错误 / 致命错误捕获

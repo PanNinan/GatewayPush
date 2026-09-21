@@ -105,6 +105,8 @@ class Bootstrap
         $worker->onMessage = array(self::class, 'onRequest');
 
         $worker->onWorkerStart = function ($worker) {
+            Logger::useChannel('api');
+
             RedisClient::init(self::$appConfig['redis']);
             Monitor::init(self::$appConfig['monitor']);
 

@@ -498,10 +498,11 @@ cmd_log() {
 
     case "$type" in
         workerman) file="$LOG_DIR/workerman.log" ;;
-        info|warn|error|stdout)
+        stdout)    file="$LOG_DIR/stdout.log" ;;
+        register|gateway|udp|business|api|dashboard|all|app|error)
             file="$(ls -1t "$LOG_DIR/${type}_"*.log 2>/dev/null | head -n1)" ;;
         *)
-            err "未知日志类型：$type（可选 workerman / info / warn / error / stdout）"
+            err "未知日志通道：$type（可选 workerman / stdout / 角色名 / error）"
             return 1 ;;
     esac
 
@@ -533,8 +534,9 @@ GatewayWorker 实时数据推送服务 —— Linux 服务管理脚本
   restart [角色|all]  重启（先停后启）
   reload [角色|all]   平滑重启，仅重载业务代码，网关长连接不中断
   status              进程状态一览（PID / 内存 / 运行时长 / 监听地址）
-  log [-f] [类型] [行数]
-                      查看日志。类型：workerman(默认) / info / warn / error / stdout
+  log [-f] [通道] [行数]
+                      查看日志。通道：workerman(默认) / stdout / error(跨角色错误汇总)
+                      / 角色名(register gateway udp business api dashboard all app)
                       -f 持续跟随；行数默认 60
   check               仅执行环境自检，不启动服务
   env:init            生成 .env（首部署必执行，自动注入随机密钥）

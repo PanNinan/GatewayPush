@@ -93,6 +93,8 @@ class Bootstrap
         $register->secretKey = self::buildSecretKey();
 
         $register->onWorkerStart = function ($worker) {
+            Logger::useChannel('register');
+
             Logger::info('Register 注册中心已启动', array(
                 'listen' => $worker->getSocketName(),
             ));
@@ -151,6 +153,8 @@ class Bootstrap
         $gateway->pingNotResponseLimit   = (int)$heartbeat['gateway_ping_not_response_limit'];
 
         $gateway->onWorkerStart = function ($worker) use ($sslOn) {
+            Logger::useChannel('gateway');
+
             Logger::info('WebSocket 网关已启动', array(
                 'listen'          => $worker->getSocketName(),
                 'lan_ip'          => $worker->lanIp,
@@ -199,6 +203,8 @@ class Bootstrap
         $udp->onMessage = array(self::class, 'onUdpMessage');
 
         $udp->onWorkerStart = function ($worker) use ($conf) {
+            Logger::useChannel('udp');
+
             // UDP 网关需要写业务队列、读推送出站队列，此处必须初始化 Redis 客户端，
             // 否则 onUdpMessage 会在 rPush 处抛出「未初始化」异常并吞掉 ack 回执
             RedisClient::init(self::$appConfig['redis']);
@@ -219,12 +225,11 @@ class Bootstrap
             }
 
             // 指标上报：网关进程只产出站维度指标，跳过在线数采集（其归属业务进程）
-            $monitorInterval = (float)(isset(self::$appConfig['monitor']['interval'])
-                ? self::$appConfig['monitor']['interval'] : 60);
+            $monitorInterval = (float)(self::$appConfig['monitor']['interval'] ?? 60);
             if (!empty(self::$appConfig['monitor']['enable']) && $monitorInterval > 0) {
                 Timer::add($monitorInterval, function () {
                     Monitor::report(false);
-                }, array(), true);
+                });
             }
 
             Logger::info('UDP 网关已启动', array(

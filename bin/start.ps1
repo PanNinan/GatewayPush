@@ -670,11 +670,13 @@ function Invoke-Log {
 
     if ($type -eq 'workerman') {
         $file = Join-Path $LogDir 'workerman.log'
-    } elseif (@('info', 'warn', 'error', 'stdout') -contains $type) {
+    } elseif ($type -eq 'stdout') {
+        $file = Join-Path $LogDir 'stdout.log'
+    } elseif (@('register', 'gateway', 'udp', 'business', 'api', 'dashboard', 'all', 'app', 'error') -contains $type) {
         $file = (Get-ChildItem -Path (Join-Path $LogDir ($type + '_*.log')) -ErrorAction SilentlyContinue |
                  Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
     } else {
-        Write-Err ('未知日志类型：' + $type + '（可选 workerman / info / warn / error / stdout）')
+        Write-Err ('未知日志通道：' + $type + '（可选 workerman / stdout / 角色名 / error）')
         return 1
     }
 
@@ -711,8 +713,9 @@ GatewayWorker 实时数据推送服务 —— Windows 服务管理脚本
   restart [all|角色]  重启（先停后启）
   reload              重启业务相关角色（Windows 无 master，做不到真正平滑）
   status              进程状态一览（PID / 内存 / 运行时长 / 监听地址）
-  log [-f] [类型] [行数]
-                      查看日志。类型：workerman(默认) / info / warn / error / stdout
+  log [-f] [通道] [行数]
+                      查看日志。通道：workerman(默认) / stdout / error(跨角色错误汇总)
+                      / 角色名(register gateway udp business api dashboard all app)
                       -f 持续跟随；行数默认 60
   check               仅执行环境自检，不启动服务
   env:init            生成 .env（首部署必执行，自动注入随机密钥）

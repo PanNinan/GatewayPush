@@ -279,7 +279,7 @@ gateway-push/
 
 **A. runtime 目录未按节点隔离 —— 单机模拟多节点的首要阻塞点**
 
-`config/app.php` 中 `runtime_path` / `log_path` / `pid_path` 三者均硬编码为 `$basePath . '/runtime'`，**无节点维度**；配套表现为 pid 文件名 `workerman_{role}.pid`（仅按角色区分）、日志名 `info_{YYYY-MM-DD}.log`（仅按日期区分）。
+`config/app.php` 中 `runtime_path` / `log_path` / `pid_path` 三者均硬编码为 `$basePath . '/runtime'`，**无节点维度**；配套表现为 pid 文件名 `workerman_{role}.pid`、日志名 `{role}_{YYYY-MM-DD}.log`（二者均按角色区分，另设跨角色错误汇总通道 `error_{YYYY-MM-DD}.log`）。集群改造时若这两个目录未按节点隔离，多节点的同名文件将在共享存储上互相覆盖。
 
 - **后果**：同机启动第二个节点会因 pid 文件冲突被判定「已在运行」而**拒绝启动**；即便绕过，多节点日志也混写同一文件，无法按节点排障。
 - **改造**：引入 `NODE_ID`，runtime 三路径改为 `$basePath . '/runtime/' . NODE_ID`；启动入口增加 `--node=` 参数；pid 文件纳入节点维度。
