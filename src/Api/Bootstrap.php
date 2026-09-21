@@ -391,7 +391,7 @@ class Bootstrap
             $parts = explode(',', $forwarded);
             return trim($parts[0]);
         }
-        return (string)$request->connection->getRemoteIp();
+        return $request->connection->getRemoteIp();
     }
 
     /**

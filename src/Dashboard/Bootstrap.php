@@ -56,7 +56,7 @@ class Bootstrap
         'listen'    => 'http://127.0.0.1:8291',
         'name'      => 'GW-DASH',
         'view_path' => '',
-        'refresh'   => 5,
+        'refresh'   => 30,
     );
 
     /**
@@ -176,7 +176,7 @@ class Bootstrap
     protected static function handleMetrics($connection)
     {
         Monitor::snapshot(function ($snapshot) use ($connection) {
-            $monitor = isset(self::$appConfig['monitor']) ? self::$appConfig['monitor'] : array();
+            $monitor = self::$appConfig['monitor'] ?? array();
 
             $snapshot['meta'] = array(
                 'now'      => time(),
@@ -279,7 +279,7 @@ class Bootstrap
             $payload = '{"code":5000,"msg":"response encode failed"}';
         }
 
-        return new Response($http === null ? $status : $http, array(
+        return new Response($http ?? $status, array(
             'Content-Type' => 'application/json; charset=utf-8',
         ), $payload);
     }
