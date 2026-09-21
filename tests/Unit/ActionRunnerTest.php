@@ -1,16 +1,23 @@
 <?php
 /**
- * ActionRunner 单元测试（仅声明层）
+ * ActionRunner 单元测试（仅声明层 + 通道解析）
  *
- * 只覆盖 load() / registered() / has() / declaration() / declarations()
- * 这条纯声明解析链路 —— 它是「config/actions.php 声明式接入」的全部契约。
+ * 覆盖三条纯逻辑链路：
+ *   1. load() / registered() / has() / declaration() / declarations()
+ *      —— 「config/actions.php 声明式接入」的全部契约；
+ *   2. HTTP 暴露白名单（httpExposed / httpActions）—— 默认关闭、逐动作开启；
+ *   3. channelOf() 的前缀表 —— 由二元判断改造而来，顺序与边界必须锁定。
  *
- * 不覆盖 run()：该方法依赖 Auth / Monitor / Redis / Timer 与 workerman
- * 事件循环，属端到端范畴，由 tests/e2e_check.php 覆盖。
+ * 不覆盖 run() / sender() / emitError()：前两者依赖 Auth / Monitor / Redis /
+ * Timer 与 workerman 事件循环，属端到端范畴，由 tests/E2E/CaseHttpAction.php
+ * 与 CaseActionRouting.php 覆盖。channelOf 用反射直取，因为它本身是纯函数。
  *
- * 关键回归点：declarations() 对 params = '*' 的透传标记不能按数组处理。
- * 早期实现直接 array_keys() 会抛 TypeError —— 纯类型错误，
- * 却要跑完整端到端才会暴露。
+ * 关键回归点：
+ *   - declarations() 对 params = '*' 的透传标记不能按数组处理。
+ *     早期实现直接 array_keys() 会抛 TypeError —— 纯类型错误，
+ *     却要跑完整端到端才会暴露。
+ *   - reply 归一化必须覆盖三个通道且缺省回落 sync。既有的双通道声明
+ *     （不含 http 键）依赖该回落语义才能零改动兼容 HTTP。
  *
  * 兼容 PHP 8.1 ~ 8.5
  */
@@ -34,6 +41,7 @@ class ActionRunnerTest extends TestCase
         Logger::init(array(
             'path'   => sys_get_temp_dir(),
             'level'  => Logger::ERROR,
+            'role'   => 'test',
             'stdout' => false,
         ));
     }
@@ -143,13 +151,18 @@ class ActionRunnerTest extends TestCase
 
         $this->assertTrue($decl['auth'], '默认要求鉴权');
         $this->assertSame(
-            array('ws' => ActionContext::REPLY_SYNC, 'udp' => ActionContext::REPLY_SYNC),
+            array(
+                ActionContext::CHANNEL_WS   => ActionContext::REPLY_SYNC,
+                ActionContext::CHANNEL_UDP  => ActionContext::REPLY_SYNC,
+                ActionContext::CHANNEL_HTTP => ActionContext::REPLY_SYNC,
+            ),
             $decl['reply']
         );
         $this->assertSame(ActionRunner::DEFAULT_TIMEOUT, $decl['timeout']);
         $this->assertSame(array(), $decl['params']);
         $this->assertSame('', $decl['description']);
         $this->assertSame(array(), $decl['options']);
+        $this->assertFalse($decl['http'], 'HTTP 通道默认关闭（白名单则否）');
     }
 
     public function testCustomDefaultsOverrideBuiltinOnes(): void
@@ -187,12 +200,16 @@ class ActionRunnerTest extends TestCase
      | reply 归一化
      --------------------------------------------------------------------- */
 
-    public function testReplyStringAppliesToBothChannels(): void
+    public function testReplyStringAppliesToAllChannels(): void
     {
         $this->load(array('r' => array('handler' => StubAction::class, 'reply' => 'none')));
 
         $this->assertSame(
-            array('ws' => ActionContext::REPLY_NONE, 'udp' => ActionContext::REPLY_NONE),
+            array(
+                ActionContext::CHANNEL_WS   => ActionContext::REPLY_NONE,
+                ActionContext::CHANNEL_UDP  => ActionContext::REPLY_NONE,
+                ActionContext::CHANNEL_HTTP => ActionContext::REPLY_NONE,
+            ),
             ActionRunner::declaration('r')['reply']
         );
     }
@@ -208,6 +225,11 @@ class ActionRunnerTest extends TestCase
 
         $this->assertSame(ActionContext::REPLY_SYNC, $decl['reply'][ActionContext::CHANNEL_WS]);
         $this->assertSame(ActionContext::REPLY_NONE, $decl['reply'][ActionContext::CHANNEL_UDP]);
+        $this->assertSame(
+            ActionContext::REPLY_SYNC,
+            $decl['reply'][ActionContext::CHANNEL_HTTP],
+            '未声明的通道必须回落 sync：既有的双通道声明因此无需改动即兼容 HTTP'
+        );
     }
 
     public function testReplyPartialChannelDeclarationFallsBackToSync(): void
@@ -221,6 +243,7 @@ class ActionRunnerTest extends TestCase
 
         $this->assertSame(ActionContext::REPLY_SYNC, $decl['reply'][ActionContext::CHANNEL_WS]);
         $this->assertSame(ActionContext::REPLY_NONE, $decl['reply'][ActionContext::CHANNEL_UDP]);
+        $this->assertSame(ActionContext::REPLY_SYNC, $decl['reply'][ActionContext::CHANNEL_HTTP]);
     }
 
     public function testInvalidReplyValueFallsBackToSync(): void
@@ -228,7 +251,11 @@ class ActionRunnerTest extends TestCase
         $this->load(array('r' => array('handler' => StubAction::class, 'reply' => 'silent')));
 
         $this->assertSame(
-            array('ws' => ActionContext::REPLY_SYNC, 'udp' => ActionContext::REPLY_SYNC),
+            array(
+                ActionContext::CHANNEL_WS   => ActionContext::REPLY_SYNC,
+                ActionContext::CHANNEL_UDP  => ActionContext::REPLY_SYNC,
+                ActionContext::CHANNEL_HTTP => ActionContext::REPLY_SYNC,
+            ),
             ActionRunner::declaration('r')['reply'],
             '未识别的回执方式必须退化为 sync，不能产生第三种状态'
         );
@@ -274,6 +301,96 @@ class ActionRunnerTest extends TestCase
     }
 
     /* ---------------------------------------------------------------------
+     | HTTP 通道白名单
+     --------------------------------------------------------------------- */
+
+    public function testHttpIsClosedByDefault(): void
+    {
+        $this->load(array('a' => array('handler' => StubAction::class)));
+
+        $this->assertFalse(ActionRunner::httpExposed('a'));
+        $this->assertSame(array(), ActionRunner::httpActions());
+    }
+
+    public function testHttpWhitelistIsOptInPerAction(): void
+    {
+        $this->load(array(
+            'open'   => array('handler' => StubAction::class, 'http' => true),
+            'closed' => array('handler' => StubAction::class),
+        ));
+
+        $this->assertTrue(ActionRunner::httpExposed('open'));
+        $this->assertFalse(ActionRunner::httpExposed('closed'));
+        $this->assertSame(array('open'), ActionRunner::httpActions());
+    }
+
+    public function testHttpExposureIsListedInDeclarations(): void
+    {
+        $this->load(array(
+            'open'   => array('handler' => StubAction::class, 'http' => true),
+            'closed' => array('handler' => StubAction::class),
+        ));
+
+        $listed = ActionRunner::declarations();
+
+        $this->assertTrue($listed['open']['http']);
+        $this->assertFalse($listed['closed']['http']);
+    }
+
+    public function testHttpExposureIsBoolTypedEvenWhenDeclaredLoosely(): void
+    {
+        $this->load(array('a' => array('handler' => StubAction::class, 'http' => 1)));
+
+        $decl = ActionRunner::declaration('a');
+
+        $this->assertTrue($decl['http']);
+        $this->assertSame(true, $decl['http'], '声明值须归一化为 bool，避免运出到下游出现 1 / true 两种形态');
+    }
+
+    public function testUnexposedActionIsNotHttpExposedEvenIfRegistered(): void
+    {
+        $this->load(array('a' => array('handler' => StubAction::class)));
+
+        // 未注册动作一律 false，不存在「未注册但被判定为可调用」的中间态
+        $this->assertFalse(ActionRunner::httpExposed('nope'));
+    }
+
+    /* ---------------------------------------------------------------------
+     | 通道前缀表（回归点）
+     |
+     | 由二元判断改用前缀表后，顺序与优先级必须锁定：
+     | 早期实现是「是 udp 前缀 ? udp : ws」，任何新前缀都会被误判为 ws。
+     --------------------------------------------------------------------- */
+
+    /**
+     * @dataProvider channelPrefixProvider
+     */
+    public function testChannelIsResolvedByClientIdPrefix(string $clientId, string $expected): void
+    {
+        $method = new \ReflectionMethod(ActionRunner::class, 'channelOf');
+        $method->setAccessible(true);
+
+        $this->assertSame($expected, $method->invoke(null, $clientId));
+    }
+
+    /**
+     * @return array<string, array{0: string, 1: string}>
+     */
+    public function channelPrefixProvider(): array
+    {
+        return array(
+            'WS 数字 ID'      => array('7', ActionContext::CHANNEL_WS),
+            'WS 长数字 ID'    => array('123456789', ActionContext::CHANNEL_WS),
+            'UDP 虚拟 ID'     => array('udp:127.0.0.1:53210', ActionContext::CHANNEL_UDP),
+            'HTTP 虚拟 ID'    => array('http:9f2c1a4b', ActionContext::CHANNEL_HTTP),
+            '空 clientId'     => array('', ActionContext::CHANNEL_WS),
+            // 前缀必须整段匹配：含 udp 字样但不以 udp: 开头的不能被误判
+            '含 udp 字样的 WS' => array('xudp:1', ActionContext::CHANNEL_WS),
+            '含 http 字样的 WS' => array('xhttp:1', ActionContext::CHANNEL_WS),
+        );
+    }
+
+    /* ---------------------------------------------------------------------
      | 透出结构
      --------------------------------------------------------------------- */
 
@@ -289,7 +406,7 @@ class ActionRunnerTest extends TestCase
         $listed = ActionRunner::declarations();
 
         $this->assertSame(
-            array('description', 'auth', 'reply', 'timeout', 'params'),
+            array('description', 'auth', 'reply', 'timeout', 'http', 'params'),
             array_keys($listed['report']),
             '运维接口透出的字段应与类注释一致'
         );

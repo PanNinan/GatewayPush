@@ -108,9 +108,12 @@ class Bootstrap
         RateLimiter::init(isset($appConfig['rate_limit']) ? $appConfig['rate_limit'] : array());
         Subscribe::init(isset($appConfig['subscribe']) ? $appConfig['subscribe'] : array());
 
-        // 装载业务动作表：WS 与 UDP 两条链路共用同一份声明，
+        // 装载业务动作表：WS / UDP / HTTP 三条链路共用同一份声明，
         // 差异只在回执方式（见 config/actions.php 的 reply 段）
         ActionRunner::load($actionConfig);
+
+        // HTTP 动作回执键的 TTL 与动作队列同源（business.action_queue.result_ttl）
+        ActionReply::init(isset($businessConfig['action_queue']) ? $businessConfig['action_queue'] : array());
 
         // UDP 出站队列 key 与网关进程同源（gateway.udp.out_queue），避免两套真源
         Push::init(
@@ -134,6 +137,7 @@ class Bootstrap
         // 该回调在 BusinessWorker 内部事件绑定之前执行，用于完成进程级初始化
         $worker->onWorkerStart = function ($worker) {
             Logger::init(self::$appConfig['log']);
+            Logger::useChannel('business');
             RedisClient::init(self::$appConfig['redis']);
 
             // Lib\Gateway 不会自动继承 BusinessWorker 的注册中心配置，需显式设置，
@@ -767,7 +771,12 @@ class Bootstrap
     }
 
     /* ---------------------------------------------------------------------
-     | UDP 队列消费（定时任务）
+     | 队列消费（定时任务）
+     |
+     | 三条队列的具体分工见各自方法注释：
+     |   consumeUdpQueue    UDP 网关 -> 业务进程（入站报文）
+     |   consumeActionQueue Api 进程 -> 业务进程（HTTP 动作调用）
+     |   consumePushQueue   各投递方 -> 推送执行（出站统一收敛点）
      --------------------------------------------------------------------- */
 
     /**
@@ -798,6 +807,83 @@ class Bootstrap
                 }
             }
         });
+    }
+
+    /**
+     * 消费 HTTP 动作队列（定时任务）
+     *
+     * 与 consumeUdpQueue 同构：原子取批 -> 逐条处理。投递方是 Api 进程
+     * （POST /action），取批的原子性同样由 RedisClient::popBatch 的 Lua 脚本保证。
+     *
+     * @return void
+     */
+    public static function consumeActionQueue()
+    {
+        $conf = self::$config['action_queue'];
+        if (empty($conf['enable'])) {
+            return;
+        }
+
+        $batch = max(1, (int)$conf['batch']);
+
+        RedisClient::popBatch($conf['key'], $batch, function ($items) {
+            foreach ($items as $raw) {
+                try {
+                    self::handleActionJob($raw);
+                } catch (\Throwable $e) {
+                    Monitor::incr('msg_fail');
+                    Logger::exception($e, 'business.action_job');
+                }
+            }
+        });
+    }
+
+    /**
+     * 处理单条 HTTP 动作任务
+     *
+     * 与其他通道的差异：
+     *   WS   —— 有连接级鉴权闸门，uid 来自 Session
+     *   UDP  —— 无连接，uid 只能取自 Token 载荷
+     *   HTTP —— uid 由请求方在 body 中给出，但它**参与 HMAC 签名覆盖**，
+     *           即「密钥持有者可代表任意 uid 发起动作」，与 /push 同权、无提权。
+     *
+     * 因此本方法不再另做鉴权（报文级签名已在 Api 侧校验完毕），只负责把
+     * 动作交给 ActionRunner —— 它自身仍会按声明校验 `auth` 要求。
+     *
+     * @param string $raw
+     * @return void
+     */
+    protected static function handleActionJob($raw)
+    {
+        $job = json_decode($raw, true);
+        if (!is_array($job) || empty($job['packet']) || !is_array($job['packet'])) {
+            Monitor::incr('msg_fail');
+            Logger::warn('HTTP 动作队列任务格式非法，已丢弃');
+            return;
+        }
+
+        $requestId = isset($job['request_id']) ? (string)$job['request_id'] : '';
+        if ($requestId === '' || !ActionReply::validRequestId($requestId)) {
+            // request_id 是回程键的唯一组成部分，缺失即无法交还结果，只能丢弃
+            Monitor::incr('msg_fail');
+            Logger::warn('HTTP 动作任务缺少合法 request_id，已丢弃');
+            return;
+        }
+
+        $packet   = $job['packet'];
+        $uid      = isset($packet['uid']) ? (string)$packet['uid'] : '';
+        $deviceId = isset($packet['device_id']) ? (string)$packet['device_id'] : '';
+
+        Monitor::incr('msg_in');
+        Monitor::incr('action_http_dequeue');
+
+        ActionRunner::run(
+            ActionReply::clientId($requestId),
+            $packet,
+            $uid,
+            $deviceId,
+            ActionContext::CHANNEL_HTTP
+        );
     }
 
     /**

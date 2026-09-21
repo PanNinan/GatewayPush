@@ -14,7 +14,7 @@
  *  - 由定时任务周期性批量刷入 Redis
  *  - 累加型指标用 HINCRBY（多进程原子安全），覆盖型指标用 HSET
  *
- * Redis 键：
+ * Redis 键（键名声明于 RedisKeys）：
  *   metrics:counter:{YYYYMMDD}   Hash  当日累加型指标，保留 7 天
  *   metrics:gauge               Hash  当前瞬时指标，TTL 由配置决定
  *
@@ -25,15 +25,10 @@ namespace GatewayPush\Business;
 
 use GatewayPush\Common\Logger;
 use GatewayPush\Common\RedisClient;
+use GatewayPush\Common\RedisKeys;
 
 class Monitor
 {
-    /** 累加型指标 key 前缀 */
-    const KEY_COUNTER = 'metrics:counter:';
-
-    /** 覆盖型指标 key */
-    const KEY_GAUGE = 'metrics:gauge';
-
     /** 累加型指标保留天数 */
     const COUNTER_KEEP_DAYS = 7;
 
@@ -46,7 +41,6 @@ class Monitor
         'enable'   => true,
         'interval' => 60,
         'ttl'      => 600,
-        'key'      => 'metrics',
         'metrics'  => array(),
     );
 
@@ -127,7 +121,7 @@ class Monitor
         // 覆盖型指标：内存占用按进程粒度上报
         $pid   = getmypid();
         $ttl   = (int)self::$config['ttl'];
-        $gaugeKey = self::KEY_GAUGE;
+        $gaugeKey = RedisKeys::METRICS_GAUGE;
 
         RedisClient::hSet($gaugeKey, 'memory_bytes:' . $pid, Logger::memoryUsage());
 
@@ -169,8 +163,8 @@ class Monitor
      */
     public static function snapshot(callable $cb)
     {
-        RedisClient::hGetAll(self::KEY_GAUGE, function ($gauge) use ($cb) {
-            RedisClient::hGetAll(self::counterKey(), function ($counter) use ($gauge, $cb) {
+        RedisClient::hGetAll(RedisKeys::METRICS_GAUGE, function ($gauge) use ($cb) {
+            RedisClient::hGetAll(RedisKeys::metricsCounter(), function ($counter) use ($gauge, $cb) {
                 $cb(array(
                     'gauge'   => is_array($gauge) ? $gauge : array(),
                     'counter' => is_array($counter) ? $counter : array(),
@@ -210,7 +204,7 @@ class Monitor
             return;
         }
 
-        $key = self::counterKey();
+        $key = RedisKeys::metricsCounter();
         foreach ($counters as $metric => $value) {
             if ($value === 0) {
                 continue;
@@ -261,15 +255,5 @@ class Monitor
         if ($payload !== false) {
             RedisClient::hSet($gaugeKey, 'tasks:' . $pid, $payload);
         }
-    }
-
-    /**
-     * 当日累加指标 key
-     *
-     * @return string
-     */
-    protected static function counterKey()
-    {
-        return self::KEY_COUNTER . date('Ymd');
     }
 }

@@ -8,22 +8,35 @@
  * 改造前，action 的执行流程只存在于 WebSocket 侧（Bootstrap::handleData），
  * UDP 侧（Bootstrap::processUdpJob）仅打印一条 debug 日志 —— 同一份业务
  * 动作在 WS 上可用、在 UDP 上无处执行，与「双协议兼容」的核心需求冲突。
+ * 其后 HTTP 侧（Api 进程）同样需要一个执行入口，三类通道共用本类。
  *
  * 本类把「取动作名 → 校验鉴权 → 校验参数 → 查处理器 → 执行 → 回执」
- * 抽成与通道无关的单一路径，WS 与 UDP 共用，两者行为差异只体现在
+ * 抽成与通道无关的单一路径，WS / UDP / HTTP 共用，行为差异只体现在
  * 回执的下发方式上（见下）。
  *
  * ---------------------------------------------------------------------
  * 通道判定与回执下发
  * ---------------------------------------------------------------------
- * 通道由 clientId 前缀推断（与 Session::PROTOCOL_UDP 的约定一致）：
- *   udp:{ip}:{port}  -> udp
- *   其余（数字ID）    -> ws
+ * 通道由 clientId 前缀推断（与 Push::UDP_PREFIX 的约定同构）：
+ *   udp:{ip}:{port}    -> udp
+ *   http:{request_id}  -> http
+ *   其余（数字ID）      -> ws
  *
  * 回执下发：
- *   ws  -> Bootstrap::respond()，即 GatewayClient::sendToClient
- *   udp -> Push::sendToUdpClient()，写入网关出站队列由网关进程 sendto
- *          （UDP clientId 不在 Gateway 连接表内，sendToClient 对其无效）
+ *   ws   -> Bootstrap::respond()，即 GatewayClient::sendToClient
+ *   udp  -> Push::sendToUdpClient()，写入网关出站队列由网关进程 sendto
+ *           （UDP clientId 不在 Gateway 连接表内，sendToClient 对其无效）
+ *   http -> ActionReply::store()，写入 action:result:{request_id}
+ *           供 Api 进程轮询取回（HTTP 是唯一有「同步等待的调用方」的通道）
+ *
+ * ---------------------------------------------------------------------
+ * HTTP 通道的暴露白名单
+ * ---------------------------------------------------------------------
+ * HTTP 默认**不开放任何动作**，须在 config/actions.php 中逐个声明
+ * `'http' => true` 才可经 POST /action 调用。原因是通道性质差异：
+ * HTTP 调用方持有接口密钥即代表任意 uid 发起动作（与 /push 同权，无提权），
+ * 但「密钥持有者能做什么」应当是一份显式清单，而不是「所有动作的并集」。
+ * 典型不适合暴露的是 session —— 它依赖 clientId 语义，HTTP 下无意义。
  *
  * ---------------------------------------------------------------------
  * 兼容 PHP 8.1 ~ 8.5
@@ -90,9 +103,14 @@ class ActionRunner
 
         $defaults = array(
             'auth'    => true,                                          // 是否要求已鉴权
-            'reply'   => array('ws' => ActionContext::REPLY_SYNC, 'udp' => ActionContext::REPLY_SYNC),
+            'reply'   => array(
+                ActionContext::CHANNEL_WS   => ActionContext::REPLY_SYNC,
+                ActionContext::CHANNEL_UDP  => ActionContext::REPLY_SYNC,
+                ActionContext::CHANNEL_HTTP => ActionContext::REPLY_SYNC,
+            ),
             'timeout' => self::DEFAULT_TIMEOUT,
             'params'  => array(),
+            'http'    => false,                                         // 是否开放 HTTP 通道（默认关闭）
         );
         if (isset($config['defaults']) && is_array($config['defaults'])) {
             $defaults = array_merge($defaults, $config['defaults']);
@@ -126,6 +144,8 @@ class ActionRunner
             $item['name']        = $name;
             $item['reply']       = self::normalizeReply($item['reply']);
             $item['timeout']     = (int)$item['timeout'];
+            // HTTP 暴露白名单：默认关闭，须逐动作显式声明 'http' => true
+            $item['http']        = !empty($item['http']);
             // params 支持 '*' 表示原样透传，仅供 echo 这类以回显为目的的动作使用，
             // 业务动作必须显式声明规则（白名单语义）
             $item['params']      = self::normalizeParams($item['params']);
@@ -139,6 +159,9 @@ class ActionRunner
 
         Logger::info('业务动作表装载完成', array(
             'count'   => count(self::$declarations),
+            'http'    => array_keys(array_filter(self::$declarations, function ($decl) {
+                return !empty($decl['http']);
+            })),
             'actions' => array_keys(self::$declarations),
         ));
 
@@ -179,6 +202,7 @@ class ActionRunner
                 'auth'        => !empty($decl['auth']),
                 'reply'       => $decl['reply'],
                 'timeout'     => $decl['timeout'],
+                'http'        => !empty($decl['http']),
                 // 透传规则不是数组，不能直接 array_keys
                 'params'      => $decl['params'] === self::PARAMS_PASSTHROUGH
                     ? self::PARAMS_PASSTHROUGH
@@ -200,6 +224,36 @@ class ActionRunner
     }
 
     /**
+     * 动作是否开放 HTTP 通道
+     *
+     * 未注册的动作一律返回 false（不存在「未注册但可调用」的中间态）。
+     *
+     * @param string $action
+     * @return bool
+     */
+    public static function httpExposed($action)
+    {
+        $action = (string)$action;
+        return isset(self::$declarations[$action]) && !empty(self::$declarations[$action]['http']);
+    }
+
+    /**
+     * 已开放 HTTP 通道的动作名
+     *
+     * @return array
+     */
+    public static function httpActions()
+    {
+        $names = array();
+        foreach (self::$declarations as $name => $decl) {
+            if (!empty($decl['http'])) {
+                $names[] = $name;
+            }
+        }
+        return $names;
+    }
+
+    /**
      * 取动作声明
      *
      * @param string $action
@@ -208,7 +262,7 @@ class ActionRunner
     public static function declaration($action)
     {
         $action = (string)$action;
-        return isset(self::$declarations[$action]) ? self::$declarations[$action] : null;
+        return self::$declarations[$action] ?? null;
     }
 
     /* ---------------------------------------------------------------------
@@ -225,7 +279,7 @@ class ActionRunner
      * @param array  $packet   已解码报文（data.action 承载动作名）
      * @param string $uid
      * @param string $deviceId
-     * @param string $protocol ws | udp
+     * @param string $protocol ws | udp | http
      * @return void
      */
     public static function run($clientId, array $packet, $uid = '', $deviceId = '', $protocol = '')
@@ -244,11 +298,27 @@ class ActionRunner
             return;
         }
 
+        // HTTP 通道的暴露白名单。Api 进程在入队前已校验一次，此处是第二道防线 ——
+        // 动作队列是 Redis 键，任何持有 Redis 凭证者都可直接写入任务，
+        // 因此「能不能经 HTTP 调用」必须由执行方而非投递方裁定。
+        if ($channel === ActionContext::CHANNEL_HTTP && empty($decl['http'])) {
+            self::fail(
+                $clientId,
+                $packet,
+                $channel,
+                Message::CODE_UNKNOWN_CMD,
+                '动作未开放 HTTP 通道：' . $action,
+                $action
+            );
+            return;
+        }
+
         // 动作级鉴权要求。
         // UDP 通道没有「连接」概念，也就没有连接级鉴权闸门，其身份完全依赖
         // 报文内 uid + 签名校验 —— 因此这道检查对 UDP 是唯一的业务侧鉴权防线。
-        if (!empty($decl['auth']) && Auth::enabled() && (string)$uid === '') {
+        if (!empty($decl['auth']) && (string)$uid === '' && Auth::enabled()) {
             Monitor::incr('action_fail');
+            self::incrChannel($channel, 'fail');
             Logger::warn('动作要求鉴权但身份缺失，已拒绝', array(
                 'action'    => $action,
                 'client_id' => $clientId,
@@ -274,9 +344,7 @@ class ActionRunner
             }
         }
 
-        $replyMode = isset($decl['reply'][$channel])
-            ? $decl['reply'][$channel]
-            : ActionContext::REPLY_SYNC;
+        $replyMode = $decl['reply'][$channel] ?? ActionContext::REPLY_SYNC;
 
         $ctx = new ActionContext(
             $action,
@@ -295,6 +363,7 @@ class ActionRunner
         );
 
         Monitor::incr('action_in');
+        self::incrChannel($channel, 'in');
 
         // 超时保护：处理器可能走 Redis 异步回执，若回调始终不来，
         // 客户端会永久等待。定时器在首次回执时由钩子注销，未回执则兜底。
@@ -313,6 +382,7 @@ class ActionRunner
                     return;
                 }
                 Monitor::incr('action_timeout');
+                self::incrChannel($ctx->channel(), 'timeout');
                 Logger::warn('业务动作超时未回执', array(
                     'action'    => $ctx->action(),
                     'client_id' => $ctx->clientId(),
@@ -326,6 +396,7 @@ class ActionRunner
         try {
             self::instance($action, $decl)->handle($ctx);
             Monitor::incr('action_ok');
+            self::incrChannel($channel, 'ok');
 
             Logger::debug('业务动作已执行', array(
                 'action'    => $action,
@@ -337,6 +408,7 @@ class ActionRunner
             ));
         } catch (\Throwable $e) {
             Monitor::incr('action_fail');
+            self::incrChannel($channel, 'fail');
             Logger::exception($e, 'action:' . $action);
             $ctx->replyError(Message::CODE_SERVER_ERROR);
         }
@@ -349,14 +421,42 @@ class ActionRunner
     /**
      * 由 clientId 前缀推断通道
      *
+     * 前缀表而非二元判断：新增通道只需在此追加一行，不需要改动 sender /
+     * emitError 等分支的判断结构。
+     *
      * @param string $clientId
      * @return string
      */
     protected static function channelOf($clientId)
     {
-        return str_starts_with((string)$clientId, Push::UDP_PREFIX)
-            ? ActionContext::CHANNEL_UDP
-            : ActionContext::CHANNEL_WS;
+        $clientId = (string)$clientId;
+
+        if (str_starts_with($clientId, Push::UDP_PREFIX)) {
+            return ActionContext::CHANNEL_UDP;
+        }
+        if (ActionReply::isHttpClient($clientId)) {
+            return ActionContext::CHANNEL_HTTP;
+        }
+
+        return ActionContext::CHANNEL_WS;
+    }
+
+    /**
+     * 分通道指标自增
+     *
+     * 仅为 HTTP 通道单独计数 —— 既有 ws / udp 沿用聚合指标，不引入指标名变更，
+     * 以免面板分组与历史数据对比失效。HTTP 是新通道，需要能把它从
+     * action_in / action_ok 的合计里区分出来。
+     *
+     * @param string $channel
+     * @param string $suffix  in | ok | fail | timeout
+     * @return void
+     */
+    protected static function incrChannel($channel, $suffix)
+    {
+        if ($channel === ActionContext::CHANNEL_HTTP) {
+            Monitor::incr('action_http_' . $suffix);
+        }
     }
 
     /**
@@ -371,6 +471,12 @@ class ActionRunner
         if ($channel === ActionContext::CHANNEL_UDP) {
             return function (array $packet) use ($clientId) {
                 Push::sendToUdpClient($clientId, $packet);
+            };
+        }
+
+        if ($channel === ActionContext::CHANNEL_HTTP) {
+            return function (array $packet) use ($clientId) {
+                ActionReply::store($clientId, $packet);
             };
         }
 
@@ -402,24 +508,29 @@ class ActionRunner
      * 回执方式归一化
      *
      * 支持两种写法：
-     *   'reply' => 'sync'                             两通道相同
-     *   'reply' => ['ws' => 'sync', 'udp' => 'none']  按通道分别声明
+     *   'reply' => 'sync'                                         三通道相同
+     *   'reply' => ['ws' => 'sync', 'udp' => 'none']              按通道分别声明
+     *
+     * 未声明的通道回落 sync —— 因此既有的双通道声明（不含 http 键）无需改动
+     * 即自动获得 HTTP 通道的 sync 语义。
      *
      * @param mixed $reply
-     * @return array ['ws' => .., 'udp' => ..]
+     * @return array ['ws' => .., 'udp' => .., 'http' => ..]
      */
     protected static function normalizeReply($reply)
     {
         if (is_array($reply)) {
             return array(
-                ActionContext::CHANNEL_WS  => self::pickReply(isset($reply[ActionContext::CHANNEL_WS]) ? $reply[ActionContext::CHANNEL_WS] : null),
-                ActionContext::CHANNEL_UDP => self::pickReply(isset($reply[ActionContext::CHANNEL_UDP]) ? $reply[ActionContext::CHANNEL_UDP] : null),
+                ActionContext::CHANNEL_WS   => self::pickReply($reply[ActionContext::CHANNEL_WS] ?? null),
+                ActionContext::CHANNEL_UDP  => self::pickReply($reply[ActionContext::CHANNEL_UDP] ?? null),
+                ActionContext::CHANNEL_HTTP => self::pickReply($reply[ActionContext::CHANNEL_HTTP] ?? null),
             );
         }
 
         return array(
-            ActionContext::CHANNEL_WS  => self::pickReply($reply),
-            ActionContext::CHANNEL_UDP => self::pickReply($reply),
+            ActionContext::CHANNEL_WS   => self::pickReply($reply),
+            ActionContext::CHANNEL_UDP  => self::pickReply($reply),
+            ActionContext::CHANNEL_HTTP => self::pickReply($reply),
         );
     }
 
@@ -464,6 +575,7 @@ class ActionRunner
     protected static function fail($clientId, array $packet, $channel, $code, $msg = '', $action = '')
     {
         Monitor::incr('action_fail');
+        self::incrChannel($channel, 'fail');
         Monitor::incr('msg_fail');
 
         Logger::warn('业务动作执行前失败', array(
@@ -483,6 +595,10 @@ class ActionRunner
      * UDP 通道一律静默：对超限 / 非法报文回错误会形成反射放大，
      * 与限流模块「UDP 超限静默丢弃」的处置原则保持一致。
      *
+     * 其余通道均需下发 —— WS 直发连接，HTTP 写入结果回程键（api 进程据此
+     * 把错误码透出给调用方，这是 HTTP 相对 UDP 的关键差异：调用方在同步等待，
+     * 静默会让它一直等到超窗）。
+     *
      * @param string $clientId
      * @param array  $packet
      * @param string $channel
@@ -492,7 +608,7 @@ class ActionRunner
      */
     protected static function emitError($clientId, array $packet, $channel, $code, $msg = '')
     {
-        if ($channel !== ActionContext::CHANNEL_WS) {
+        if ($channel === ActionContext::CHANNEL_UDP) {
             return;
         }
 

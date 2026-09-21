@@ -9,6 +9,7 @@
  */
 
 use GatewayPush\Common\Env;
+use GatewayPush\Common\RedisKeys;
 
 $basePath = defined('BASE_PATH') ? BASE_PATH : dirname(__DIR__);
 
@@ -67,12 +68,12 @@ return [
         'max_packet_size' => Env::int('UDP_MAX_PACKET_SIZE', 8192),   // 单包上限，超出丢弃
         'queue'           => [
             'enable'  => Env::bool('UDP_QUEUE_ENABLE', true),
-            'key'     => Env::str('UDP_QUEUE_KEY', 'queue:udp:in'),
+            'key'     => Env::str('UDP_QUEUE_KEY', RedisKeys::QUEUE_UDP_IN),
             'max_len' => Env::int('UDP_QUEUE_MAX_LEN', 10000),   // 队列长度上限，溢出丢弃并告警
         ],
         'out_queue'       => [
             'enable'   => Env::bool('UDP_OUT_QUEUE_ENABLE', true),
-            'key'      => Env::str('UDP_OUT_QUEUE_KEY', 'queue:udp:out'),
+            'key'      => Env::str('UDP_OUT_QUEUE_KEY', RedisKeys::QUEUE_UDP_OUT),
             'batch'    => Env::int('UDP_OUT_QUEUE_BATCH', 200),      // 单次原子弹出条数
             'interval' => Env::float('UDP_OUT_QUEUE_INTERVAL', 0.05), // 出站消费周期（秒）
         ],

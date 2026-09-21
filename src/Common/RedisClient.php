@@ -733,7 +733,7 @@ class RedisClient
      */
     public static function healthCheck(callable $cb = null)
     {
-        return self::connection()->exists(self::key('health:probe'), function ($result, $client = null) use ($cb) {
+        return self::connection()->exists(self::key(RedisKeys::HEALTH_PROBE), function ($result, $client = null) use ($cb) {
             $ok = ($client && method_exists($client, 'error') && $client->error() !== '') ? false : true;
             if ($cb) {
                 call_user_func($cb, $ok);

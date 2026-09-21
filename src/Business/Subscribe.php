@@ -27,15 +27,10 @@ namespace GatewayPush\Business;
 
 use GatewayPush\Common\Logger;
 use GatewayPush\Common\RedisClient;
+use GatewayPush\Common\RedisKeys;
 
 class Subscribe
 {
-    /** 反向索引：主题 -> 订阅者 uid 集合 */
-    const KEY_TOPIC = 'subscribe:topic:';
-
-    /** 正向索引：uid -> 已订阅主题集合 */
-    const KEY_UID = 'subscribe:uid:';
-
     /**
      * 订阅配置
      *
@@ -95,8 +90,8 @@ class Subscribe
             return;
         }
 
-        $uidKey   = self::KEY_UID . $uid;
-        $topicKey = self::KEY_TOPIC . $topic;
+        $uidKey   = RedisKeys::subscribeUid($uid);
+        $topicKey = RedisKeys::subscribeTopic($topic);
         $max      = (int)self::$config['max_topics_per_uid'];
 
         RedisClient::sAdd($uidKey, $topic, function ($added) use ($uid, $topic, $uidKey, $topicKey, $max, $cb) {
@@ -170,9 +165,9 @@ class Subscribe
             return;
         }
 
-        RedisClient::sRem(self::KEY_UID . $uid, $topic, function ($removed) use ($uid, $topic, $cb) {
+        RedisClient::sRem(RedisKeys::subscribeUid($uid), $topic, function ($removed) use ($uid, $topic, $cb) {
             // 正向索引不存在时无需动反向索引，但仍要清理一次以防历史脏数据
-            RedisClient::sRem(self::KEY_TOPIC . $topic, $uid, function () use ($uid, $topic, $cb) {
+            RedisClient::sRem(RedisKeys::subscribeTopic($topic), $uid, function () use ($uid, $topic, $cb) {
                 Logger::info('取消订阅完成', array('uid' => $uid, 'topic' => $topic));
                 if ($cb) {
                     call_user_func($cb, true, '');
@@ -194,7 +189,7 @@ class Subscribe
      */
     public static function topicsOf($uid, callable $cb)
     {
-        RedisClient::sMembers(self::KEY_UID . (string)$uid, function ($topics) use ($cb) {
+        RedisClient::sMembers(RedisKeys::subscribeUid($uid), function ($topics) use ($cb) {
             call_user_func($cb, is_array($topics) ? array_values($topics) : array());
         });
     }
@@ -208,7 +203,7 @@ class Subscribe
      */
     public static function subscribers($topic, callable $cb)
     {
-        RedisClient::sMembers(self::KEY_TOPIC . (string)$topic, function ($uids) use ($cb) {
+        RedisClient::sMembers(RedisKeys::subscribeTopic((string)$topic), function ($uids) use ($cb) {
             call_user_func($cb, is_array($uids) ? array_values($uids) : array());
         });
     }
@@ -222,7 +217,7 @@ class Subscribe
      */
     public static function count($topic, callable $cb)
     {
-        RedisClient::sCard(self::KEY_TOPIC . (string)$topic, function ($count) use ($cb) {
+        RedisClient::sCard(RedisKeys::subscribeTopic((string)$topic), function ($count) use ($cb) {
             call_user_func($cb, is_int($count) ? $count : 0);
         });
     }

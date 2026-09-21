@@ -58,6 +58,7 @@ return [
         'path'           => $basePath . '/runtime/logs',
         'level'          => Env::str('LOG_LEVEL', 'debug'),    // debug | info | warn | error
         'rotate'         => 'daily',                           // 按天分割
+        'max_size_mb'    => Env::int('LOG_MAX_MB', 10),        // workerman.log 单文件上限（MB），0 = 不轮转
         'keep_days'      => Env::int('LOG_KEEP_DAYS', 30),     // 自动清理超过 N 天的日志文件
         'stdout'         => Env::bool('LOG_STDOUT', true),     // 同时输出到控制台
         'global_handler' => true,                              // 注册全局异常 / 错误 / 致命错误捕获
@@ -114,11 +115,12 @@ return [
 
     /* ---------------------------------------------------------------
      | 会话管理（断线重连 / 会话保持）
+     |
+     | 键名（session: / heartbeat: / uid:clients: / device:client: / online:*）
+     | 统一声明于 RedisKeys，此处不再重复定义。
      --------------------------------------------------------------- */
     'session' => [
         'ttl'           => Env::int('SESSION_TTL', 7200),          // 会话 Redis 过期时间（秒）
-        'prefix'        => 'session',                              // 键名约定，结构性
-        'online_key'    => 'online:clients',                       // 在线 client_id 集合
         'heartbeat_ttl' => Env::int('SESSION_HEARTBEAT_TTL', 90),  // 与 gateway.heartbeat.session_timeout 一致
         'restore'       => Env::bool('SESSION_RESTORE', true),     // 断线重连自动恢复历史会话
     ],
@@ -154,6 +156,12 @@ return [
         'sign_ttl'  => Env::int('API_SIGN_TTL', 300),            // 请求时间戳有效窗口（秒）
         'rate'      => Env::int('API_RATE_LIMIT', 600),          // 单 IP 每分钟请求上限，0 = 不限
         'body_max'  => Env::int('API_BODY_MAX', 65536),          // 请求体上限（字节）
+
+        // POST /action 的同步等待窗口（毫秒）。动作由业务进程经队列执行，
+        // 本进程只轮询结果，故等待窗必须**大于**动作自身的回执超时
+        // （ACTION_TIMEOUT），否则会在动作还能给出结果时先行返回 202。
+        // 超窗后不视为失败：任务仍在执行，结果可经 GET /action/{id} 补查。
+        'action_wait' => Env::int('API_ACTION_WAIT_MS', 6000),
     ],
 
     /* ---------------------------------------------------------------
@@ -170,7 +178,7 @@ return [
         'listen'    => Env::str('DASHBOARD_LISTEN', 'http://127.0.0.1:8291'),
         'name'      => 'GW-DASH',                                // 进程名，结构性
         'view_path' => $basePath . '/resources/dashboard',       // 页面模板目录，结构性
-        'refresh'   => Env::int('DASHBOARD_REFRESH', 5),         // 页面轮询间隔（秒），0 = 不自动刷新
+        'refresh'   => Env::int('DASHBOARD_REFRESH', 30),         // 页面轮询间隔（秒），0 = 不自动刷新
     ],
 
     /* ---------------------------------------------------------------
@@ -235,7 +243,6 @@ return [
         'enable'   => Env::bool('MONITOR_ENABLE', true),
         'interval' => Env::int('MONITOR_INTERVAL', 60),   // 上报周期（秒）
         'ttl'      => Env::int('MONITOR_TTL', 600),       // 指标数据保留时长（秒）
-        'key'      => 'metrics',                          // 键名约定，结构性
 
         // 结构性配置：需要采集的指标名列表
         'metrics'  => [
@@ -248,10 +255,14 @@ return [
             'udp_out_queued', 'udp_out', 'udp_out_fail',
             'conn_error', 'buffer_full', 'buffer_drain',
             // 业务动作：前四项由 ActionRunner 统一采集（与具体动作无关），
-            // 其余为各处理器内部自采，新增动作时需同步追加
+            // 其余为各处理器内部自采，新增动作时需同步追加。
+            // action_http_* 为 HTTP 通道的分通道计数 —— 既有 ws / udp 沿用上面的
+            // 聚合指标，只有 HTTP 单独计数，便于从合计值中区分调用来源。
             'action_in', 'action_ok', 'action_fail', 'action_timeout',
             'action_echo', 'action_session', 'action_report',
             'action_subscribe', 'action_unsubscribe', 'action_topics', 'action_notify',
+            'action_http_in', 'action_http_ok', 'action_http_fail', 'action_http_timeout',
+            'action_http_dequeue',
             'rate_limit_hit', 'rate_limit_ip', 'rate_limit_conn', 'rate_limit_uid', 'rate_limit_ping',
         ],
     ],

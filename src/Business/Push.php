@@ -28,6 +28,9 @@
  * 注意：离线列表按 uid 聚合（而非 client_id），因为断线重连后 client_id 必然变化，
  * 而 uid 稳定。重连补投采用「投给首个恢复的连接」语义，属至少一次投递。
  *
+ * Redis 键：本类涉及的 push:offline: / push:dedup: / queue:push:out / queue:udp:out
+ * 统一声明于 RedisKeys，此处不再定义字面量。
+ *
  * 兼容 PHP 8.1 ~ 8.5
  */
 
@@ -35,6 +38,7 @@ namespace GatewayPush\Business;
 
 use GatewayPush\Common\Logger;
 use GatewayPush\Common\RedisClient;
+use GatewayPush\Common\RedisKeys;
 use GatewayWorker\Lib\Gateway as GatewayClient;
 
 class Push
@@ -52,12 +56,7 @@ class Push
     const CHANNEL_WS  = 'ws';
     const CHANNEL_UDP = 'udp';
 
-    /* ---------------------- Redis 键 ---------------------- */
-    /** 离线消息列表前缀（List，按 uid） */
-    const KEY_OFFLINE = 'push:offline:';
-    /** 幂等去重键前缀（String） */
-    const KEY_DEDUP = 'push:dedup:';
-
+    /* --------------- client_id 前缀（非 Redis 键） --------------- */
     /** UDP client_id 前缀（与 Gateway\Bootstrap::udpClientId 约定一致） */
     const UDP_PREFIX = 'udp:';
 
@@ -83,7 +82,7 @@ class Push
      * @var array
      */
     protected static $queueConfig = array(
-        'key'     => 'queue:push:out',
+        'key'     => RedisKeys::QUEUE_PUSH_OUT,
         'batch'   => 200,
         'enable'  => true,
         'max_len' => 10000,
@@ -96,7 +95,7 @@ class Push
      */
     protected static $udpOutConfig = array(
         'enable' => true,
-        'key'    => 'queue:udp:out',
+        'key'    => RedisKeys::QUEUE_UDP_OUT,
     );
 
     /**
@@ -433,7 +432,7 @@ class Push
         // 幂等：仅在调用方提供 msg_id 且开关开启时生效
         if ($msgId !== '' && !empty(self::$config['idempotent'])) {
             RedisClient::setNxEx(
-                self::KEY_DEDUP . md5($msgId),
+                RedisKeys::pushDedup($msgId),
                 1,
                 (int)self::$config['idempotent_ttl'],
                 function ($first) use ($msgId, $execute, $target) {
@@ -664,7 +663,7 @@ class Push
             return;
         }
 
-        $key = self::KEY_OFFLINE . $uid;
+        $key = RedisKeys::pushOffline($uid);
         $ttl = (int)self::$config['offline_ttl'];
         $max = (int)self::$config['offline_max'];
 
@@ -750,7 +749,7 @@ class Push
             return;
         }
 
-        $key   = self::KEY_OFFLINE . $uid;
+        $key   = RedisKeys::pushOffline($uid);
         $batch = max(1, (int)self::$config['replay_batch']);
 
         RedisClient::popBatch($key, $batch, function ($items) use ($uid, $clientId, $cb, $batch, $isUdp) {

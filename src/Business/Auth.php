@@ -24,16 +24,11 @@ namespace GatewayPush\Business;
 
 use GatewayPush\Common\Logger;
 use GatewayPush\Common\RedisClient;
+use GatewayPush\Common\RedisKeys;
 use Random\RandomException;
 
 class Auth
 {
-    /** 撤销名单 key 前缀 */
-    const REVOKE_KEY = 'auth:revoked:';
-
-    /** 设备绑定 key 前缀 */
-    const BIND_KEY = 'auth:bind:';
-
     /**
      * 鉴权配置
      *
@@ -200,7 +195,7 @@ class Auth
      */
     public static function isRevoked($token, callable $cb)
     {
-        RedisClient::get(self::REVOKE_KEY . self::tokenFingerprint($token), function ($result, $client = null) use ($cb) {
+        RedisClient::get(RedisKeys::authRevoked(self::tokenFingerprint($token)), function ($result, $client = null) use ($cb) {
             $error = '';
             if ($client && method_exists($client, 'error')) {
                 $error = $client->error();
@@ -222,7 +217,7 @@ class Auth
     public static function revoke($token, $ttl = 0, callable $cb = null)
     {
         $ttl = $ttl > 0 ? (int)$ttl : (int)self::$config['token_ttl'];
-        RedisClient::set(self::REVOKE_KEY . self::tokenFingerprint($token), 1, $ttl, function ($result, $client = null) use ($token, $cb) {
+        RedisClient::set(RedisKeys::authRevoked(self::tokenFingerprint($token)), 1, $ttl, function ($result, $client = null) use ($token, $cb) {
             $error = $client && method_exists($client, 'error') ? $client->error() : '';
             if ($error === '') {
                 Logger::info('Token 已加入撤销名单', array('fingerprint' => self::tokenFingerprint($token)));
@@ -260,7 +255,7 @@ class Auth
             return;
         }
 
-        $key = self::BIND_KEY . $uid;
+        $key = RedisKeys::authBind($uid);
         RedisClient::get($key, function ($result, $client = null) use ($uid, $deviceId, $key, $cb) {
             $error = $client && method_exists($client, 'error') ? $client->error() : '';
             if ($error !== '') {
@@ -290,7 +285,7 @@ class Auth
      */
     public static function unbindDevice($uid, callable $cb = null)
     {
-        RedisClient::del(self::BIND_KEY . $uid, $cb);
+        RedisClient::del(RedisKeys::authBind($uid), $cb);
     }
 
     /* ---------------------------------------------------------------------

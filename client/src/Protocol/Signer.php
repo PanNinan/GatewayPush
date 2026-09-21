@@ -21,6 +21,7 @@
 namespace GatewayPush\Client\Protocol;
 
 use GatewayPush\Business\Message;
+use JsonException;
 
 final class Signer
 {
@@ -41,6 +42,7 @@ final class Signer
      *
      * @param mixed $data
      * @return string
+     * @throws JsonException
      */
     public static function canonicalize($data)
     {
@@ -55,6 +57,7 @@ final class Signer
      *
      * @param array $packet
      * @return string
+     * @throws JsonException
      */
     public static function baseString(array $packet)
     {
@@ -64,7 +67,7 @@ final class Signer
             isset($packet['ts']) ? (string)$packet['ts'] : '',
             isset($packet['device_id']) ? (string)$packet['device_id'] : '',
             isset($packet['token']) ? (string)$packet['token'] : '',
-            self::canonicalize(isset($packet['data']) ? $packet['data'] : array()),
+            self::canonicalize($packet['data'] ?? array()),
         ));
     }
 

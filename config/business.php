@@ -2,20 +2,22 @@
 /**
  * BusinessWorker 业务层配置
  *
- * 覆盖：业务进程参数、UDP 解耦队列、定时任务注册表
+ * 覆盖：业务进程参数、UDP 解耦队列、HTTP 动作队列、定时任务注册表
  *
  * 取值约定：环境相关项经 Env 读取，变量清单见 .env.example
  */
 
 use GatewayPush\Common\Env;
+use GatewayPush\Common\RedisKeys;
 
 $basePath = defined('BASE_PATH') ? BASE_PATH : dirname(__DIR__);
 
 // 定时任务周期统一从此处取值，避免与队列 / 心跳配置出现两套真源
-$udpQueueInterval   = Env::float('UDP_QUEUE_INTERVAL', 0.05);
-$pushQueueInterval  = Env::float('PUSH_QUEUE_INTERVAL', 0.05);
-$heartbeatInterval  = Env::int('HB_CHECK_INTERVAL', 10);
-$monitorInterval    = Env::int('MONITOR_INTERVAL', 60);
+$udpQueueInterval    = Env::float('UDP_QUEUE_INTERVAL', 0.05);
+$pushQueueInterval   = Env::float('PUSH_QUEUE_INTERVAL', 0.05);
+$actionQueueInterval = Env::float('ACTION_QUEUE_INTERVAL', 0.02);
+$heartbeatInterval   = Env::int('HB_CHECK_INTERVAL', 10);
+$monitorInterval     = Env::int('MONITOR_INTERVAL', 60);
 
 return [
 
@@ -47,7 +49,7 @@ return [
      --------------------------------------------------------------- */
     'udp_queue' => [
         'enable'   => Env::bool('UDP_QUEUE_ENABLE', true),
-        'key'      => Env::str('UDP_QUEUE_KEY', 'queue:udp:in'),
+        'key'      => Env::str('UDP_QUEUE_KEY', RedisKeys::QUEUE_UDP_IN),
         'batch'    => Env::int('UDP_QUEUE_BATCH', 100),      // 单次批量消费条数
         'interval' => $udpQueueInterval,                     // 消费周期（秒）
         'max_len'  => Env::int('UDP_QUEUE_MAX_LEN', 10000),
@@ -63,10 +65,33 @@ return [
      --------------------------------------------------------------- */
     'push_queue' => [
         'enable'   => Env::bool('PUSH_QUEUE_ENABLE', true),
-        'key'      => Env::str('PUSH_QUEUE_KEY', 'queue:push:out'),
+        'key'      => Env::str('PUSH_QUEUE_KEY', RedisKeys::QUEUE_PUSH_OUT),
         'batch'    => Env::int('PUSH_QUEUE_BATCH', 200),
         'interval' => $pushQueueInterval,
         'max_len'  => Env::int('PUSH_QUEUE_MAX_LEN', 10000),  // 积压告警阈值
+    ],
+
+    /* ---------------------------------------------------------------
+     | HTTP 动作队列（Api 进程 -> 业务进程）
+     |
+     | 与 udp_queue 同构：投递方只做验签与参数校验，真正的动作执行统一收敛到
+     | 业务进程的 ActionRunner 单一路径，避免出现「第二个执行者」——那会让
+     | 指标统计、限流配额、幂等与 Session 写入各自多出一处来源。
+     |
+     | result_ttl 同时供 ActionReply 使用：动作回执写入
+     | action:result:{request_id} 并保留该时长，供 Api 取回或事后补查。
+     |
+     | interval 默认 0.02s（小于 udp_queue 的 0.05s）：HTTP 调用方在同步等待，
+     | 消费周期直接计入响应延迟。0.02s 仍在 workerman 定时器精度范围内
+     | （实际最小约 10ms），单批 100 条的处理能力远超 HTTP 接口自身的限流额度。
+     --------------------------------------------------------------- */
+    'action_queue' => [
+        'enable'     => Env::bool('ACTION_QUEUE_ENABLE', true),
+        'key'        => Env::str('ACTION_QUEUE_KEY', RedisKeys::QUEUE_ACTION_IN),
+        'batch'      => Env::int('ACTION_QUEUE_BATCH', 100),
+        'interval'   => $actionQueueInterval,
+        'max_len'    => Env::int('ACTION_QUEUE_MAX_LEN', 10000),   // 积压告警 / 拒绝阈值
+        'result_ttl' => Env::int('ACTION_RESULT_TTL', 60),
     ],
 
     /* ---------------------------------------------------------------
@@ -92,6 +117,15 @@ return [
             'interval'   => $pushQueueInterval,
             'class'      => 'GatewayPush\Business\Bootstrap',
             'method'     => 'consumePushQueue',
+            'persistent' => true,
+            'timeout'    => 3,
+            'scope'      => 'first',
+        ],
+        [
+            'name'       => 'action-queue-consume',
+            'interval'   => $actionQueueInterval,
+            'class'      => 'GatewayPush\Business\Bootstrap',
+            'method'     => 'consumeActionQueue',
             'persistent' => true,
             'timeout'    => 3,
             'scope'      => 'first',

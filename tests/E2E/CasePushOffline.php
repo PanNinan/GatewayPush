@@ -123,7 +123,11 @@ final class CasePushOffline
         $kAttempt  = 0;
 
         // 阶段二：UDP 客户端上报 -> 会话重建 -> 业务进程补投（经出站队列 sendto 回客户端）
-        $sendReportK = function () use ($h, $udpK, $c, &$kAttempt, &$kReported) {
+        //
+        // 必须按引用捕获自身（&$sendReportK）：闭包体在**赋值之前**求值，
+        // 若外层 use 列表不含它，内层闭包捕获到的将是一个新建的 null 变量，
+        // 重传时触发 "Value of type null is not callable" 并中断整个用例。
+        $sendReportK = function () use ($h, $udpK, $c, &$kAttempt, &$kReported, &$sendReportK) {
             if ($kAttempt >= 3 || $kReported) {
                 return;
             }

@@ -29,6 +29,7 @@
  *   tests/E2E/CaseRateLimit.php  [L]  报文级限流
  *   tests/E2E/CaseSubscribe.php  [O]  订阅与广播闭环
  *   tests/E2E/CaseHttpApi.php    [H]  HTTP 接口（同步，事件循环前执行）
+ *   tests/E2E/CaseHttpAction.php [P]  HTTP 动作调用（同步，事件循环前执行）
  *
  * ---------------------------------------------------------------------
  * 校验用例
@@ -48,6 +49,7 @@
  *   [M] 业务动作契约：参数校验白名单 / 4006 未知动作 / 4007 参数错误
  *   [N] UDP 通道业务动作：echo 经出站队列回执；report 按声明静默不回执
  *   [O] 订阅与广播闭环：subscribe -> enqueueTopic -> push -> unsubscribe
+ *   [P] HTTP 动作调用：POST /action -> 队列 -> BusinessWorker -> 回程键 -> 响应
  *
  * 退出码：0 = 全部通过，1 = 存在失败项
  */
@@ -58,6 +60,7 @@ require BASE_PATH . '/vendor/autoload.php';
 use GatewayPush\Common\RedisClient;
 use GatewayPush\Tests\E2E\CaseActionRouting;
 use GatewayPush\Tests\E2E\CaseActionUdp;
+use GatewayPush\Tests\E2E\CaseHttpAction;
 use GatewayPush\Tests\E2E\CaseHttpApi;
 use GatewayPush\Tests\E2E\CasePushOffline;
 use GatewayPush\Tests\E2E\CasePushOnline;
@@ -71,8 +74,9 @@ use Workerman\Worker;
 $harness = Harness::boot($argv);
 $harness->printHeader();
 
-// 事件循环启动前同步执行；api 角色未启动时用例 H 会在汇总中标记为 SKIP
+// 事件循环启动前同步执行；api 角色未启动时用例 H / P 会在汇总中标记为失败
 CaseHttpApi::run($harness);
+CaseHttpAction::run($harness);
 
 $worker = new Worker();
 

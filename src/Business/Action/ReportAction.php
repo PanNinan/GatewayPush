@@ -23,12 +23,10 @@ use GatewayPush\Business\Message;
 use GatewayPush\Business\Monitor;
 use GatewayPush\Common\Logger;
 use GatewayPush\Common\RedisClient;
+use GatewayPush\Common\RedisKeys;
 
 class ReportAction implements ActionInterface
 {
-    /** 上报统计键前缀 */
-    const KEY_PREFIX = 'action:report:';
-
     /**
      * @param ActionContext $ctx
      * @return void
@@ -40,7 +38,7 @@ class ReportAction implements ActionInterface
         $topic = (string)$ctx->param('topic');
         $count = (int)$ctx->param('count', 1);
         $ttl   = (int)$ctx->option('ttl', 86400);
-        $key   = self::KEY_PREFIX . $topic;
+        $key   = RedisKeys::actionReport($topic);
 
         RedisClient::hIncrBy($key, 'count', $count, function ($total) use ($ctx, $key, $topic, $count, $ttl) {
             if (!is_int($total)) {

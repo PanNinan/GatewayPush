@@ -6,8 +6,8 @@
  *   1. 身份与来源：clientId / uid / deviceId / protocol / channel
  *   2. 已校验参数：params() 返回经 ParamValidator 归一化后的参数，
  *      处理器无需再做类型判断与默认值填充
- *   3. 统一回执：reply() / replyError()，通道差异（WS 直发 / UDP 出站队列）
- *      由构造时注入的 sender 抹平，处理器无感知
+ *   3. 统一回执：reply() / replyError()，通道差异（WS 直发 / UDP 出站队列 /
+ *      HTTP 结果回程键）由构造时注入的 sender 抹平，处理器无感知
  *
  * ---------------------------------------------------------------------
  * 回执抑制语义（重要）
@@ -27,8 +27,16 @@ namespace GatewayPush\Business;
 class ActionContext
 {
     /* ---------------------- 通道 ---------------------- */
-    const CHANNEL_WS  = 'ws';
-    const CHANNEL_UDP = 'udp';
+    const CHANNEL_WS   = 'ws';
+    const CHANNEL_UDP  = 'udp';
+    /**
+     * HTTP 通道：由 Api 进程经动作队列投递而来，clientId 形如 http:{request_id}。
+     *
+     * 与前两者的本质差异：调用方是**同步等待的外部系统**，因此回执不是
+     * 「往某个连接方向下发」，而是写回 action:result:{request_id} 供 Api 取回
+     * （见 ActionReply）。
+     */
+    const CHANNEL_HTTP = 'http';
 
     /* ---------------------- 回执方式 ---------------------- */
     const REPLY_SYNC = 'sync';   // 处理结果下发客户端
@@ -77,14 +85,14 @@ class ActionContext
     protected $deviceId;
 
     /**
-     * 协议类型（ws / udp）
+     * 协议类型（ws / udp / http）
      *
      * @var string
      */
     protected $protocol;
 
     /**
-     * 来源通道（ws / udp）
+     * 来源通道（ws / udp / http）
      *
      * @var string
      */
@@ -130,7 +138,7 @@ class ActionContext
      * @param array    $packet    原始报文
      * @param array    $params    已校验参数
      * @param array    $identity  ['client_id','uid','device_id','protocol']
-     * @param string   $channel   ws | udp
+     * @param string   $channel   ws | udp | http
      * @param string   $replyMode sync | none
      * @param callable $sender    function (array $packet): void
      * @param array    $options   动作私有配置

@@ -270,7 +270,7 @@ class RateLimiter
         }
 
         return array(
-            'key'   => 'rl:' . $dim . ':' . md5((string)$id),
+            'key'   => RedisKeys::rateBucket($dim, $id),
             'rate'  => $spec['rate'],
             'burst' => $spec['burst'],
         );
