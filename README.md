@@ -193,7 +193,7 @@ GatewayWorker/
 │   └── README.md                      客户端使用说明与里程碑
 ├── tests/
 │   ├── E2E/                          端到端用例（Harness + 10 个 Case 模块）
-│   ├── Unit/                         单元测试（7 个纯函数/零 IO 组件）
+│   ├── Unit/                         单元测试（9 个纯函数/零 IO 组件）
 │   ├── Api/                          HTTP 侧独立脚本：http_demo.php（调用示例）/ api_sign_check.js（验签断言）
 │   ├── bootstrap.php
 │   └── e2e_check.php                 e2e 入口
@@ -1925,7 +1925,7 @@ class OrderQueryAction implements ActionInterface
 
 ```bash
 composer analyse        # PHPStan（level 5，baseline 冻结 11 条存量告警）
-composer test           # PHPUnit（350 tests / 1013 assertions；含 client/tests/Unit）
+composer test           # PHPUnit（397 tests / 1119 assertions；含 client/tests/Unit）
 composer test:e2e       # 端到端自检（16 个用例）
 composer test:client-e2e # 客户端 SDK 端到端对齐（A~O 共 15 个用例，需五角色 + Redis）
 ```
@@ -2019,7 +2019,7 @@ php tests/e2e_check.php <uid> [device_id] [timeout]
 
 ```bash
 composer test
-# OK (350 tests, 1013 assertions)
+# OK (397 tests, 1119 assertions)
 ```
 
 **只测「纯函数 / 零 IO」组件**：
@@ -2033,6 +2033,7 @@ composer test
 | `ActionRunner`   | 声明层（装载 / 归一化 / 声明查询 / HTTP 白名单 / 前缀表通道判定）     |
 | `ActionReply`    | `clientId` ↔ `request_id` 双向转换、键空间校验、TTL 下界保护 |
 | `ActionContext`  | 回执抑制语义                                        |
+| `RedisKeys`      | 键名金标（拦截误改）、前缀↔完整键分隔符约定、队列键唯一性、动态后缀编码方式        |
 
 > **未覆盖**：`ActionRunner::run()`、`RateLimiter::acquire()`、全部 Redis 路径 ——  
 > 它们依赖 workerman 生命周期与异步回调，mock 成本过高（静态类 + 回调），由 e2e 覆盖。
