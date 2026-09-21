@@ -204,6 +204,60 @@ function Get-ListenEndpoint {
     return $null
 }
 
+# 角色启用状态（角色 -> @{ Enabled; Env }）
+#
+# 真值只能问 PHP：.env < .env.{env} < .env.local < .env.{env}.local < 真实环境变量的
+# 叠加语义只有 Env 类能正确还原，脚本自行解析 .env 必然与之漂移（本脚本读 .env 取监听
+# 地址是「展示用」，而启用状态会直接决定启不启动某个进程，错不得）。
+#
+# 返回 $null 表示「问不到」，调用方按「全部启用」处理 —— 与加入本特性之前的行为一致，
+# 不会因为该命令不可用而拒绝启动。
+function Get-RoleStates {
+    if ($script:RoleStatesReady) { return $script:RoleStates }
+
+    $script:RoleStatesReady = $true
+    $script:RoleStates      = $null
+
+    # 原生程序写到 stderr 的内容在 Stop 偏好下会被包装成错误记录，这里只需要 stdout
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $raw = ''
+    try {
+        $raw = (@(& $script:PhpExe (Join-Path $Root 'start.php') 'roles' 2>$null) -join "`n").Trim()
+    } catch {
+        $raw = ''
+    } finally {
+        $ErrorActionPreference = $prev
+    }
+
+    if ($raw -eq '') {
+        Write-Warn2 '未取到角色启用状态，按「全部启用」处理。'
+        return $null
+    }
+
+    # PowerShell 5.1 的 ConvertFrom-Json 对非法输入抛的是非终止性错误，
+    # 仅靠 try/catch 拿不到 $null 之外的信息，故解析结果还要判空
+    $data = $null
+    try { $data = $raw | ConvertFrom-Json } catch { $data = $null }
+    if ($null -eq $data -or $null -eq $data.roles) {
+        Write-Warn2 '角色启用状态解析失败（start.php 版本可能过旧），按「全部启用」处理。'
+        return $null
+    }
+
+    $map = @{}
+    foreach ($item in @($data.roles)) {
+        if ($null -eq $item -or -not $item.role) { continue }
+        $map[[string]$item.role] = [pscustomobject]@{
+            Enabled = [bool]$item.enabled
+            Env     = [string]$item.env
+        }
+    }
+    if ($map.Count -eq 0) { return $null }
+
+    $script:RoleStates = $map
+    return $map
+}
+
 # ---------------------------------------------------------------------------
 # 4. 前置检查
 # ---------------------------------------------------------------------------
@@ -554,12 +608,31 @@ function Invoke-Start {
         return 1
     }
 
+    # 被配置关闭的角色必须在**等待就绪之前**就摘出去：这类角色的进程会以
+    # `@@@no worker inited@@@` 立即退出（workerman 在 Windows 单 Worker 模式下的行为），
+    # 若照常进 Wait-RoleReady，只会白等满 25s 就绪超时，再把「配置关闭」误报成
+    # 「启动失败」，最后以非 0 退出码收尾 —— 一个开关就让整条启动链失去意义。
+    $states   = Get-RoleStates
+    $pending  = @()
+    $disabled = @()
+    foreach ($role in $roles) {
+        if ($null -ne $states -and $states.ContainsKey($role) -and -not $states[$role].Enabled) {
+            $disabled += $role
+        } else {
+            $pending += $role
+        }
+    }
+
     Write-Host ''
-    Write-Step ('启动 ' + $roles.Count + ' 个角色（每个角色一个窗口，按依赖顺序）')
+    Write-Step ('启动 ' + $pending.Count + ' 个角色（每个角色一个窗口，按依赖顺序）')
+    foreach ($role in $disabled) {
+        Write-Host ('  ' + (Format-Pad $role $COL_ROLE) + '已禁用（' + $states[$role].Env +
+                    '=false），跳过') -ForegroundColor DarkGray
+    }
     Write-Host ''
 
     $failed = @()
-    foreach ($role in $roles) {
+    foreach ($role in $pending) {
         # 不用 "\r" 原地刷新进度：输出一旦被重定向到管道/文件，\r 不会覆盖而是拼接，
         # 反而把同一行重复打印出来。这里只打印最终结果，管道与终端下表现一致。
         $r = Start-OneRole -Role $role
@@ -582,8 +655,24 @@ function Invoke-Start {
                     'bin\start.ps1 log error')
         return 1
     }
-    Write-Ok ('全部 ' + $roles.Count + ' 个角色已就绪')
-    Write-Host ('       面板地址：' + (Get-EnvValue 'DASHBOARD_LISTEN'))
+
+    # 全部被关闭：不是「启动成功但无事可做」，而是「请求与配置矛盾」，必须报错 ——
+    # 静默返回 0 会让编排（CI / 上层脚本）以为服务已经起来了
+    if ($pending.Count -eq 0) {
+        Write-Err '没有任何角色需要启动：所请求的角色已全部被配置关闭。'
+        Write-Host ('       相关开关（.env）：' +
+                    (($disabled | ForEach-Object { $states[$_].Env }) -join ' / '))
+        return 1
+    }
+
+    $summary = '全部 ' + $pending.Count + ' 个角色已就绪'
+    if ($disabled.Count -gt 0) {
+        $summary = $summary + '（' + $disabled.Count + ' 个角色已禁用，未启动）'
+    }
+    Write-Ok $summary
+    if ($disabled -notcontains 'dashboard') {
+        Write-Host ('       面板地址：' + (Get-EnvValue 'DASHBOARD_LISTEN'))
+    }
     Write-Host ''
 
     # 各角色的启动横幅打印在各自的新窗口里，本窗口收不到；这里补一份汇总到主窗口
@@ -639,25 +728,38 @@ function Invoke-Reload {
 
 function Invoke-Status {
     Write-TableHead
+    $states = Get-RoleStates
     $running = 0
+    $disabledCount = 0
     foreach ($role in $RoleOrder) {
         $ep = Get-ListenEndpoint $role
         $addr = '-'
         if ($null -ne $ep) { $addr = $ep.Raw }
 
         $ids = Get-RoleIds $role
+        $state = $null
+        if ($null -ne $states -and $states.ContainsKey($role)) { $state = $states[$role] }
+
         if ($ids.Count -gt 0) {
             $pid0 = $ids[0]
             Write-TableRow $role '运行中' $addr ([string]$pid0) `
                            (Get-ProcessMem $pid0) (Get-ProcessUptime $pid0) $RoleMeta[$role].Desc
             $running++
+        } elseif ($null -ne $state -and -not $state.Enabled) {
+            # 「按配置就不会启动」与「启动过又崩了 / 被人为停掉」是两回事，
+            # 状态列必须能分辨 —— 否则排查时会把配置关闭误读成进程异常
+            $disabledCount++
+            Write-TableRow $role '已禁用' $addr '-' '-' '-' `
+                           ($RoleMeta[$role].Desc + '  关闭开关：' + $state.Env)
         } else {
             Write-TableRow $role '已停止' $addr '-' '-' '-' $RoleMeta[$role].Desc
         }
     }
     Write-Host ''
     Write-Host ('本机 PID：' + $PID + '   项目目录：' + $Root)
-    Write-Host ('运行中 ' + $running + ' / ' + $RoleOrder.Count + ' 个角色')
+    $tail = '运行中 ' + $running + ' / ' + $RoleOrder.Count + ' 个角色'
+    if ($disabledCount -gt 0) { $tail = $tail + '（另有 ' + $disabledCount + ' 个已禁用）' }
+    Write-Host $tail
     return 0
 }
 
@@ -714,11 +816,14 @@ GatewayWorker 实时数据推送服务 —— Windows 服务管理脚本
 
 命令：
   start [core|角色]   启动。不带参数 = 全部 6 个角色，每个角色独立窗口；
-                      core = 除监控面板外的 5 个核心角色；也可只启动单个角色
+                      core = 除监控面板外的 5 个核心角色；也可只启动单个角色。
+                      被 .env 关闭的角色（如 WS_ENABLE=false）跳过并说明原因，
+                      不阻塞后续角色的启动
   stop  [all|角色]    停止。不带参数 = 全部
   restart [all|角色]  重启（先停后启）
   reload              重启业务相关角色（Windows 无 master，做不到真正平滑）
-  status              进程状态一览（PID / 内存 / 运行时长 / 监听地址）
+  status              进程状态一览（PID / 内存 / 运行时长 / 监听地址）；
+                      被配置关闭的角色标为「已禁用」并列出开关名
   log [-f] [通道] [行数]
                       查看日志。通道：workerman(默认) / stdout / error(跨角色错误汇总)
                       / 角色名(register gateway udp business api dashboard all app)

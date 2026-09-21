@@ -528,6 +528,48 @@ bin\start.bat push uid 1001 "{\"title\":\"hello\"}" msg-1
 | `start`  | 守护模式 `-d`                                      | 每个角色一个独立窗口，`cmd /k` 保持窗口不关闭                                             |
 | 端口探测     | `kill -0` / 直接判断                               | `Test-PortListening` + 就绪轮询                                             |
 
+#### 被配置关闭的角色会被自动跳过
+
+`.env` 里把某个角色对应的开关设为 `false`（如 `WS_ENABLE=false`）后，脚本会在**进入就绪
+轮询之前**识别并跳过它，其余角色照常启动，退出码仍为 0：
+
+```
+==> 启动 5 个角色（每个角色一个窗口，按依赖顺序）
+  gateway     已禁用（WS_ENABLE=false），跳过
+
+  register    已在运行（PID 37772）
+  udp         已在运行（PID 2472）
+  business    已在运行（PID 38828）
+  api         已在运行（PID 32652）
+  dashboard   已在运行（PID 30892）
+
+[OK]    全部 5 个角色已就绪（1 个角色已禁用，未启动）
+```
+
+不加这层过滤会怎样：被关闭角色的进程会立刻以 `@@@no worker inited@@@` 退出（workerman
+在 Windows 单 Worker 模式下的行为），而脚本照常进入就绪轮询 → 白等满 25s 就绪超时 →
+把「配置关闭」误报成「启动失败」 → 最终以非 0 退出码收尾。一个开关就能让整条启动链失效。
+
+角色级开关与角色的对应关系：
+
+| 角色级开关              | 对应角色      | 关闭后的后果                                        |
+| ------------------ | --------- | --------------------------------------------- |
+| `REGISTER_ENABLE`  | register  | 无注册中心，其余角色无法完成地址发现（集群部署时才应关闭）                  |
+| `WS_ENABLE`        | gateway   | WebSocket 长连接不可用                              |
+| `UDP_ENABLE`       | udp       | UDP 上报 / 推送不可用                                |
+| `API_ENABLE`       | api       | HTTP 接口与动作调用不可用                               |
+| `DASHBOARD_ENABLE` | dashboard | 监控面板不可用（面板本身就是可选组件）                           |
+
+`business` 没有独立开关 —— 它是消息处理的唯一载体，关闭它等于服务整体不可用。
+
+启用状态由 `php start.php roles` 提供，脚本**不自行解析 `.env`**：  
+`.env < .env.{APP_ENV} < .env.local < 真实环境变量` 的叠加语义只有 `Env` 类能还原，  
+脚本再实现一遍必然与之漂移（脚本读 `.env` 取监听地址属于「展示用」，而启用状态会直接  
+决定启不启动某个进程，错不得）。
+
+`status` 会把这类角色标为「已禁用」并列出开关名，与「已停止」（进程曾存在、当前不在）  
+区分开 —— 否则排查时会把配置关闭误读成进程异常。
+
 ### 6.4 `php start.php` 内置命令
 
 这些命令由 `start.php` 自身实现，不经 workerman：
@@ -537,6 +579,7 @@ bin\start.bat push uid 1001 "{\"title\":\"hello\"}" msg-1
 | `help`     | `php start.php help`                                                                       | 打印用法（等价 `-h` / `--help`）                    |
 | `check`    | `php start.php check`                                                                      | **仅执行环境自检**，不启动服务。退出码 0/1                   |
 | `info`     | `php start.php info [角色列表]`                                                                | **打印启动信息**：环境 / 框架版本 / 服务清单（含端口探测）。只读，不启动服务 |
+| `roles`    | `php start.php roles`                                                                      | 输出各角色的启用清单（JSON），供管理脚本判断哪些角色被配置关闭。只读，不启动服务 |
 | `env:init` | `php start.php env:init`                                                                   | 生成 `.env`，自动注入随机密钥                          |
 | `token`    | `php start.php token <uid> [device_id] [ttl]`                                              | 生成调试用 Token                                 |
 | `push`     | `php start.php push <uid\|device\|client> <target> [payload-json] [msg_id] [offline_mode]` | 提交一条定向推送任务                                  |
@@ -1952,7 +1995,7 @@ class OrderQueryAction implements ActionInterface
 
 ```bash
 composer analyse        # PHPStan（level 5，baseline 冻结 11 条存量告警）
-composer test           # PHPUnit（397 tests / 1119 assertions；含 client/tests/Unit）
+composer test           # PHPUnit（429 tests / 1210 assertions；含 client/tests/Unit）
 composer test:e2e       # 端到端自检（16 个用例）
 composer test:client-e2e # 客户端 SDK 端到端对齐（A~O 共 15 个用例，需五角色 + Redis）
 ```
@@ -2046,7 +2089,7 @@ php tests/e2e_check.php <uid> [device_id] [timeout]
 
 ```bash
 composer test
-# OK (397 tests, 1119 assertions)
+# OK (429 tests, 1210 assertions)
 ```
 
 **只测「纯函数 / 零 IO」组件**：
@@ -2061,6 +2104,7 @@ composer test
 | `ActionReply`    | `clientId` ↔ `request_id` 双向转换、键空间校验、TTL 下界保护 |
 | `ActionContext`  | 回执抑制语义                                        |
 | `RedisKeys`      | 键名金标（拦截误改）、前缀↔完整键分隔符约定、队列键唯一性、动态后缀编码方式        |
+| `RoleCatalog`    | `roles` 命令契约（角色顺序 / `enabled` / `env` 字段）、真实环境变量覆盖语义、开关名与 `config` 双向一致、启动脚本的过滤点 |
 
 > **未覆盖**：`ActionRunner::run()`、`RateLimiter::acquire()`、全部 Redis 路径 ——  
 > 它们依赖 workerman 生命周期与异步回调，mock 成本过高（静态类 + 回调），由 e2e 覆盖。

@@ -179,6 +179,18 @@ if ($command === 'info') {
     exit(0);
 }
 
+if ($command === 'roles') {
+    // 机器可读的角色启用清单，供管理脚本消费：bin\start.ps1 据此**在启动前**跳过被
+    // 配置关闭的角色 —— 否则各角色独立窗口的编排会白等一轮就绪超时（25s），并把
+    // 「配置关闭」误报成「启动失败」，最终以非 0 退出码收尾。
+    //
+    // 真值必须取自 PHP 侧配置而非脚本自行解析 .env：.env < .env.{env} < .env.local
+    // < .env.{env}.local < 真实环境变量的叠加语义只有 Env 类能正确还原，脚本再实现
+    // 一遍必然漂移。输出格式即契约，消费方读取 role / enabled / env 三个字段。
+    echo commandRoles($gatewayConfig, $businessConfig, $appConfig) . "\n";
+    exit(0);
+}
+
 /* ---------------------------------------------------------------------
  | 6. 环境自检（所有 workerman 命令前强制执行）
  --------------------------------------------------------------------- */
@@ -735,59 +747,14 @@ function startupBanner(array $appConfig, array $gatewayConfig, array $businessCo
     $isLinux  = DIRECTORY_SEPARATOR === '/';
     $basePath = defined('BASE_PATH') ? BASE_PATH : dirname(__DIR__);
 
-    // 进程数必须与各 Bootstrap 的 resolveCount() 口径一致：Windows 下 workerman
-    // 单启动文件只允许 1 个 Worker 实例，会强制降级为 1。若直接展示 .env 的配置值，
-    // 横幅会与真实进程数不符 —— 这类"展示值不等于实际值"正是最误导人的地方。
-    $count = function ($configured) use ($isLinux) {
-        return $isLinux ? max(1, (int)$configured) : 1;
-    };
-
-    $registerListen = 'text://' . $gatewayConfig['register']['listen'];
-
-    $services = array(
-        'register' => array(
-            'name'   => $gatewayConfig['register']['name'],
-            'listen' => $registerListen,
-            'probe'  => $registerListen,
-            'count'  => 1,                                     // 注册中心必须单进程
-            'enable' => !empty($gatewayConfig['register']['enable']),
-        ),
-        'gateway' => array(
-            'name'   => $gatewayConfig['websocket']['name'],
-            'listen' => $gatewayConfig['websocket']['listen']
-                . (!empty($gatewayConfig['websocket']['ssl']['enable']) ? '  (WSS)' : ''),
-            'probe'  => $gatewayConfig['websocket']['listen'],
-            'count'  => $count($gatewayConfig['websocket']['count']),
-            'enable' => !empty($gatewayConfig['websocket']['enable']),
-        ),
-        'udp' => array(
-            'name'   => $gatewayConfig['udp']['name'],
-            'listen' => $gatewayConfig['udp']['listen'],
-            'probe'  => $gatewayConfig['udp']['listen'],
-            'count'  => $count($gatewayConfig['udp']['count']),
-            'enable' => !empty($gatewayConfig['udp']['enable']),
-        ),
-        'business' => array(
-            'name'   => $businessConfig['worker']['name'],
-            'listen' => '-（注册中心 ' . $businessConfig['register_address'] . '）',
-            'probe'  => '',                                    // 不监听端口，无法探测
-            'count'  => $count($businessConfig['worker']['count']),
-            'enable' => true,
-        ),
-        'api' => array(
-            'name'   => $appConfig['api']['name'],
-            'listen' => $appConfig['api']['listen'],
-            'probe'  => $appConfig['api']['listen'],
-            'count'  => 1,                                     // 接口层无状态，单进程
-            'enable' => !empty($appConfig['api']['enable']),
-        ),
-        'dashboard' => array(
-            'name'   => $appConfig['dashboard']['name'],
-            'listen' => $appConfig['dashboard']['listen'],
-            'probe'  => $appConfig['dashboard']['listen'],
-            'count'  => 1,
-            'enable' => !empty($appConfig['dashboard']['enable']),
-        ),
+    // 角色清单（角色 -> 进程名 / 监听 / 进程数 / 启用开关）的唯一真源：
+    // 与 roles 命令、Windows 管理脚本共用同一份，避免角色名与开关名在多处各写一遍。
+    // 进程数口径、business 无独立开关等约定见 RoleCatalog 头部注释。
+    $services = \GatewayPush\Common\RoleCatalog::build(
+        $gatewayConfig,
+        $businessConfig,
+        $appConfig,
+        $isLinux
     );
 
     // 项目内路径显示为相对形式，避免横幅里反复出现本机绝对路径
@@ -875,6 +842,41 @@ function startupBanner(array $appConfig, array $gatewayConfig, array $businessCo
     $lines[] = '';
 
     return implode("\n", $lines);
+}
+
+/**
+ * 角色启用清单（JSON）
+ *
+ * 输出契约（roles 命令的对外格式，消费方按字段名读取，不解析人读文案）：
+ *   {"roles":[{"role":"register","enabled":true,"env":"REGISTER_ENABLE"}, ...]}
+ *
+ * env 为「关闭该角色的环境变量键名」，业务进程没有独立开关故为空串 ——
+ * 该字段仅供消费方在提示语中引用，真值判断一律以 enabled 为准。
+ *
+ * @param array $gatewayConfig
+ * @param array $businessConfig
+ * @param array $appConfig
+ * @return string 合法 JSON；极端编码失败时退化为空清单而非非法输出
+ */
+function commandRoles(array $gatewayConfig, array $businessConfig, array $appConfig)
+{
+    $items = array();
+    foreach (\GatewayPush\Common\RoleCatalog::build(
+        $gatewayConfig,
+        $businessConfig,
+        $appConfig,
+        DIRECTORY_SEPARATOR === '/'
+    ) as $role => $service) {
+        $items[] = array(
+            'role'    => $role,
+            'enabled' => !empty($service['enable']),
+            'env'     => (string)$service['env'],
+        );
+    }
+
+    $json = json_encode(array('roles' => $items), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+    return is_string($json) ? $json : '{"roles":[]}';
 }
 
 /**
@@ -1158,6 +1160,7 @@ function usageText()
     $text[]  = '  check         仅执行环境自检';
     $text[]  = '  info          打印启动信息：环境 / 框架版本 / 服务清单（含端口探测）';
     $text[]  = '                可选参数为角色列表，例：php start.php info gateway,udp';
+    $text[]  = '  roles         输出各角色的启用清单（JSON），供管理脚本判断哪些角色被配置关闭';
     $text[]  = '  env:init      生成 .env 配置（不存在则从模板创建并注入随机密钥）';
     $text[]  = '  token <uid> [device_id] [ttl]   生成调试用 Token';
     $text[]  = '  push <uid|device|client> <target> [payload-json] [msg_id] [offline_mode]';
