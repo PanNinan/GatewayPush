@@ -43,14 +43,14 @@ class Router
     /**
      * 一级路由表：cmd => callable
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $commands = [];
 
     /**
      * 二级路由表：action => callable
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $actions = [];
 
@@ -127,7 +127,7 @@ class Router
     /**
      * 已注册的指令列表
      *
-     * @return array
+     * @return list<string>
      */
     public static function commands()
     {
@@ -137,7 +137,7 @@ class Router
     /**
      * 已注册的业务动作列表
      *
-     * @return array
+     * @return list<string>
      */
     public static function actions()
     {

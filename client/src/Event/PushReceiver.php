@@ -74,7 +74,7 @@ final class PushReceiver
     /**
      * 处理一条推送报文（SessionManager 分发入口）
      *
-     * @param array $packet
+     * @param array<string, mixed> $packet
      *
      * @return void
      */

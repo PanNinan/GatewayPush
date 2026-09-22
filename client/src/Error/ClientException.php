@@ -23,15 +23,15 @@ class ClientException extends \RuntimeException
     /**
      * 触发异常的原始报文（本地失败时为空数组）
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected $packet;
 
     /**
-     * @param int             $code     错误码（报文码或客户端本地码）
-     * @param string          $message  错误描述
-     * @param array           $packet   原始报文
-     * @param null|\Throwable $previous 上游异常
+     * @param int                  $code     错误码（报文码或客户端本地码）
+     * @param string               $message  错误描述
+     * @param array<string, mixed> $packet   原始报文
+     * @param null|\Throwable      $previous 上游异常
      */
     public function __construct($code, $message, array $packet = [], ?\Throwable $previous = null)
     {
@@ -42,7 +42,7 @@ class ClientException extends \RuntimeException
     /**
      * 触发异常的原始报文
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public function packet()
     {
@@ -56,7 +56,7 @@ class ClientException extends \RuntimeException
      *   {"cmd":"error","seq":"1","ref":"data","data":{"code":4003,"msg":"连接未鉴权"}}
      * `data` 非数组或缺少 code 时回落为 5000（服务端内部错误）。
      *
-     * @param array $packet
+     * @param array<string, mixed> $packet
      *
      * @return self
      */

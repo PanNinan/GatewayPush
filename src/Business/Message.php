@@ -66,7 +66,7 @@ class Message
     /**
      * 错误码文案
      *
-     * @var array
+     * @var array<int, string>
      */
     protected static $codeMessages = [
         self::CODE_OK            => 'ok',
@@ -111,7 +111,7 @@ class Message
      * @param mixed  $raw
      * @param string $error 输出错误原因
      *
-     * @return null|array 校验失败返回 null
+     * @return null|array<string, mixed> 校验失败返回 null
      */
     public static function decode($raw, &$error = null)
     {
@@ -172,11 +172,11 @@ class Message
     /**
      * 构造标准报文
      *
-     * @param string $cmd
-     * @param array  $data
-     * @param array  $extra 附加/覆盖字段
+     * @param string               $cmd
+     * @param array<string, mixed> $data
+     * @param array<string, mixed> $extra 附加/覆盖字段
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public static function packet($cmd, $data = [], array $extra = [])
     {
@@ -196,10 +196,10 @@ class Message
     /**
      * 构造回执报文
      *
-     * @param string $seq
-     * @param array  $data
+     * @param string               $seq
+     * @param array<string, mixed> $data
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public static function ack($seq = '', $data = [])
     {
@@ -214,7 +214,7 @@ class Message
      * @param string $seq
      * @param string $ref  触发错误的来源指令
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public static function error($code, $msg = '', $seq = '', $ref = '')
     {
@@ -266,8 +266,8 @@ class Message
     /**
      * 生成报文签名
      *
-     * @param array  $packet
-     * @param string $secret
+     * @param array<string, mixed> $packet
+     * @param string               $secret
      *
      * @return string
      */
@@ -290,10 +290,10 @@ class Message
      *
      * 纯本地计算，无 Redis 交互，可在网关进程安全调用。
      *
-     * @param array $packet
-     * @param array $authConfig app.auth 配置
+     * @param array<string, mixed> $packet
+     * @param array<string, mixed> $authConfig app.auth 配置
      *
-     * @return array ['ok' => bool, 'code' => int, 'msg' => string]
+     * @return array<string, mixed> ['ok' => bool, 'code' => int, 'msg' => string]
      */
     public static function verify(array $packet, array $authConfig)
     {
@@ -328,7 +328,7 @@ class Message
     /**
      * 递归按键名升序排列
      *
-     * @param array $data
+     * @param array<string, mixed> $data
      *
      * @return void
      */

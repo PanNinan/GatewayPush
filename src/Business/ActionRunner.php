@@ -71,14 +71,14 @@ class ActionRunner
     /**
      * 动作声明表：action => 归一化后的声明
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $declarations = [];
 
     /**
      * 处理器实例缓存（处理器无状态，可复用）
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $instances = [];
 
@@ -98,9 +98,9 @@ class ActionRunner
      *
      * 幂等：重复调用会以最后一次为准重建声明表（便于测试与热改配置）。
      *
-     * @param array $config ['defaults' => [...], 'actions' => [...]]
+     * @param array<string, mixed> $config ['defaults' => [...], 'actions' => [...]]
      *
-     * @return array 已装载的动作名列表
+     * @return list<string> 已装载的动作名列表
      */
     public static function load(array $config)
     {
@@ -188,7 +188,7 @@ class ActionRunner
     /**
      * 已注册的动作名
      *
-     * @return array
+     * @return list<string>
      */
     public static function registered()
     {
@@ -198,7 +198,7 @@ class ActionRunner
     /**
      * 全部动作声明（供运维接口展示）
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public static function declarations()
     {
@@ -251,7 +251,7 @@ class ActionRunner
     /**
      * 已开放 HTTP 通道的动作名
      *
-     * @return array
+     * @return list<string>
      */
     public static function httpActions()
     {
@@ -270,7 +270,7 @@ class ActionRunner
      *
      * @param string $action
      *
-     * @return null|array
+     * @return null|array<string, mixed>
      */
     public static function declaration($action)
     {
@@ -289,11 +289,11 @@ class ActionRunner
      * 通道由 clientId 前缀推断，调用方无需显式传参 —— 这样
      * Bootstrap 的 WS 链路与 UDP 链路可以共用同一次调用。
      *
-     * @param string $clientId
-     * @param array  $packet   已解码报文（data.action 承载动作名）
-     * @param string $uid
-     * @param string $deviceId
-     * @param string $protocol ws | udp | http
+     * @param string               $clientId
+     * @param array<string, mixed> $packet   已解码报文（data.action 承载动作名）
+     * @param string               $uid
+     * @param string               $deviceId
+     * @param string               $protocol ws | udp | http
      *
      * @return void
      */
@@ -512,8 +512,8 @@ class ActionRunner
     /**
      * 取处理器实例（无状态，惰性创建并缓存）
      *
-     * @param string $action
-     * @param array  $decl
+     * @param string               $action
+     * @param array<string, mixed> $decl
      *
      * @return ActionInterface
      */
@@ -541,7 +541,7 @@ class ActionRunner
      *
      * @param mixed $reply
      *
-     * @return array ['ws' => .., 'udp' => .., 'http' => ..]
+     * @return array<string, mixed> ['ws' => .., 'udp' => .., 'http' => ..]
      */
     protected static function normalizeReply($reply)
     {
@@ -567,7 +567,7 @@ class ActionRunner
      *
      * @param mixed $params
      *
-     * @return array|string
+     * @return array<string, mixed>|string
      */
     protected static function normalizeParams($params)
     {
@@ -593,12 +593,12 @@ class ActionRunner
     /**
      * 执行前失败（未知动作 / 参数非法 / 身份缺失）
      *
-     * @param string $clientId
-     * @param array  $packet
-     * @param string $channel
-     * @param int    $code
-     * @param string $msg
-     * @param string $action
+     * @param string               $clientId
+     * @param array<string, mixed> $packet
+     * @param string               $channel
+     * @param int                  $code
+     * @param string               $msg
+     * @param string               $action
      *
      * @return void
      */
@@ -629,11 +629,11 @@ class ActionRunner
      * 把错误码透出给调用方，这是 HTTP 相对 UDP 的关键差异：调用方在同步等待，
      * 静默会让它一直等到超窗）。
      *
-     * @param string $clientId
-     * @param array  $packet
-     * @param string $channel
-     * @param int    $code
-     * @param string $msg
+     * @param string               $clientId
+     * @param array<string, mixed> $packet
+     * @param string               $channel
+     * @param int                  $code
+     * @param string               $msg
      *
      * @return void
      */

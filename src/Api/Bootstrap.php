@@ -101,7 +101,7 @@ class Bootstrap
     /**
      * api 配置（app.api）
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $config = [
         'enable'      => true,
@@ -118,14 +118,14 @@ class Bootstrap
     /**
      * app.php 配置（Redis 等）
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $appConfig = [];
 
     /**
      * business.php 配置（动作队列）
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $businessConfig = [];
 
@@ -141,9 +141,9 @@ class Bootstrap
     /**
      * 初始化 HTTP 接口进程
      *
-     * @param array $appConfig      config/app.php
-     * @param array $businessConfig config/business.php
-     * @param array $actionConfig   config/actions.php（用于 HTTP 白名单与超时校验）
+     * @param array<string, mixed> $appConfig      config/app.php
+     * @param array<string, mixed> $businessConfig config/business.php
+     * @param array<string, mixed> $actionConfig   config/actions.php（用于 HTTP 白名单与超时校验）
      *
      * @return void
      */
@@ -575,9 +575,9 @@ class Bootstrap
      * 先 LLEN 再 RPUSH，两步之间存在微小竞态 —— 这是准入控制的固有代价，
      * 但方向是安全的：并发下最多多放行几条，不会让队列无界增长。
      *
-     * @param string   $requestId
-     * @param array    $packet
-     * @param callable $cb        function(int $code, string $msg)  0 表示受理成功
+     * @param string               $requestId
+     * @param array<string, mixed> $packet
+     * @param callable             $cb        function(int $code, string $msg)  0 表示受理成功
      *
      * @return void
      */
@@ -737,8 +737,8 @@ class Bootstrap
      * 成功（cmd=ack）→ HTTP 200 / code 0，动作数据体置于 data.result；
      * 失败（cmd=error）→ **HTTP 200** / code 取报文内的业务码，理由见类注释。
      *
-     * @param string $requestId
-     * @param array  $packet
+     * @param string               $requestId
+     * @param array<string, mixed> $packet
      *
      * @return Response
      */
@@ -974,11 +974,11 @@ class Bootstrap
     /**
      * 构造 JSON 响应
      *
-     * @param int        $status HTTP 状态码
-     * @param int        $code   业务码
-     * @param string     $msg
-     * @param null|array $data
-     * @param null|int   $http
+     * @param int                       $status HTTP 状态码
+     * @param int                       $code   业务码
+     * @param string                    $msg
+     * @param null|array<string, mixed> $data
+     * @param null|int                  $http
      *
      * @return Response
      */

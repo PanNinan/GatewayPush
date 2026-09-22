@@ -23,7 +23,7 @@ class CommandParser
     /**
      * 解析参数（不含程序名）
      *
-     * @param array $args 形如 ['echo', '{"a":1}', '--uid=u1']
+     * @param array<int|string, mixed> $args 形如 ['echo', '{"a":1}', '--uid=u1']
      *
      * @return array{command:string, args:array<int,string>, options:array<string,mixed>}
      */
@@ -108,9 +108,9 @@ class CommandParser
     /**
      * 取字符串选项
      *
-     * @param array  $options
-     * @param string $name
-     * @param string $default
+     * @param array<string, mixed> $options
+     * @param string               $name
+     * @param string               $default
      *
      * @return string
      */
@@ -126,9 +126,9 @@ class CommandParser
     /**
      * 取浮点选项
      *
-     * @param array  $options
-     * @param string $name
-     * @param float  $default
+     * @param array<string, mixed> $options
+     * @param string               $name
+     * @param float                $default
      *
      * @return float
      */
@@ -144,8 +144,8 @@ class CommandParser
     /**
      * 取开关选项
      *
-     * @param array  $options
-     * @param string $name
+     * @param array<string, mixed> $options
+     * @param string               $name
      *
      * @return bool
      */

@@ -39,18 +39,18 @@ class ParamValidator
     /**
      * 类型白名单
      *
-     * @var array
+     * @var list<string>
      */
     protected static array $types = ['string', 'int', 'float', 'bool', 'array', 'json'];
 
     /**
      * 校验并归一化参数
      *
-     * @param array  $rules 规则数组
-     * @param array  $input 原始入参
-     * @param string $error 输出错误原因
+     * @param array<string, mixed> $rules 规则数组
+     * @param array<string, mixed> $input 原始入参
+     * @param string               $error 输出错误原因
      *
-     * @return null|array 失败返回 null
+     * @return null|array<string, mixed> 失败返回 null
      */
     public static function validate(array $rules, array $input, &$error = null)
     {
@@ -211,11 +211,11 @@ class ParamValidator
     /**
      * 范围与枚举约束
      *
-     * @param mixed  $value  已转换的值
-     * @param string $type
-     * @param array  $rule
-     * @param string $name
-     * @param string $reason
+     * @param mixed                $value  已转换的值
+     * @param string               $type
+     * @param array<string, mixed> $rule
+     * @param string               $name
+     * @param string               $reason
      *
      * @return null|mixed 失败返回 null
      */

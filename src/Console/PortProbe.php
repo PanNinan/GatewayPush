@@ -81,7 +81,7 @@ final class PortProbe
      *
      * @param string $protocol 'tcp' 或 'udp'
      *
-     * @return array 端口号 => true
+     * @return array<int|string, mixed> 端口号 => true
      */
     private static function usedPortsByNetstat($protocol)
     {

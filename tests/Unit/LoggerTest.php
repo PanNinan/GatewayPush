@@ -516,11 +516,16 @@ final class LoggerTest extends TestCase
 
     public function testTaskRunnerImplementsRunAtStart(): void
     {
-        $code = (string)file_get_contents($this->root('src/Business/Task.php'));
+        $code = str_replace("\r\n", "\n", (string)file_get_contents($this->root('src/Business/Task.php')));
 
         // 锚点带行首空白与完整条件：源码注释里同样会出现 run_at_start，
         // 只用键名搜索会命中注释，断言随之失去意义（同类假阴性此前踩过）
         // `!\s?empty` 兼容 `! empty(` 与 `!empty(` 两种排版写法。
+        //
+        // ⚠ 读入后必须先把 CRLF 归一化为 LF（上面的 str_replace）：
+        //   本仓工作区因 `core.autocrlf=true` 为 CRLF，而带 `$` 的 /m 锚点在
+        //   `... {\r\n` 上匹配不到 —— 会让断言无端失败（或让负向断言静默空转）。
+        //   同类坑在 baseline 正则上已踩过一次。
         $this->assertMatchesRegularExpression(
             '/^[ \t]*if \(!\s?empty\(\$job\[\'run_at_start\'\]\)\) \{$/m',
             $code,
@@ -539,7 +544,9 @@ final class LoggerTest extends TestCase
 
     public function testDeadLogRotateConfigIsGone(): void
     {
-        $code = (string)file_get_contents($this->root('config/app.php'));
+        // 同 testTaskRunnerImplementsRunAtStart：CRLF 会让正向锚点失败、
+        // 让下面这条**负向**锚点静默空转（测试看似通过、实则什么都没验）。
+        $code = str_replace("\r\n", "\n", (string)file_get_contents($this->root('config/app.php')));
 
         $this->assertDoesNotMatchRegularExpression(
             "/^[ \t]*'rotate'\\s*=>/m",

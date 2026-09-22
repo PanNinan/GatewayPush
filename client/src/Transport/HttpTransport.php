@@ -100,13 +100,13 @@ final class HttpTransport
     /**
      * 发起一次 HTTP 请求（一次性连接）
      *
-     * @param string   $method  GET / POST / ...
-     * @param string   $path    以 / 开头的路径（如 /push）
-     * @param string   $body    原始请求体（GET 为空串）
-     * @param array    $headers 附加请求头（键名原样使用）
-     * @param callable $cb      function (array $response): void
-     *                          $response = {status:int, body:string, json:array|null, error:string}
-     *                          error 非空表示传输失败（status=0）
+     * @param string               $method  GET / POST / ...
+     * @param string               $path    以 / 开头的路径（如 /push）
+     * @param string               $body    原始请求体（GET 为空串）
+     * @param array<string, mixed> $headers 附加请求头（键名原样使用）
+     * @param callable             $cb      function (array $response): void
+     *                                      $response = {status:int, body:string, json:array|null, error:string}
+     *                                      error 非空表示传输失败（status=0）
      *
      * @return void
      */

@@ -13,14 +13,19 @@
 #   历史事故：baseline 曾以 level 6 重新生成（362 条），而此处仍是 level 5，
 #   结果 351 条 unmatched 直接让 `composer analyse` 失败。
 #
-# 分级目标：level 5 起步。待存量收敛后再提至 6 —— level 6 会额外检查
-#   「mixed 传入非 mixed 形参」与「数组缺 value 类型」，实测 src+client 侧
-#   会从 16 条涨到 367 条，且几乎全是 missingType.iterableValue。
-#   真修需给约 60 个文件补 array<string, mixed> 这类 phpdoc；用 baseline
-#   一次性豁免 350 条则等于放弃「新代码零容忍」，故暂不提级。
+# 分级现状：**level 6**（2026-09-22 由 level 5 提升）。
+#   生产代码（src / client/src / start.php）已补齐全部 missingType.* 标注 →
+#   生产侧 0 errors，故 `phpstan-baseline.neon` 维持 9 条不动、未重生成。
+#   测试侧（tests / client/tests）的 273 条 missingType.* 冻结在
+#   `phpstan-tests-baseline.neon`，沿用既有「测试噪音单独一份」的设计。
+#   提级前的量化：level 6 全量 538 errors / 66 文件，其中 100% 是
+#   `missingType.*`（iterableValue 330 / return 167 / parameter 34 / property 7），
+#   零语义告警 —— 即 level 6 的增量只是「数组元素类型标注完整性」，不新增逻辑类检查。
 # ---------------------------------------------------------------------
 
 includes:
+    # ⚠ 下面两行在「提级并重生成测试侧 baseline」时必须临时注释掉，
+    #   否则已冻结的条目会先把错误吃掉，生成出来的 baseline 会缺条目。
     - phpstan-baseline.neon
     # 测试侧存量单独一份：只减不增，避免 tests 的噪音混进生产代码的 baseline
     - phpstan-tests-baseline.neon
@@ -31,7 +36,7 @@ includes:
     - vendor/phpstan/phpstan-phpunit/rules.neon
 
 parameters:
-    level: 5
+    level: 6
 
     paths:
         - src

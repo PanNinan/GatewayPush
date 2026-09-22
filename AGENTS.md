@@ -50,6 +50,7 @@ tests/
   Api/ Frontend/          独立校验脚本（不在 PHPUnit 套件内，需单独跑）
   Manual/                 手工验收脚本（P3/P4/P5 里程碑，需服务在线）
 docs/ postman/ resources/ 文档 / 接口集合 / 面板静态资源
+.github/workflows/ci.yml  CI：static(单一 PHP) / test(8.1~8.5 矩阵) / e2e(Redis+全角色)
 runtime/                  运行时产物：logs/ pid/ phpstan/（已 gitignore，勿放人工资产）
 ```
 
@@ -60,7 +61,7 @@ runtime/                  运行时产物：logs/ pid/ phpstan/（已 gitignore�
 ## 4. 质量门禁（改完必跑）
 
 ```bash
-composer analyse      # PHPStan L5，114 文件（含 tests）；两份 baseline 冻结存量 → 必须 0 errors
+composer analyse      # PHPStan L6，114 文件（含 tests）；两份 baseline 冻结存量 → 必须 0 errors
 composer test         # PHPUnit：467 tests / 1317 assertions
 composer lint         # phpcs 审计（注释/命名/业务红线）；只读，仅 error 影响退出码
 composer lint:self    # 两个自定义 phpcs 嗅探器自检（漂移检测 + 作用域/豁免矩阵）
@@ -82,15 +83,19 @@ php  tests/Manual/phpcs_business_rules_check.php     # phpcs 自定义嗅探器�
   `php vendor/bin/phpstan clear-result-cache --memory-limit=512M`；
   **不要用 `rm -rf runtime/phpstan`**（本机安全策略对批量删除会直接拦截）。
 - 新增告警必须修，**不得追加进任何 baseline**。两份 baseline 的分工：
-  `phpstan-baseline.neon`（生产代码，9 条）/ `phpstan-tests-baseline.neon`（测试存量，51 条目）。
+  `phpstan-baseline.neon`（生产代码，9 条）/ `phpstan-tests-baseline.neon`（测试存量，324 条目/339 条）。
 - **重构修掉真实告警后，必须同步删掉 baseline 里对应的失效条目**。失效条目不删，PHPStan 会以
   `ignore.unmatched (non-ignorable)` 报错，门禁同样变红 —— 已发生过一次（2026-09-22，7 条）。
 - **⚠ `level` 与 baseline 必须同源**：baseline 用哪个 level 生成，`phpstan.neon` 的
   `parameters.level` 就得是哪个值。不一致会触发成百上千条 `ignore.unmatched (non-ignorable)`，
   门禁直接红——已发生过一次（baseline 以 level 6 生成，而配置仍为 level 5 → 351 errors）。
   **不要用 `composer baseline` 重新生成生产代码基线**：它会连同新引入的告警一起冻结。
-- level 刻意停在 5：升到 6 会额外报 ~350 条「数组缺 value 类型」，真修要动约 60 个文件的签名，
-  塞 baseline 则等于放弃零容忍。
+- **当前 level = 6**（2026-09-22 由 5 提升）。提级前量化：level 6 全量 538 errors / 66 文件，
+  **100% 是 `missingType.*`，零语义告警**；生产侧 265 条已补 phpdoc 清零，测试侧 273 条冻结进
+  `phpstan-tests-baseline.neon`。**level 6 不新增逻辑类检查**，别指望它多抓 bug。
+- 补标注纪律：**只加 phpdoc、不加原生返回类型**（后者会改运行期行为）；默认
+  `array<string, mixed>`，`$keys`/`$members` 这类列表用 `array<int|string, mixed>`。
+  **替换既有 tag 时只替换 `array` 这一个词** —— 整段替换会丢掉 `null|`、`|string` 分支。
 - `phpstan-strict-rules` / `phpstan-phpunit` 是**显式 `includes`** 的（未装 `extension-installer`）；
   只装 composer 包不写 `includes`，规则一条都不会生效。同理 `phpstan.neon` 的 `scanFiles`
   必须列 `tools/phpcs/Sniffs/*.php` —— phpcs 的 composer.json **没有 autoload 段**，
@@ -101,6 +106,23 @@ php  tests/Manual/phpcs_business_rules_check.php     # phpcs 自定义嗅探器�
   `! empty(`→`!empty(` 这类纯排版改动会把锚点打散 —— 2026-09-22 曾因此红过 3 个用例。
   锚点应写成**容忍两种等价写法**的形式（它们锁结构，不该对排版有观点）。
   详见 `docs/代码质量工具链说明.md` §8.6。
+
+- **CI 在 `.github/workflows/ci.yml`**，三个作业按**外部依赖**划分（不按快慢）：
+  `static`（单一 PHP 8.2：`composer validate --strict` → `analyse` → `lint` → `lint:self` → `cs:check`）/
+  `test`（PHP **8.1~8.5 矩阵**，8.5 为实验性 `continue-on-error`）/
+  `e2e`（Redis 7 service + 全 6 角色：`e2e_check` → `test:client-e2e` → `api_sign_check.js` → `demo:http`）。
+  **CI 直接调上面同一套 composer script，不另写一套命令**；触发器同时挂 `main` 与 `master`
+  （默认分支是 `main`，但活跃推送在 `master`，只挂一个会永不触发）。
+- **`composer cs` 之后必须把 PHP 文件统一回 LF，再跑 `composer lint`**：`line_ending => false`
+  之下 fixer 会写出**混合行尾**（它改写的行落成 LF、未触碰的行保留 CRLF），phpcs 会因此
+  吐出上百条指向注释的假阳性（2026-09-22 实测 **155 errors**）。
+  ⚠ **不得触碰** `bin/start.bat` / `bin/start.ps1` 的 CRLF（项目硬约束）。
+- ⚠ **别把「`cs:check` 报的一堆文件」直接归因成行尾**：必须**先统一行尾、再跑 `cs:check`**，
+  剩下的才是真排版问题。2026-09-22 的 41 个里，**33 个是补标注引发 `phpdoc_align` 列对齐失配的真问题**、
+  1 个是 `escape_implicit_backslashes` 真违规、只有 7 个是行尾假象 —— 整批归因行尾会让 CI 首跑就红。
+- **改过任何 docblock 的 tag 类型（补标注 / 换类型）→ 必须跑一次 `composer cs`**：
+  `@param` 类型变长（`array` → `array<string, mixed>`）会让同组 `@param` 的列对齐必然失配。
+  两条配套纪律详见 `docs/代码质量工具链说明.md` §8.7 / §8.8。
 
 ### 4.1 风格工具分工（越界即长期噪声）
 

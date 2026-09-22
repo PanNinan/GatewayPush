@@ -49,7 +49,7 @@ class SessionManager
     /**
      * 配置（已合并默认值）
      *
-     * @var array
+     * @var array<string, mixed>
      */
     private $config;
 
@@ -80,7 +80,7 @@ class SessionManager
     /**
      * pending 请求表：seq => PendingRequest
      *
-     * @var array
+     * @var array<string, mixed>
      */
     private $pending = [];
 
@@ -150,7 +150,7 @@ class SessionManager
     private $timerDel;
 
     /**
-     * @param array                   $config    见 self::defaultConfig()
+     * @param array<string, mixed>    $config    见 self::defaultConfig()
      * @param null|TransportInterface $transport 缺省按 ws_url 构造 WsTransport
      * @param null|TokenIssuer        $issuer    缺省按 secret/token_ttl 构造
      * @param null|callable           $timerAdd  计时器创建（单测注入假计时器）
@@ -209,7 +209,7 @@ class SessionManager
     /**
      * 配置默认值
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public static function defaultConfig()
     {
@@ -306,10 +306,10 @@ class SessionManager
     /**
      * 发送业务动作请求（P2 的 Service API 将封装在本方法之上）
      *
-     * @param string        $action  动作名（须在服务端 config/actions.php 登记）
-     * @param array         $params  动作参数
-     * @param null|callable $cb      function (bool $ok, array $packet): void（完整回执报文，data 载荷在 $packet['data']）
-     * @param null|float    $timeout 覆盖全局 timeout
+     * @param string               $action  动作名（须在服务端 config/actions.php 登记）
+     * @param array<string, mixed> $params  动作参数
+     * @param null|callable        $cb      function (bool $ok, array $packet): void（完整回执报文，data 载荷在 $packet['data']）
+     * @param null|float           $timeout 覆盖全局 timeout
      *
      * @return string 本请求 seq
      *
@@ -341,8 +341,8 @@ class SessionManager
      *
      * PushReceiver 收到 push 后自动调用；业务代码一般不需要手动调用。
      *
-     * @param string $msgId 推送报文的 msg_id（即服务端 seq）
-     * @param array  $data  附加数据
+     * @param string               $msgId 推送报文的 msg_id（即服务端 seq）
+     * @param array<string, mixed> $data  附加数据
      *
      * @return bool 是否已发送（未就绪时静默跳过）
      */
@@ -439,7 +439,7 @@ class SessionManager
     /**
      * 运行时快照（调试器 status 命令用）
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public function stats()
     {
@@ -493,6 +493,9 @@ class SessionManager
      | 传输层回调（构造时接线）
      --------------------------------------------------------------------- */
 
+    /**
+     * @return void
+     */
     private function wireTransport()
     {
         $this->transport->onOpen(function () {
@@ -666,8 +669,8 @@ class SessionManager
     /**
      * 按报文 seq 结算 pending
      *
-     * @param array $packet 服务端回执报文
-     * @param bool  $ok
+     * @param array<string, mixed> $packet 服务端回执报文
+     * @param bool                 $ok
      *
      * @return void
      */
@@ -743,7 +746,7 @@ class SessionManager
     /**
      * 发送上行报文（统一补齐 Token 与签名）
      *
-     * @param array $packet 八字段报文；缺失的 token / sign 在此补齐
+     * @param array<string, mixed> $packet 八字段报文；缺失的 token / sign 在此补齐
      *
      * @return void
      */

@@ -49,7 +49,7 @@ class Logger
     /**
      * 级别权重，数值越大越严重
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $weight = [
         self::DEBUG => 0,
@@ -61,7 +61,7 @@ class Logger
     /**
      * 运行配置
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $config = [
         'path'               => '',
@@ -100,7 +100,7 @@ class Logger
     /**
      * 初始化日志组件
      *
-     * @param array $config
+     * @param array<string, mixed> $config
      *
      * @return void
      *
@@ -194,8 +194,8 @@ class Logger
     /**
      * 记录 debug 级日志
      *
-     * @param mixed $message
-     * @param array $context
+     * @param mixed                $message
+     * @param array<string, mixed> $context
      *
      * @return void
      */
@@ -207,8 +207,8 @@ class Logger
     /**
      * 记录 info 级日志
      *
-     * @param mixed $message
-     * @param array $context
+     * @param mixed                $message
+     * @param array<string, mixed> $context
      *
      * @return void
      */
@@ -220,8 +220,8 @@ class Logger
     /**
      * 记录 warn 级日志
      *
-     * @param mixed $message
-     * @param array $context
+     * @param mixed                $message
+     * @param array<string, mixed> $context
      *
      * @return void
      */
@@ -233,8 +233,8 @@ class Logger
     /**
      * 记录 error 级日志（额外双写到跨角色汇总通道）
      *
-     * @param mixed $message
-     * @param array $context
+     * @param mixed                $message
+     * @param array<string, mixed> $context
      *
      * @return void
      */
@@ -264,9 +264,9 @@ class Logger
     /**
      * 核心写入方法
      *
-     * @param string $level
-     * @param mixed  $message
-     * @param array  $context
+     * @param string               $level
+     * @param mixed                $message
+     * @param array<string, mixed> $context
      *
      * @return void
      */
@@ -520,9 +520,9 @@ class Logger
      * 已存在的包整体 gzdecode 进内存再重压：单日日志只有 KB 级、月度包也在 MB 以内，
      * 内存往返的成本远低于维护增量压缩的复杂度，且不会产生半截文件。
      *
-     * @param string $pack  归档包路径
-     * @param array  $items [['path','name','body','mtime'], ...]
-     * @param int    $level gzip 压缩级别 1~9
+     * @param string                   $pack  归档包路径
+     * @param array<int|string, mixed> $items [['path','name','body','mtime'], ...]
+     * @param int                      $level gzip 压缩级别 1~9
      *
      * @return bool 是否写入成功
      */
@@ -631,7 +631,7 @@ class Logger
     /**
      * context 序列化并做长度截断
      *
-     * @param array $context
+     * @param array<string, mixed> $context
      *
      * @return string
      */
@@ -653,7 +653,7 @@ class Logger
      *
      * @param Throwable $e
      *
-     * @return array
+     * @return array<int|string, mixed>
      */
     protected static function shortTrace(Throwable $e)
     {

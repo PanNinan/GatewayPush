@@ -69,7 +69,7 @@ class Push
     /**
      * 推送配置（app.push）
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $config = [
         'enable'         => true,
@@ -85,7 +85,7 @@ class Push
     /**
      * 出站队列配置（business.push_queue）
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $queueConfig = [
         'key'     => RedisKeys::QUEUE_PUSH_OUT,
@@ -97,7 +97,7 @@ class Push
     /**
      * UDP 出站队列配置（gateway.udp.out_queue）
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $udpOutConfig = [
         'enable' => true,
@@ -107,9 +107,9 @@ class Push
     /**
      * 初始化
      *
-     * @param array $config app.push
-     * @param array $queue  business.push_queue
-     * @param array $udpOut gateway.udp.out_queue
+     * @param array<string, mixed> $config app.push
+     * @param array<string, mixed> $queue  business.push_queue
+     * @param array<string, mixed> $udpOut gateway.udp.out_queue
      *
      * @return void
      */
@@ -158,11 +158,11 @@ class Push
     /**
      * 写入推送队列（外部系统 / HTTP 接口 / 运维命令的唯一入口）
      *
-     * @param string        $targetType uid | device | client
-     * @param string        $target
-     * @param array         $payload    业务数据体
-     * @param array         $opts       ['msg_id'=>.., 'offline_mode'=>.., 'source'=>..]
-     * @param null|callable $cb         function(bool $ok)
+     * @param string               $targetType uid | device | client
+     * @param string               $target
+     * @param array<string, mixed> $payload    业务数据体
+     * @param array<string, mixed> $opts       ['msg_id'=>.., 'offline_mode'=>.., 'source'=>..]
+     * @param null|callable        $cb         function(bool $ok)
      *
      * @return void
      */
@@ -239,10 +239,10 @@ class Push
      *
      * 适用于业务代码在处理上行报文时顺带回推结果，省去一次队列往返。
      *
-     * @param string $targetType
-     * @param string $target
-     * @param array  $payload
-     * @param array  $opts
+     * @param string               $targetType
+     * @param string               $target
+     * @param array<string, mixed> $payload
+     * @param array<string, mixed> $opts
      *
      * @return void
      */
@@ -266,10 +266,10 @@ class Push
      * 因此统一改为写入网关出站队列，由 UDP 网关进程 sendto
      * —— 与在线推送走同一条已落地的出站通道。
      *
-     * @param string $clientId 形如 udp:{ip}:{port}
-     * @param array  $packet   已构造的报文数组
-     * @param string $uid      仅用于日志串联
-     * @param string $msgId    仅用于日志串联
+     * @param string               $clientId 形如 udp:{ip}:{port}
+     * @param array<string, mixed> $packet   已构造的报文数组
+     * @param string               $uid      仅用于日志串联
+     * @param string               $msgId    仅用于日志串联
      *
      * @return bool
      */
@@ -297,10 +297,10 @@ class Push
      * 幂等键是 md5(msg_id)，多目标共用同一 msg_id 会导致除首个目标外
      * 全部被判定为重复而静默丢弃。本方法已代为派生。
      *
-     * @param string        $topic
-     * @param array         $payload
-     * @param array         $opts
-     * @param null|callable $cb      function(int $targets) 入队目标数
+     * @param string               $topic
+     * @param array<string, mixed> $payload
+     * @param array<string, mixed> $opts
+     * @param null|callable        $cb      function(int $targets) 入队目标数
      *
      * @return void
      */
@@ -393,7 +393,7 @@ class Push
      *
      * 处理顺序：参数归一化 -> 数据体限额 -> 幂等去重 -> 目标解析 -> 通道投递
      *
-     * @param array $job
+     * @param array<string, mixed> $job
      *
      * @return void
      */
@@ -694,13 +694,13 @@ class Push
     /**
      * 实际投递：遍历目标通道并下发
      *
-     * @param array  $targets
-     * @param string $uid
-     * @param string $targetType
-     * @param string $target
-     * @param array  $payload
-     * @param string $msgId
-     * @param array  $job
+     * @param array<int|string, mixed> $targets
+     * @param string                   $uid
+     * @param string                   $targetType
+     * @param string                   $target
+     * @param array<string, mixed>     $payload
+     * @param string                   $msgId
+     * @param array<string, mixed>     $job
      *
      * @return void
      */
@@ -801,11 +801,11 @@ class Push
     /**
      * 目标离线时的处理
      *
-     * @param string $uid
-     * @param array  $payload
-     * @param string $msgId
-     * @param string $mode
-     * @param array  $job
+     * @param string               $uid
+     * @param array<string, mixed> $payload
+     * @param string               $msgId
+     * @param string               $mode
+     * @param array<string, mixed> $job
      *
      * @return void
      */
@@ -879,7 +879,7 @@ class Push
      * @param string $channel  留空时按 client_id 前缀自动判定
      * @param string $via
      *
-     * @return array
+     * @return array<string, mixed>
      */
     protected static function target($clientId, $channel = '', $via = 'session')
     {
@@ -900,8 +900,8 @@ class Push
      * WebSocket：以 Gateway 连接表为准（准实时）
      * UDP      ：无连接实体，以会话是否已被标记离线为准
      *
-     * @param string $clientId
-     * @param array  $session
+     * @param string               $clientId
+     * @param array<string, mixed> $session
      *
      * @return bool
      */
@@ -946,12 +946,12 @@ class Push
     /**
      * 构造推送下行报文
      *
-     * @param array  $payload
-     * @param string $msgId
-     * @param array  $job
-     * @param bool   $offline 是否为重连补投
+     * @param array<string, mixed> $payload
+     * @param string               $msgId
+     * @param array<string, mixed> $job
+     * @param bool                 $offline 是否为重连补投
      *
-     * @return array
+     * @return array<string, mixed>
      */
     protected static function buildFrame(array $payload, $msgId, array $job, $offline = false)
     {

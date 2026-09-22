@@ -37,7 +37,7 @@ class Auth
     /**
      * 鉴权配置
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $config = [
         'enable'       => true,
@@ -54,7 +54,7 @@ class Auth
     /**
      * 初始化
      *
-     * @param array $config app.auth 配置
+     * @param array<string, mixed> $config app.auth 配置
      *
      * @return void
      */
@@ -118,8 +118,8 @@ class Auth
      * 说明：生产环境的 Token 通常由业务系统（如 ETC 主站）签发，
      * 本方法主要用于联调自测与内部服务调用。
      *
-     * @param array $claims 至少包含 uid，可选 device_id
-     * @param int   $ttl    有效期（秒），0 取配置默认值
+     * @param array<string, mixed> $claims 至少包含 uid，可选 device_id
+     * @param int                  $ttl    有效期（秒），0 取配置默认值
      *
      * @return string
      *
@@ -154,7 +154,7 @@ class Auth
      *
      * @param string $token
      *
-     * @return array ['ok'=>bool, 'code'=>int, 'msg'=>string, 'claims'=>array]
+     * @return array<string, mixed> ['ok'=>bool, 'code'=>int, 'msg'=>string, 'claims'=>array]
      */
     public static function verifyLocal($token)
     {

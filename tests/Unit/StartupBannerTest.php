@@ -40,7 +40,7 @@ final class StartupBannerTest extends TestCase
         $this->assertSame(
             1,
             preg_match(
-                "/in_array\(\\\$command, (?:array\('start', 'restart'\)|\\['start', 'restart'\\]), true\)/",
+                "/in_array\\(\\\$command, (?:array\\('start', 'restart'\\)|\\['start', 'restart'\\]), true\\)/",
                 $beforeRunAll,
                 $matched,
                 PREG_OFFSET_CAPTURE
@@ -70,7 +70,7 @@ final class StartupBannerTest extends TestCase
         $code = (string)file_get_contents($this->root('start.php'));
 
         $this->assertMatchesRegularExpression(
-            "/in_array\(\\\$command, (?:array\('start', 'restart'\)|\\['start', 'restart'\\]), true\)\s*&&\s*!in_array\('-q', \\\$cleanArgv, true\)/",
+            "/in_array\\(\\\$command, (?:array\\('start', 'restart'\\)|\\['start', 'restart'\\]), true\\)\\s*&&\\s*!in_array\\('-q', \\\$cleanArgv, true\\)/",
             $code,
             '横幅的打印条件必须同时限定「start / restart」与「未带 -q」，'
             . '否则 stop / status 也会打印启动信息，且 -q 无法静默'

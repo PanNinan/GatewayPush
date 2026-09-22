@@ -54,7 +54,7 @@ class Bootstrap
     /**
      * dashboard 配置（app.dashboard）
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $config = [
         'enable'    => true,
@@ -67,7 +67,7 @@ class Bootstrap
     /**
      * app.php 配置（Redis / 监控等）
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $appConfig = [];
 
@@ -84,7 +84,7 @@ class Bootstrap
     /**
      * 初始化监控面板进程
      *
-     * @param array $appConfig config/app.php
+     * @param array<string, mixed> $appConfig config/app.php
      *
      * @return void
      */

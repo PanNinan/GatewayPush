@@ -83,7 +83,7 @@ class ActionReply
     /**
      * 初始化
      *
-     * @param array $config business.action_queue 配置
+     * @param array<string, mixed> $config business.action_queue 配置
      *
      * @return void
      */
@@ -164,9 +164,9 @@ class ActionReply
      *
      * 首次写入胜出，重复写入静默丢弃。
      *
-     * @param string        $clientId HTTP 通道的虚拟 clientId
-     * @param array         $packet   已构造的回执报文
-     * @param null|callable $cb       function(bool $first)
+     * @param string               $clientId HTTP 通道的虚拟 clientId
+     * @param array<string, mixed> $packet   已构造的回执报文
+     * @param null|callable        $cb       function(bool $first)
      *
      * @return void
      */

@@ -50,7 +50,7 @@ class Task
     /**
      * 任务运行时状态
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $jobs = [];
 
@@ -71,9 +71,9 @@ class Task
     /**
      * 批量注册任务
      *
-     * @param array  $jobConfigs config/business.php 的 tasks 配置
-     * @param int    $workerId
-     * @param string $workerName
+     * @param array<string, mixed> $jobConfigs config/business.php 的 tasks 配置
+     * @param int                  $workerId
+     * @param string               $workerName
      *
      * @return void
      */
@@ -103,7 +103,7 @@ class Task
     /**
      * 注册单个任务
      *
-     * @param array $job ['name','interval','class','method','persistent','timeout','scope']
+     * @param array<string, mixed> $job ['name','interval','class','method','persistent','timeout','scope']
      *
      * @return bool
      */
@@ -212,7 +212,7 @@ class Task
     /**
      * 任务运行统计（供监控上报）
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public static function stats()
     {
@@ -295,7 +295,7 @@ class Task
     /**
      * 判断任务是否应在当前进程注册
      *
-     * @param array $job
+     * @param array<string, mixed> $job
      *
      * @return bool
      */
