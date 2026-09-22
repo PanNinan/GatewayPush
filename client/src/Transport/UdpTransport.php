@@ -157,11 +157,11 @@ final class UdpTransport implements TransportInterface
         $this->maxAttempts        = isset($options['max_attempts'])
             ? max(1, (int)$options['max_attempts']) : self::DEFAULT_MAX_ATTEMPTS;
 
-        $self         = $this;
+        // 闭包在方法体内创建即自动绑定 $this，无需另存一份 $self
         $this->connFactory = $connFactory !== null
             ? $connFactory
-            : function () use ($self) {
-                return new AsyncUdpConnection($self->url);
+            : function () {
+                return new AsyncUdpConnection($this->url);
             };
 
         $this->timerAdd = $timerAdd !== null
@@ -439,9 +439,9 @@ final class UdpTransport implements TransportInterface
             $this->conn->send($frame);
         }
 
-        if (count($this->inflight) > 0) {
-            $this->ensureRetransmit();
-        }
+        // 不必再判 count($this->inflight)：ensureRetransmit() 首行已自守
+        // 「在途为空则直接返回」，此处多一次判断既冗余、静态分析下又恒真
+        $this->ensureRetransmit();
     }
 
     private function stopRetransmit()

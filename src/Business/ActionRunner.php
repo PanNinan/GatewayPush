@@ -367,10 +367,11 @@ class ActionRunner
 
         // 超时保护：处理器可能走 Redis 异步回执，若回调始终不来，
         // 客户端会永久等待。定时器在首次回执时由钩子注销，未回执则兜底。
+        /** @var int|null $timerId 先声明、下方按需赋值：回执钩子必须按引用捕获它 */
         $timerId = null;
         $ctx->setReplyHook(function () use (&$timerId) {
             if ($timerId !== null) {
-                Timer::del((int)$timerId);
+                Timer::del($timerId);
                 $timerId = null;
             }
         });

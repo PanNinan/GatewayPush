@@ -104,7 +104,9 @@ $results = [];
  * @param bool $skip 免签模式下不适用的断言：既不算通过也不算失败，显式标记
  */
 $check = function (string $name, bool $ok, string $detail = '', bool $skip = false) use (&$results): void {
-    $results[] = array('name' => $name, 'ok' => $ok, 'skip' => $skip);
+    // detail 必须一并入档：末尾的失败汇总会读 $item['detail']，
+    // 不入档既触发「未定义数组键」告警，又导致失败详情永远打印不出来
+    $results[] = array('name' => $name, 'ok' => $ok, 'detail' => $detail, 'skip' => $skip);
     if ($skip) {
         printf("  [SKIP] %s%s\n", $name, $detail !== '' ? '  ' . $detail : '');
         return;

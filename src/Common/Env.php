@@ -420,7 +420,7 @@ class Env
         }
 
         // 剥离行内注释（# 前需有空白，避免误伤值内的 #）
-        $value = preg_replace('/[ \t]+#.*$/', '', (string)$matches[1]);
+        $value = preg_replace('/[ \t]+#.*$/', '', $matches[1]);
         $value = trim((string)$value);
 
         return trim($value, "\"'");

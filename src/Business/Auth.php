@@ -201,8 +201,8 @@ class Auth
                 $error = $client->error();
             }
             // Redis 异常时按「不可用即拒绝」处理，避免鉴权被绕过
-            $revoked = ($error !== '') ? true : !empty($result);
-            call_user_func($cb, $revoked, $error);
+            $revoked = $error !== '' || ! empty($result);
+            $cb($revoked, $error);
         });
     }
 
@@ -247,11 +247,11 @@ class Auth
     public static function checkDeviceBind($uid, $deviceId, callable $cb)
     {
         if (empty(self::$config['bind_device'])) {
-            call_user_func($cb, true, 'device bind check disabled');
+            $cb(true, 'device bind check disabled');
             return;
         }
         if ($uid === '' || $deviceId === '') {
-            call_user_func($cb, false, 'uid 或 device_id 为空');
+            $cb(false, 'uid 或 device_id 为空');
             return;
         }
 
@@ -259,20 +259,20 @@ class Auth
         RedisClient::get($key, function ($result, $client = null) use ($uid, $deviceId, $key, $cb) {
             $error = $client && method_exists($client, 'error') ? $client->error() : '';
             if ($error !== '') {
-                call_user_func($cb, false, '设备绑定校验失败：' . $error);
+                $cb(false, '设备绑定校验失败：' . $error);
                 return;
             }
             if (empty($result)) {
                 $ttl = (int)self::$config['token_ttl'];
                 RedisClient::set($key, $deviceId, $ttl);
-                call_user_func($cb, true, 'device bind created');
+                $cb(true, 'device bind created');
                 return;
             }
             if ((string)$result !== (string)$deviceId) {
-                call_user_func($cb, false, '设备不匹配，该账号已绑定其他设备');
+                $cb(false, '设备不匹配，该账号已绑定其他设备');
                 return;
             }
-            call_user_func($cb, true, 'device bind matched');
+            $cb(true, 'device bind matched');
         });
     }
 

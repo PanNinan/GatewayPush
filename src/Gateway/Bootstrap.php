@@ -270,7 +270,7 @@ class Bootstrap
             // 0. 报文级限流（L1）：每来源 IP 的进程内内存令牌桶。
             //    置于验签之前 —— 洪水场景下限流器绝不能自身发起 Redis IO；
             //    超限静默丢弃，不回错误报文以免形成反射放大。
-            $ip = (string)$connection->getRemoteIp();
+            $ip = $connection->getRemoteIp();
             if (!RateLimiter::checkMemory(RateLimiter::DIM_IP, $ip)) {
                 Monitor::incr('msg_fail');
                 Monitor::incr('rate_limit_hit');

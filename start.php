@@ -147,12 +147,12 @@ if ($command === 'env:init') {
 if ($command === 'token') {
     Auth::init($appConfig['auth']);
 
-    $uid = isset($cleanArgv[2]) ? (string)$cleanArgv[2] : '';
+    $uid = isset($cleanArgv[2]) ? $cleanArgv[2] : '';
     if ($uid === '') {
         fwrite(STDERR, "用法：php start.php token <uid> [device_id] [ttl]\n");
         exit(1);
     }
-    $deviceId = isset($cleanArgv[3]) ? (string)$cleanArgv[3] : '';
+    $deviceId = isset($cleanArgv[3]) ? $cleanArgv[3] : '';
     $ttl      = isset($cleanArgv[4]) ? (int)$cleanArgv[4] : 0;
 
     $token = Auth::issue(array('uid' => $uid, 'device_id' => $deviceId), $ttl);
@@ -178,8 +178,8 @@ if ($command === 'info') {
     // 可选参数为逗号分隔的角色列表，供管理脚本按实际启动范围过滤；
     // 非角色名一律忽略而非报错 —— 该命令是只读展示，不应因参数写法失败。
     $infoRoles = [];
-    if (isset($cleanArgv[2]) && trim((string)$cleanArgv[2]) !== '') {
-        foreach (explode(',', strtolower((string)$cleanArgv[2])) as $infoItem) {
+    if (isset($cleanArgv[2]) && trim($cleanArgv[2]) !== '') {
+        foreach (explode(',', strtolower($cleanArgv[2])) as $infoItem) {
             $infoItem = trim($infoItem);
             if ($infoItem !== '' && $infoItem !== 'all' && in_array($infoItem, $validRoles, true)) {
                 $infoRoles[] = $infoItem;

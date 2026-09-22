@@ -59,8 +59,8 @@ runtime/                  运行时产物：logs/ pid/ phpstan/（已 gitignore�
 ## 4. 质量门禁（改完必跑）
 
 ```bash
-composer analyse      # PHPStan L5，54 文件；baseline 冻结存量 11 条 → 必须 0 errors
-composer test         # PHPUnit：443 tests / 1246 assertions
+composer analyse      # PHPStan L5，111 文件（含 tests）；两份 baseline 冻结存量 → 必须 0 errors
+composer test         # PHPUnit：467 tests / 1317 assertions
 composer test:e2e     # 端到端 16 用例（A~P），需 4~5 个角色在线
 ```
 
@@ -74,7 +74,16 @@ php  tests/Api/http_demo.php                         # HTTP 接口示例 13 场�
 ```
 
 - **改完代码先清 `runtime/phpstan/` 再跑全量 `analyse`** —— 结果缓存会掩盖既有错误。
-- 新增告警必须修，**不得追加进 `phpstan-baseline.neon`**。
+- 新增告警必须修，**不得追加进任何 baseline**。两份 baseline 的分工：
+  `phpstan-baseline.neon`（生产代码，10 条）/ `phpstan-tests-baseline.neon`（测试存量，57 条目）。
+- **⚠ `level` 与 baseline 必须同源**：baseline 用哪个 level 生成，`phpstan.neon` 的
+  `parameters.level` 就得是哪个值。不一致会触发成百上千条 `ignore.unmatched (non-ignorable)`，
+  门禁直接红——已发生过一次（baseline 以 level 6 生成，而配置仍为 level 5 → 351 errors）。
+  **不要用 `composer baseline` 重新生成生产代码基线**：它会连同新引入的告警一起冻结。
+- level 刻意停在 5：升到 6 会额外报 ~350 条「数组缺 value 类型」，真修要动约 60 个文件的签名，
+  塞 baseline 则等于放弃零容忍。
+- `phpstan-strict-rules` / `phpstan-phpunit` 是**显式 `includes`** 的（未装 `extension-installer`）；
+  只装 composer 包不写 `includes`，规则一条都不会生效。
 
 ## 5. 高频红线（违反即事故）
 

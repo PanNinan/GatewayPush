@@ -343,8 +343,9 @@ class ActionRunnerTest extends TestCase
 
         $decl = ActionRunner::declaration('a');
 
-        $this->assertTrue($decl['http']);
-        $this->assertSame(true, $decl['http'], '声明值须归一化为 bool，避免运出到下游出现 1 / true 两种形态');
+        // assertTrue 内部即 === true 判定，已足以钉住「归一化为 bool」，
+        // 再补一句 assertSame(true, ...) 是恒真的重复断言（PHPStan 会直接判定 alreadyNarrowed）
+        $this->assertTrue($decl['http'], '声明值须归一化为 bool，避免运出到下游出现 1 / true 两种形态');
     }
 
     public function testUnexposedActionIsNotHttpExposedEvenIfRegistered(): void
@@ -434,7 +435,7 @@ class StubAction implements ActionInterface
 {
     public function handle(ActionContext $ctx)
     {
-        return null;
+        // 接口声明为 void：不得 return null（PHPStan: return.void）
     }
 }
 

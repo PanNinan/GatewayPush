@@ -387,7 +387,7 @@ class Logger
                 continue;
             }
             foreach ($items as $item) {
-                if (@unlink((string)$item['path'])) {
+                if (@unlink($item['path'])) {
                     $archived++;
                 }
             }

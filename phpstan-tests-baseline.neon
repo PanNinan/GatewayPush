@@ -1,0 +1,364 @@
+# ---------------------------------------------------------------------
+# 测试代码专属 baseline —— 仅冻结「tests 首次纳入静态分析时」的存量
+#
+# 为什么单独一个文件（而不并入 phpstan-baseline.neon）：
+#   src / client/src 是生产代码，维持「新代码零容忍、baseline 只冻结极少数存量」；
+#   tests 是验证代码，此前从未被分析过，其全部告警在定义上都属存量。
+#   分成两个文件，才能让「src 侧 baseline 是否又长了」这个信号保持清晰。
+#
+# ⚠ 只许减、不许增：新增测试代码必须零告警，不得往这里追加条目。
+#   唯一例外是 PHPStan 对「按引用捕获的闭包」看不穿赋值导致的误判 ——
+#   这类条目若要新增，必须逐条注明原因。
+#
+# 存量构成（78 条 / 57 条目）：
+#   - staticMethod/method.alreadyNarrowedType（26）：golden 值钉桩。
+#     如 assertSame(4004, ErrorCode::HTTP_NOT_FOUND) —— 常量被静态解析成字面量，
+#     PHPStan 判定断言恒真；但该断言的意图正是「钉住未来被改动的数值」。
+#   - staticMethod.impossibleType（4）：PHPUnit 断言落在按引用捕获的变量上，
+#     PHPStan 看不到闭包里的赋值，误判为 null / 空数组。
+#   - cast.useless(14) / closure.unusedUse(9)：纯机械噪音。
+#   - property.onlyWritten(4) / parameterByRef.unusedType(3) / nullsafe.neverNull(2) 等。
+# ---------------------------------------------------------------------
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Anonymous function has an unused use \$prefix\.$#'
+			identifier: closure.unusedUse
+			count: 3
+			path: client/tests/E2E/ClientE2E.php
+
+		-
+			message: '#^Anonymous function has an unused use \$uid\.$#'
+			identifier: closure.unusedUse
+			count: 1
+			path: client/tests/E2E/ClientE2E.php
+
+		-
+			message: '#^Anonymous function has an unused use \$waitUntil\.$#'
+			identifier: closure.unusedUse
+			count: 2
+			path: client/tests/E2E/ClientE2E.php
+
+		-
+			message: '#^Anonymous function has an unused use \$ws\.$#'
+			identifier: closure.unusedUse
+			count: 1
+			path: client/tests/E2E/ClientE2E.php
+
+		-
+			message: '#^Call to function in_array\(\) with arguments 4008, array\{\} and true will always evaluate to false\.$#'
+			identifier: function.impossibleType
+			count: 1
+			path: client/tests/E2E/ClientE2E.php
+
+		-
+			message: '#^Casting to string something that''s already string\.$#'
+			identifier: cast.useless
+			count: 1
+			path: client/tests/E2E/ClientE2E.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between \*NEVER\* and 0 will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: client/tests/E2E/ClientE2E.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type GatewayPush\\Client\\Session\\SessionManager\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 2
+			path: client/tests/E2E/ClientE2E.php
+
+		-
+			message: '#^Property GatewayPush\\Client\\Tests\\Support\\FakeTransport\:\:\$errCb is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: client/tests/Support/FakeTransport.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with 0 and 0 will always evaluate to true\.$#'
+			identifier: staticMethod.alreadyNarrowedType
+			count: 2
+			path: client/tests/Unit/ErrorCodeTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with 4000 and 4000 will always evaluate to true\.$#'
+			identifier: staticMethod.alreadyNarrowedType
+			count: 2
+			path: client/tests/Unit/ErrorCodeTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with 4001 and 4001 will always evaluate to true\.$#'
+			identifier: staticMethod.alreadyNarrowedType
+			count: 2
+			path: client/tests/Unit/ErrorCodeTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with 4002 and 4002 will always evaluate to true\.$#'
+			identifier: staticMethod.alreadyNarrowedType
+			count: 2
+			path: client/tests/Unit/ErrorCodeTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with 4003 and 4003 will always evaluate to true\.$#'
+			identifier: staticMethod.alreadyNarrowedType
+			count: 1
+			path: client/tests/Unit/ErrorCodeTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with 4004 and 4004 will always evaluate to true\.$#'
+			identifier: staticMethod.alreadyNarrowedType
+			count: 4
+			path: client/tests/Unit/ErrorCodeTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with 4005 and 4005 will always evaluate to true\.$#'
+			identifier: staticMethod.alreadyNarrowedType
+			count: 1
+			path: client/tests/Unit/ErrorCodeTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with 4006 and 4006 will always evaluate to true\.$#'
+			identifier: staticMethod.alreadyNarrowedType
+			count: 1
+			path: client/tests/Unit/ErrorCodeTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with 4007 and 4007 will always evaluate to true\.$#'
+			identifier: staticMethod.alreadyNarrowedType
+			count: 1
+			path: client/tests/Unit/ErrorCodeTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with 4008 and 4008 will always evaluate to true\.$#'
+			identifier: staticMethod.alreadyNarrowedType
+			count: 2
+			path: client/tests/Unit/ErrorCodeTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with 4029 and 4029 will always evaluate to true\.$#'
+			identifier: staticMethod.alreadyNarrowedType
+			count: 2
+			path: client/tests/Unit/ErrorCodeTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with 5000 and 5000 will always evaluate to true\.$#'
+			identifier: staticMethod.alreadyNarrowedType
+			count: 2
+			path: client/tests/Unit/ErrorCodeTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertNotNull\(\) with null will always evaluate to false\.$#'
+			identifier: staticMethod.impossibleType
+			count: 1
+			path: client/tests/Unit/HttpTransportTest.php
+
+		-
+			message: '#^Property GatewayPush\\Client\\Tests\\Unit\\HttpTransportTest\:\:\$fake is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: client/tests/Unit/HttpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\PushReceiverTest\:\:makeReady\(\) never assigns null to &\$transport so it can be removed from the by\-ref type\.$#'
+			identifier: parameterByRef.unusedType
+			count: 1
+			path: client/tests/Unit/PushReceiverTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\ServiceApiTest\:\:makeReady\(\) never assigns null to &\$transport so it can be removed from the by\-ref type\.$#'
+			identifier: parameterByRef.unusedType
+			count: 1
+			path: client/tests/Unit/ServiceApiTest.php
+
+		-
+			message: '#^Call to function base64_decode\(\) requires parameter \#2 to be set\.$#'
+			identifier: function.strict
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertTrue\(\) with null will always evaluate to false\.$#'
+			identifier: staticMethod.impossibleType
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:makeSession\(\) never assigns null to &\$transport so it can be removed from the by\-ref type\.$#'
+			identifier: parameterByRef.unusedType
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^You should use assertCount\(\$expectedCount, \$variable\) instead of assertSame\(\$expectedCount, count\(\$variable\)\)\.$#'
+			identifier: phpunit.assertCount
+			count: 1
+			path: client/tests/Unit/TokenIssuerTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertNotNull\(\) with null and ''重传耗尽须触发 onError'' will always evaluate to false\.$#'
+			identifier: staticMethod.impossibleType
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with array\{''ack\-1'', ''ack\-2''\} and array\{''ack\-1''\} will always evaluate to false\.$#'
+			identifier: staticMethod.impossibleType
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Property GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:\$fake is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^You should use assertCount\(\$expectedCount, \$variable\) instead of assertSame\(\$expectedCount, count\(\$variable\)\)\.$#'
+			identifier: phpunit.assertCount
+			count: 3
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Property GatewayPush\\Client\\Tests\\Unit\\WsTransportTest\:\:\$fake is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: client/tests/Unit/WsTransportTest.php
+
+		-
+			message: '#^Casting to string something that''s already string\.$#'
+			identifier: cast.useless
+			count: 2
+			path: tests/Api/http_demo.php
+
+		-
+			message: '#^Left side of \|\| is always false\.$#'
+			identifier: booleanOr.leftAlwaysFalse
+			count: 1
+			path: tests/E2E/CaseActionUdp.php
+
+		-
+			message: '#^Negated boolean expression is always true\.$#'
+			identifier: booleanNot.alwaysTrue
+			count: 1
+			path: tests/E2E/CasePushOffline.php
+
+		-
+			message: '#^Right side of \|\| is always false\.$#'
+			identifier: booleanOr.rightAlwaysFalse
+			count: 1
+			path: tests/E2E/CasePushOffline.php
+
+		-
+			message: '#^Negated boolean expression is always true\.$#'
+			identifier: booleanNot.alwaysTrue
+			count: 1
+			path: tests/E2E/CasePushOnline.php
+
+		-
+			message: '#^Right side of \|\| is always false\.$#'
+			identifier: booleanOr.rightAlwaysFalse
+			count: 1
+			path: tests/E2E/CasePushOnline.php
+
+		-
+			message: '#^Casting to string something that''s already string\.$#'
+			identifier: cast.useless
+			count: 2
+			path: tests/Manual/_p3_udp_check.php
+
+		-
+			message: '#^Empty array passed to foreach\.$#'
+			identifier: foreach.emptyArray
+			count: 1
+			path: tests/Manual/_p4_admin_check.php
+
+		-
+			message: '#^Anonymous function has an unused use \$uid\.$#'
+			identifier: closure.unusedUse
+			count: 1
+			path: tests/Manual/_p5_bind_check.php
+
+		-
+			message: '#^Parameter \#2 \$cb of method Workerman\\Redis\\Client\:\:select\(\) expects null, Closure given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Manual/_p5_bind_check.php
+
+		-
+			message: '#^Casting to string something that''s already string\.$#'
+			identifier: cast.useless
+			count: 1
+			path: tests/Manual/_p5_push_offline.php
+
+		-
+			message: '#^Anonymous function has an unused use \$failMsg\.$#'
+			identifier: closure.unusedUse
+			count: 1
+			path: tests/Manual/_p5_reconnect_check.php
+
+		-
+			message: '#^Casting to string something that''s already string\.$#'
+			identifier: cast.useless
+			count: 2
+			path: tests/Manual/_p5_reconnect_check.php
+
+		-
+			message: '#^Empty array passed to foreach\.$#'
+			identifier: foreach.emptyArray
+			count: 1
+			path: tests/Manual/_p5_reconnect_check.php
+
+		-
+			message: '#^Parameter \#1 \$seq of static method GatewayPush\\Business\\Message\:\:ack\(\) expects string, int given\.$#'
+			identifier: argument.type
+			count: 1
+			path: tests/Unit/MessageTest.php
+
+		-
+			message: '#^Call to method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with ''memory_bytes\:'' and ''memory_bytes\:'' will always evaluate to true\.$#'
+			identifier: method.alreadyNarrowedType
+			count: 1
+			path: tests/Unit/MonitorTest.php
+
+		-
+			message: '#^Call to method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with ''pid_at\:'' and ''pid_at\:'' will always evaluate to true\.$#'
+			identifier: method.alreadyNarrowedType
+			count: 1
+			path: tests/Unit/MonitorTest.php
+
+		-
+			message: '#^Call to method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with ''proc\:'' and ''proc\:'' will always evaluate to true\.$#'
+			identifier: method.alreadyNarrowedType
+			count: 1
+			path: tests/Unit/MonitorTest.php
+
+		-
+			message: '#^Call to method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with ''tasks\:'' and ''tasks\:'' will always evaluate to true\.$#'
+			identifier: method.alreadyNarrowedType
+			count: 1
+			path: tests/Unit/MonitorTest.php
+
+		-
+			message: '#^Casting to int something that''s already int\<\-1, max\>\.$#'
+			identifier: cast.useless
+			count: 1
+			path: tests/Unit/MonitorTest.php
+
+		-
+			message: '#^Casting to string something that''s already string\.$#'
+			identifier: cast.useless
+			count: 2
+			path: tests/Unit/RoleCatalogTest.php
+
+		-
+			message: '#^Casting to int something that''s already int\<0, max\>\.$#'
+			identifier: cast.useless
+			count: 2
+			path: tests/Unit/StartupBannerTest.php
+
+		-
+			message: '#^Casting to string something that''s already string\.$#'
+			identifier: cast.useless
+			count: 1
+			path: tests/Unit/StartupBannerTest.php

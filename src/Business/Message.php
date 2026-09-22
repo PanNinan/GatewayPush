@@ -147,7 +147,7 @@ class Message
         if (!is_array($packet['data'])) {
             $packet['data'] = array('value' => $packet['data']);
         }
-        $packet['cmd'] = (string)$cmd;
+        $packet['cmd'] = $cmd;
 
         return $packet;
     }

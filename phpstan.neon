@@ -7,12 +7,28 @@
 #
 # 版本约束：phpstan/phpstan ^2.0（要求 php ^7.4|^8.0），与项目 PHP 8.1 目标兼容。
 #
-# 分级目标：level 5 起步。待存量收敛后再提至 6 —— level 6 才会检查
-#   「mixed 传入非 mixed 形参」，而曾踩过的 array_keys('*') 属该类问题。
+# ⚠ level 与 baseline 必须同源：baseline 是用哪个 level 生成的，parameters.level
+#   就得是哪个值，否则 PHPStan 会对每条不再命中的条目报
+#   `ignore.unmatched (non-ignorable)`，一次就把门禁刷成红色。
+#   历史事故：baseline 曾以 level 6 重新生成（362 条），而此处仍是 level 5，
+#   结果 351 条 unmatched 直接让 `composer analyse` 失败。
+#
+# 分级目标：level 5 起步。待存量收敛后再提至 6 —— level 6 会额外检查
+#   「mixed 传入非 mixed 形参」与「数组缺 value 类型」，实测 src+client 侧
+#   会从 16 条涨到 367 条，且几乎全是 missingType.iterableValue。
+#   真修需给约 60 个文件补 array<string, mixed> 这类 phpdoc；用 baseline
+#   一次性豁免 350 条则等于放弃「新代码零容忍」，故暂不提级。
 # ---------------------------------------------------------------------
 
 includes:
     - phpstan-baseline.neon
+    # 测试侧存量单独一份：只减不增，避免 tests 的噪音混进生产代码的 baseline
+    - phpstan-tests-baseline.neon
+    # 扩展不做自动加载：本项目未装 phpstan/extension-installer，
+    # 必须显式 include 各自的 rules.neon，否则规则一条都不会生效。
+    - vendor/phpstan/phpstan-strict-rules/rules.neon
+    - vendor/phpstan/phpstan-phpunit/extension.neon
+    - vendor/phpstan/phpstan-phpunit/rules.neon
 
 parameters:
     level: 5
@@ -21,6 +37,10 @@ parameters:
         - src
         - client/src
         - start.php
+        # tests 在列才能让 phpstan-phpunit 的断言/mock 规则真正生效。
+        # 只装扩展不分析 tests，等于白装。
+        - tests
+        - client/tests
 
     # 分析器缓存置于 runtime（已在 .gitignore 中排除）
     tmpDir: runtime/phpstan
@@ -34,6 +54,30 @@ parameters:
     # workerman 大量使用动态属性（$worker->onMessage = ...），
     # 不把 phpdoc 类型当作绝对事实，避免制造无意义的告警
     treatPhpDocTypesAsCertain: false
+
+    # -----------------------------------------------------------------
+    # phpstan-strict-rules
+    #
+    # allRules 全开，仅关 3 条与本项目既定设计冲突/有语义风险的规则。
+    # 实测（level 5，src+client 侧）：全开 +187 条，而这 3 条占 157 条（84%）；
+    # 关掉后其余全部规则只额外报 11 条，属可修的真问题。
+    # -----------------------------------------------------------------
+    strictRules:
+        allRules: true
+
+        # empty($x) 换成 !$x 不是等价改写：empty('0') === true，而 !'0' === false。
+        # 全仓 96 处，机械替换会改变运行时语义，必须逐处人工判断 —— 故不启用。
+        # 注意：键「是否存在」的判定仍按项目红线用 array_key_exists，不用 empty()。
+        disallowedEmpty: false
+
+        # 要求条件表达式严格布尔化。本仓大量 if (!$row) / while ($list) 这种
+        # 「数组/集合真值判断」，改法牵动面大而收益有限，故不启用。
+        booleansInConditions: false
+        booleansInLoopConditions: false
+
+        # $class::$method() 正是 Task 与 Router 的反射分发设计本身
+        # （config 声明 → 反射调用），不是误用；开这条等于与设计对抗。
+        dynamicCallOnStaticMethod: false
 
     ignoreErrors:
         # -----------------------------------------------------------------
