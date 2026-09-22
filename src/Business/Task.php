@@ -21,7 +21,7 @@
  *    此后仍按 interval 周期执行。
  *  - 频繁重启的环境下，小时级及以上的周期任务都应评估是否需要它。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Business;

@@ -38,7 +38,7 @@
  * Redis 不可用时 **fail-open 放行**并告警。限流器故障不应导致服务整体不可用
  * ——这与鉴权的 fail-close 语义不同：鉴权守护安全边界，限流守护容量水位。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Common;

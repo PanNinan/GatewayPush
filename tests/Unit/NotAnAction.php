@@ -5,7 +5,7 @@
  * 被 ActionRunnerTest 用作「已声明 handler 但处理器不合规」的样本，
  * 用于验证装载阶段的过滤逻辑会将其丢弃。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Tests\Unit;

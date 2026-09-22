@@ -12,7 +12,7 @@
  * 每个请求独占一个连接实例（一次性语义），完成或超时后销毁。
  * 连接对象经构造参数注入工厂创建，单测注入假连接脱离 workerman 事件环境。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Transport;

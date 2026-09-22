@@ -7,7 +7,7 @@
  * `4004` 在报文里是「鉴权失败」，在 HTTP 里是「接口不存在」。
  * 混用会直接导致排障方向跑偏，因此这里用断言把它固化成文档。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Tests\Unit;

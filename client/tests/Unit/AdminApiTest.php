@@ -8,7 +8,7 @@
  *   （2xx + code=0 → ok；401/业务码非 0 → ok=false + error 三元组；
  *   非 JSON 响应与传输失败 → 客户端本地码）。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Tests\Unit;

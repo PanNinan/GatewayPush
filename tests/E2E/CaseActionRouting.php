@@ -9,7 +9,7 @@
  * M 在此基础上验证声明式动作清单（config/actions.php）的完整执行语义，
  * 并在末步回查 Redis，确认回执与落库一致。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Tests\E2E;

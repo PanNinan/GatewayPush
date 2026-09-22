@@ -10,7 +10,7 @@
  * 服务端处于**免签模式**（API_SIGN_ENABLE=false 且监听回环地址）时，
  * 「伪造签名被拒」这一断言不成立，用例会先探测模式并跳过它。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Tests\E2E;

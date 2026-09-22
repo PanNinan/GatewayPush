@@ -38,7 +38,7 @@
  * 注：clientId 取 http:{request_id} 而非复用 WS 的数字 ID，是为了让
  * ActionRunner::channelOf() 能用与前缀表同构的方式识别通道，无需额外传参。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Business;

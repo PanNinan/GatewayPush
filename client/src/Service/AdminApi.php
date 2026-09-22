@@ -15,7 +15,7 @@
  *   $data  = 响应 data 字段（非 2xx 时为响应体数组原样）
  *   $error = ['status'=>int, 'code'=>int, 'msg'=>string]（传输失败 code=10002）
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Service;

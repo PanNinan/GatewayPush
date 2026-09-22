@@ -20,7 +20,7 @@
  * 不覆盖 purgeExitedProcesses() 本身：它依赖 RedisClient 异步回调，属端到端
  * 范畴，由 e2e 覆盖 —— 与 RateLimiterTest 对 L2 的处理口径一致。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Tests\Unit;

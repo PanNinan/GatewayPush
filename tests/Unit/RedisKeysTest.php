@@ -20,7 +20,7 @@
  *
  * 全部为零 IO 的纯计算，不进 Redis。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Tests\Unit;

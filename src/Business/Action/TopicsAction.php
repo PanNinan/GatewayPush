@@ -5,7 +5,7 @@
  * 模式：读取型 —— 查询当前 uid 的订阅集合。
  * 与 session 动作同样的越权防护：不接受 uid 入参，只能查自己。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Business\Action;

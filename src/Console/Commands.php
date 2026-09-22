@@ -11,7 +11,7 @@
  *
  * 本类不调用 exit —— 退出码经返回值交给入口 start.php，以守住「src/ 内零 exit」的约束。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Console;

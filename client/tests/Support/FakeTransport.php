@@ -4,7 +4,7 @@
  *
  * 供 SessionManager / PushReceiver / Service 各层单测共用。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Tests\Support;

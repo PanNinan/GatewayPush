@@ -11,7 +11,7 @@
  *   2. bool 只识别 1/true/yes/on（大小写不敏感），其余一律为 false，
  *      避免 'false' 被 PHP 强转成 true。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Tests\Unit;

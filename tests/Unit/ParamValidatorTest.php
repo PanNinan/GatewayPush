@@ -9,7 +9,7 @@
  * 长度相关用例统一使用 ASCII 字符：本机未安装 mbstring，
  * 长度校验回退到 strlen（按字节计数），用 ASCII 可让断言与实现选择无关。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Tests\Unit;

@@ -6,7 +6,7 @@
  * `onReply(bool $ok, array $packet)` —— 超时也是「一次结算」，
  * 只是 ok=false 且 packet 为空数组。单一出口避免两条回调的触发次序歧义。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Session;

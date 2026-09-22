@@ -27,7 +27,7 @@
  *   onBufferDrain 发送缓冲排空 -> 日志 + buffer_drain 指标
  *   onWorkerReload 收到平滑重启信号 -> 日志
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Common;

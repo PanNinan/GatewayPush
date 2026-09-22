@@ -14,7 +14,7 @@
  * 因此本类在每次调用前都会重新把自己的配置写回 `Auth`，
  * 保证「同进程内存在多个不同密钥的 TokenIssuer」时互不串味。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Protocol;

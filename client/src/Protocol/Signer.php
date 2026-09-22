@@ -15,7 +15,7 @@
  *   2. **WS 通道不校验签名**，`sign` 仅 UDP 通道（`UDP_SIGN_ENABLE`）必需。
  *      客户端的做法是：一律算、一律带上 —— 对 WS 无副作用，对 UDP 才有效。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Protocol;

@@ -10,7 +10,7 @@
  *
  * ws:// 握手（HTTP Upgrade）由 workerman 自动完成，onConnect 即握手完成。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Transport;

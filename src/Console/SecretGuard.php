@@ -5,7 +5,7 @@
  * 判断 .env 里的密钥是否仍为占位值或明显弱值。这类值能通过「非空」检查，却等同于
  * 没有鉴权，故启动自检对它们以 FAIL 拦截而非 WARN 提示。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Console;

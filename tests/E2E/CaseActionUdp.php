@@ -18,7 +18,7 @@
  *   业务层 —— 动作执行结果，按 config/actions.php 的 reply 声明发放
  * 若不加区分，会把传输层 ack 误判为业务回执。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Tests\E2E;

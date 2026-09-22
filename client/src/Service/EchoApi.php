@@ -4,7 +4,7 @@
  *
  * 服务端 params='*' 原样透传；回执 data = {action:'echo', channel, protocol, params, at}。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Service;

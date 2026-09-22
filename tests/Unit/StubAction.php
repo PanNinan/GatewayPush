@@ -6,7 +6,7 @@
  * 单独成文件是为满足 PSR-1「一个文件一个类」：原先它与 NotAnAction 同写在
  * 测试文件末尾，phpcs 报 ClassDeclaration.MultipleClasses。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Tests\Unit;

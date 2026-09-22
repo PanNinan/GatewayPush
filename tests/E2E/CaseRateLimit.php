@@ -10,7 +10,7 @@
  *
  * 本方使用独立 uid/device，避免污染其它用例的令牌桶。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Tests\E2E;

@@ -6,7 +6,7 @@
  * （业务代码 / HTTP 接口 / 运维命令调用）。服务端**刻意不开放客户端 publish**，
  * 客户端侧同样不提供。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Service;

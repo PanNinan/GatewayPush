@@ -15,7 +15,7 @@
  *   $receiver = new PushReceiver($session);
  *   $receiver->onPush(function (array $payload, array $meta) { ... });
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Event;

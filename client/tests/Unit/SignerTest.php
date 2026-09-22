@@ -10,7 +10,7 @@
  *   3. **事实固定** —— `uid` 不参与签名、`clock_skew=0` 跳过时效校验等反直觉约定，
  *      用断言钉住，避免后人误以为已受保护而放宽校验。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Tests\Unit;

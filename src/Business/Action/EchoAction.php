@@ -8,7 +8,7 @@
  * 参数采用透传（config/actions.php 中 params = '*'）：回显动作的意义就是
  * 把客户端发来的内容原样送回，白名单过滤会使其失去验证价值。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Business\Action;

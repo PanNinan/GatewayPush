@@ -8,7 +8,7 @@
  *   - `--` 之后的所有 token 一律视为位置参数（避免 JSON、`-1` 被误判为选项）
  *   - 无命令时返回空命令，由调用方落 help
  *
- * 纯函数、无 IO，便于单测覆盖；兼容 PHP 8.1 ~ 8.5
+ * 纯函数、无 IO，便于单测覆盖；兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Cli;

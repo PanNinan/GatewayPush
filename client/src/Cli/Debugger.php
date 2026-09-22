@@ -10,7 +10,7 @@
  * 事件驱动：与 SDK 同构，须运行在 Worker::runAll() 之后；本类负责装配与调度，
  * 不重复实现协议/传输细节（全部复用 Protocol / Transport / Session / Service 层）。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Cli;

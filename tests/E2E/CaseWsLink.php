@@ -7,7 +7,7 @@
  *
  * 两者共用基准身份（CLI 传入的 uid / device_id）。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Tests\E2E;

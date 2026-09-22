@@ -2,7 +2,7 @@
 /**
  * PushReceiver 单测 —— 推送解析 / 回调 / 自动回执 / offline 标记 / ack 计数
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Tests\Unit;

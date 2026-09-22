@@ -24,7 +24,7 @@
  *   - required 缺失、类型不匹配、越界均返回 null 并置 $error；
  *   - 校验通过后返回「归一化参数」，处理器拿到的一定是正确类型。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Business;

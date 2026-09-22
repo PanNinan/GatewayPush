@@ -10,7 +10,7 @@
  *              本封装一律传回调，保证在普通事件回调中调用也安全
  *  - 断线重连：由 workerman/redis 内部 onClose -> connect 自动完成，无需业务干预
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Common;

@@ -7,7 +7,7 @@
  *   - connect() 为同步动作，onConnect 在 connect() 调用行内触发；
  *   - close() 同步触发 onClose。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Tests\Support;

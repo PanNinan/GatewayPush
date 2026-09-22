@@ -1,10 +1,5 @@
 parameters:
 	ignoreErrors:
-		-
-			message: '#^PHPDoc tag @throws with type Random\\RandomException is not subtype of Throwable$#'
-			identifier: throws.notThrowable
-			count: 1
-			path: src/Business/Auth.php
 
 		-
 			message: '#^Parameter \#2 \$value of static method GatewayPush\\Common\\RedisClient\:\:setNxEx\(\) expects string, int given\.$#'

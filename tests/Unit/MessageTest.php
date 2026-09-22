@@ -13,7 +13,7 @@
  * token 载荷（服务端密钥 HMAC 保护）。此处用测试把该事实固定下来，
  * 避免后续有人误以为 uid 已受签名保护而放宽校验。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Tests\Unit;
