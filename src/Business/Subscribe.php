@@ -41,16 +41,17 @@ class Subscribe
      *
      * @var array
      */
-    protected static $config = array(
+    protected static $config = [
         'enable'             => true,
         'ttl'                => 0,     // 订阅关系过期时间（秒），0 = 永不过期
         'max_topics_per_uid' => 100,   // 单用户订阅主题数上限，0 = 不限
-    );
+    ];
 
     /**
      * 初始化
      *
      * @param array $config app.subscribe
+     *
      * @return void
      */
     public static function init(array $config)
@@ -80,7 +81,8 @@ class Subscribe
      *
      * @param string        $uid
      * @param string        $topic
-     * @param callable|null $cb function(bool $ok, string $msg)
+     * @param null|callable $cb    function(bool $ok, string $msg)
+     *
      * @return void
      */
     public static function add($uid, $topic, ?callable $cb = null)
@@ -92,6 +94,7 @@ class Subscribe
             if ($cb) {
                 $cb(false, '订阅功能未启用或参数为空');
             }
+
             return;
         }
 
@@ -101,28 +104,30 @@ class Subscribe
 
         RedisClient::sAdd($uidKey, $topic, function ($added) use ($uid, $topic, $uidKey, $topicKey, $max, $cb) {
             if (!is_int($added)) {
-                Logger::error('订阅写入失败', array('uid' => $uid, 'topic' => $topic, 'stage' => 'uid_index'));
+                Logger::error('订阅写入失败', ['uid' => $uid, 'topic' => $topic, 'stage' => 'uid_index']);
                 if ($cb) {
                     $cb(false, '订阅写入失败');
                 }
+
                 return;
             }
 
             $task = function () use ($uid, $topic, $uidKey, $topicKey, $cb) {
                 RedisClient::sAdd($topicKey, $uid, function ($added) use ($uid, $topic, $uidKey, $topicKey, $cb) {
                     if (!is_int($added)) {
-                        Logger::error('订阅写入失败', array('uid' => $uid, 'topic' => $topic, 'stage' => 'topic_index'));
+                        Logger::error('订阅写入失败', ['uid' => $uid, 'topic' => $topic, 'stage' => 'topic_index']);
                         // 回滚正向索引，避免两个方向不一致
                         RedisClient::sRem($uidKey, $topic);
                         if ($cb) {
                             $cb(false, '订阅写入失败');
                         }
+
                         return;
                     }
 
-                    self::applyTtl(array($uidKey, $topicKey));
+                    self::applyTtl([$uidKey, $topicKey]);
 
-                    Logger::info('订阅成功', array('uid' => $uid, 'topic' => $topic));
+                    Logger::info('订阅成功', ['uid' => $uid, 'topic' => $topic]);
                     if ($cb) {
                         $cb(true, '');
                     }
@@ -131,6 +136,7 @@ class Subscribe
 
             if ($max <= 0) {
                 $task();
+
                 return;
             }
 
@@ -138,11 +144,12 @@ class Subscribe
             RedisClient::sCard($uidKey, function ($count) use ($uid, $topic, $uidKey, $max, $task, $cb) {
                 if (is_int($count) && $count > $max) {
                     RedisClient::sRem($uidKey, $topic, function () use ($uid, $max, $cb) {
-                        Logger::warn('订阅主题数超出上限，已拒绝', array('uid' => $uid, 'max' => $max));
+                        Logger::warn('订阅主题数超出上限，已拒绝', ['uid' => $uid, 'max' => $max]);
                         if ($cb) {
                             $cb(false, '订阅主题数超出上限 ' . $max);
                         }
                     });
+
                     return;
                 }
                 $task();
@@ -155,7 +162,8 @@ class Subscribe
      *
      * @param string        $uid
      * @param string        $topic
-     * @param callable|null $cb function(bool $ok, string $msg)
+     * @param null|callable $cb    function(bool $ok, string $msg)
+     *
      * @return void
      */
     public static function remove($uid, $topic, ?callable $cb = null)
@@ -167,13 +175,14 @@ class Subscribe
             if ($cb) {
                 $cb(false, '参数为空');
             }
+
             return;
         }
 
         RedisClient::sRem(RedisKeys::subscribeUid($uid), $topic, function ($removed) use ($uid, $topic, $cb) {
             // 正向索引不存在时无需动反向索引，但仍要清理一次以防历史脏数据
             RedisClient::sRem(RedisKeys::subscribeTopic($topic), $uid, function () use ($uid, $topic, $cb) {
-                Logger::info('取消订阅完成', array('uid' => $uid, 'topic' => $topic));
+                Logger::info('取消订阅完成', ['uid' => $uid, 'topic' => $topic]);
                 if ($cb) {
                     $cb(true, '');
                 }
@@ -189,13 +198,14 @@ class Subscribe
      * 查询用户已订阅的主题
      *
      * @param string   $uid
-     * @param callable $cb function(array $topics)
+     * @param callable $cb  function(array $topics)
+     *
      * @return void
      */
     public static function topicsOf($uid, callable $cb)
     {
         RedisClient::sMembers(RedisKeys::subscribeUid($uid), function ($topics) use ($cb) {
-            $cb(is_array($topics) ? array_values($topics) : array());
+            $cb(is_array($topics) ? array_values($topics) : []);
         });
     }
 
@@ -203,13 +213,14 @@ class Subscribe
      * 查询主题的订阅者（供广播使用）
      *
      * @param string   $topic
-     * @param callable $cb function(array $uids)
+     * @param callable $cb    function(array $uids)
+     *
      * @return void
      */
     public static function subscribers($topic, callable $cb)
     {
         RedisClient::sMembers(RedisKeys::subscribeTopic((string)$topic), function ($uids) use ($cb) {
-            $cb(is_array($uids) ? array_values($uids) : array());
+            $cb(is_array($uids) ? array_values($uids) : []);
         });
     }
 
@@ -217,7 +228,8 @@ class Subscribe
      * 主题订阅者数量
      *
      * @param string   $topic
-     * @param callable $cb function(int $count)
+     * @param callable $cb    function(int $count)
+     *
      * @return void
      */
     public static function count($topic, callable $cb)
@@ -237,6 +249,7 @@ class Subscribe
      * ttl <= 0 表示订阅关系长期有效，不做过期。
      *
      * @param array $keys 裸键名（RedisClient 内部会补全局前缀）
+     *
      * @return void
      */
     protected static function applyTtl(array $keys)

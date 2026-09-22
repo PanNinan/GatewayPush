@@ -19,15 +19,16 @@ final class NotifyApi extends AbstractApi
      * @param mixed         $value       推送载荷（JSON 类型，可空）
      * @param string        $msgId       消息标识（<=64 字符；相同 msg_id 600s 内去重，留空由服务端生成）
      * @param string        $offlineMode 离线处置：''=默认 / 'drop'=丢弃 / 'queue'=入队补投
-     * @param callable|null $cb          function (bool $ok, array $data, ?array $error): void
+     * @param null|callable $cb          function (bool $ok, array $data, ?array $error): void
+     *
      * @return string 本请求 seq
      */
     public function notify($value = null, $msgId = '', $offlineMode = '', $cb = null)
     {
-        return $this->call('notify', array(
+        return $this->call('notify', [
             'value'        => $value,
             'msg_id'       => (string)$msgId,
             'offline_mode' => (string)$offlineMode,
-        ), $cb);
+        ], $cb);
     }
 }

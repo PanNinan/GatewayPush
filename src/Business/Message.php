@@ -36,39 +36,39 @@ use JsonException;
  */
 class Message
 {
-    /* ---------------------- 指令 ---------------------- */
-    const CMD_AUTH  = 'auth';
-    const CMD_ACK   = 'ack';
-    const CMD_PING  = 'ping';
-    const CMD_PONG  = 'pong';
-    const CMD_DATA  = 'data';
-    const CMD_PUSH  = 'push';
-    const CMD_ERROR = 'error';
+    // ---------------------- 指令 ----------------------
+    public const CMD_AUTH  = 'auth';
+    public const CMD_ACK   = 'ack';
+    public const CMD_PING  = 'ping';
+    public const CMD_PONG  = 'pong';
+    public const CMD_DATA  = 'data';
+    public const CMD_PUSH  = 'push';
+    public const CMD_ERROR = 'error';
 
-    /* ---------------------- 错误码 ---------------------- */
-    const CODE_OK            = 0;
-    const CODE_BAD_PACKET    = 4000;
-    const CODE_BAD_SIGN      = 4001;
-    const CODE_BAD_TIMESTAMP = 4002;
-    const CODE_UNAUTHORIZED  = 4003;
-    const CODE_AUTH_FAILED   = 4004;
-    const CODE_TOKEN_EXPIRED = 4005;
-    const CODE_UNKNOWN_CMD   = 4006;
-    const CODE_PARAM_MISSING = 4007;
-    const CODE_RATE_LIMIT    = 4008;
-    const CODE_SERVER_ERROR  = 5000;
+    // ---------------------- 错误码 ----------------------
+    public const CODE_OK            = 0;
+    public const CODE_BAD_PACKET    = 4000;
+    public const CODE_BAD_SIGN      = 4001;
+    public const CODE_BAD_TIMESTAMP = 4002;
+    public const CODE_UNAUTHORIZED  = 4003;
+    public const CODE_AUTH_FAILED   = 4004;
+    public const CODE_TOKEN_EXPIRED = 4005;
+    public const CODE_UNKNOWN_CMD   = 4006;
+    public const CODE_PARAM_MISSING = 4007;
+    public const CODE_RATE_LIMIT    = 4008;
+    public const CODE_SERVER_ERROR  = 5000;
 
     /**
      * 报文最大字节数
      */
-    const MAX_PACKET_SIZE = 65535;
+    public const MAX_PACKET_SIZE = 65535;
 
     /**
      * 错误码文案
      *
      * @var array
      */
-    protected static $codeMessages = array(
+    protected static $codeMessages = [
         self::CODE_OK            => 'ok',
         self::CODE_BAD_PACKET    => '报文格式错误',
         self::CODE_BAD_SIGN      => '签名校验失败',
@@ -80,7 +80,7 @@ class Message
         self::CODE_PARAM_MISSING => '缺少必要参数',
         self::CODE_RATE_LIMIT    => '请求频率超限',
         self::CODE_SERVER_ERROR  => '服务端内部错误',
-    );
+    ];
 
     /* ---------------------------------------------------------------------
      | 编解码
@@ -90,6 +90,7 @@ class Message
      * 编码为 JSON 字符串
      *
      * @param mixed $packet
+     *
      * @return string
      */
     public static function encode($packet)
@@ -98,6 +99,7 @@ class Message
             $packet = self::error(self::CODE_BAD_PACKET, '待编码数据不是数组');
         }
         $json = json_encode($packet, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
         return $json === false ? '{}' : $json;
     }
 
@@ -108,7 +110,8 @@ class Message
      *
      * @param mixed  $raw
      * @param string $error 输出错误原因
-     * @return array|null 校验失败返回 null
+     *
+     * @return null|array 校验失败返回 null
      */
     public static function decode($raw, &$error = null)
     {
@@ -116,31 +119,36 @@ class Message
 
         if (!is_string($raw) || $raw === '') {
             $error = '空报文';
+
             return null;
         }
         if (strlen($raw) > self::MAX_PACKET_SIZE) {
             $error = '报文长度超限';
+
             return null;
         }
 
         $packet = json_decode($raw, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
             $error = 'JSON 解析失败：' . json_last_error_msg();
+
             return null;
         }
         if (!is_array($packet)) {
             $error = '报文主体必须是 JSON 对象';
+
             return null;
         }
 
-        $cmd = isset($packet['cmd']) ? $packet['cmd'] : '';
+        $cmd = $packet['cmd'] ?? '';
         if (!is_string($cmd) || $cmd === '') {
             $error = '缺少 cmd 字段';
+
             return null;
         }
 
         // 字段归一化，下游无需反复判空
-        $packet += array(
+        $packet += [
             'seq'       => '',
             'ts'        => 0,
             'uid'       => '',
@@ -148,9 +156,9 @@ class Message
             'token'     => '',
             'sign'      => '',
             'data'      => [],
-        );
+        ];
         if (!is_array($packet['data'])) {
-            $packet['data'] = array('value' => $packet['data']);
+            $packet['data'] = ['value' => $packet['data']];
         }
         $packet['cmd'] = $cmd;
 
@@ -167,19 +175,21 @@ class Message
      * @param string $cmd
      * @param array  $data
      * @param array  $extra 附加/覆盖字段
+     *
      * @return array
      */
-    public static function packet($cmd, $data = [], array $extra = array())
+    public static function packet($cmd, $data = [], array $extra = [])
     {
-        $packet = array(
+        $packet = [
             'cmd'  => (string)$cmd,
             'seq'  => '',
             'ts'   => time(),
             'data' => $data,
-        );
+        ];
         foreach ($extra as $key => $value) {
             $packet[$key] = $value;
         }
+
         return $packet;
     }
 
@@ -188,11 +198,12 @@ class Message
      *
      * @param string $seq
      * @param array  $data
+     *
      * @return array
      */
-    public static function ack($seq = '', $data = array())
+    public static function ack($seq = '', $data = [])
     {
-        return self::packet(self::CMD_ACK, $data, array('seq' => (string)$seq));
+        return self::packet(self::CMD_ACK, $data, ['seq' => (string)$seq]);
     }
 
     /**
@@ -202,28 +213,30 @@ class Message
      * @param string $msg  为空时取默认文案
      * @param string $seq
      * @param string $ref  触发错误的来源指令
+     *
      * @return array
      */
     public static function error($code, $msg = '', $seq = '', $ref = '')
     {
-        return self::packet(self::CMD_ERROR, array(
+        return self::packet(self::CMD_ERROR, [
             'code' => (int)$code,
             'msg'  => $msg !== '' ? $msg : self::codeMessage($code),
-        ), array(
+        ], [
             'seq' => (string)$seq,
             'ref' => (string)$ref,
-        ));
+        ]);
     }
 
     /**
      * 错误码默认文案
      *
      * @param int $code
+     *
      * @return string
      */
     public static function codeMessage($code)
     {
-        return isset(self::$codeMessages[$code]) ? self::$codeMessages[$code] : '未知错误';
+        return self::$codeMessages[$code] ?? '未知错误';
     }
 
     /* ---------------------------------------------------------------------
@@ -234,7 +247,9 @@ class Message
      * 业务数据规范化字符串：递归按键名升序 + 紧凑 JSON
      *
      * @param mixed $data
+     *
      * @return string
+     *
      * @throws JsonException 含无法编码的值（如资源类型）时抛出
      */
     public static function canonicalize($data)
@@ -244,13 +259,77 @@ class Message
         }
         self::recursiveKsort($data);
         $json = json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
         return $json === false ? '' : $json;
+    }
+
+    /**
+     * 生成报文签名
+     *
+     * @param array  $packet
+     * @param string $secret
+     *
+     * @return string
+     */
+    public static function sign(array $packet, $secret)
+    {
+        $base = implode('|', [
+            isset($packet['cmd']) ? (string)$packet['cmd'] : '',
+            isset($packet['seq']) ? (string)$packet['seq'] : '',
+            isset($packet['ts']) ? (string)$packet['ts'] : '',
+            isset($packet['device_id']) ? (string)$packet['device_id'] : '',
+            isset($packet['token']) ? (string)$packet['token'] : '',
+            self::canonicalize($packet['data'] ?? []),
+        ]);
+
+        return hash_hmac('sha256', $base, (string)$secret);
+    }
+
+    /**
+     * 报文合法性校验：签名 + 时效
+     *
+     * 纯本地计算，无 Redis 交互，可在网关进程安全调用。
+     *
+     * @param array $packet
+     * @param array $authConfig app.auth 配置
+     *
+     * @return array ['ok' => bool, 'code' => int, 'msg' => string]
+     */
+    public static function verify(array $packet, array $authConfig)
+    {
+        if (empty($authConfig['sign_enable'])) {
+            return ['ok' => true, 'code' => self::CODE_OK, 'msg' => 'ok'];
+        }
+
+        $secret = isset($authConfig['secret']) ? (string)$authConfig['secret'] : '';
+        if ($secret === '') {
+            return ['ok' => false, 'code' => self::CODE_BAD_SIGN, 'msg' => '服务端未配置签名密钥'];
+        }
+
+        // 时效校验
+        $ts    = (int)($packet['ts'] ?? 0);
+        $skew  = (int)($authConfig['clock_skew'] ?? 300);
+        if ($ts > 0 && $skew > 0 && abs(time() - $ts) > $skew) {
+            return ['ok' => false, 'code' => self::CODE_BAD_TIMESTAMP, 'msg' => '时间戳偏差超出允许范围'];
+        }
+
+        // 签名校验（hash_equals 防时序攻击）
+        $sign = isset($packet['sign']) ? (string)$packet['sign'] : '';
+        if ($sign === '') {
+            return ['ok' => false, 'code' => self::CODE_BAD_SIGN, 'msg' => '缺少 sign 字段'];
+        }
+        if (!hash_equals(self::sign($packet, $secret), $sign)) {
+            return ['ok' => false, 'code' => self::CODE_BAD_SIGN, 'msg' => '签名校验失败'];
+        }
+
+        return ['ok' => true, 'code' => self::CODE_OK, 'msg' => 'ok'];
     }
 
     /**
      * 递归按键名升序排列
      *
      * @param array $data
+     *
      * @return void
      */
     protected static function recursiveKsort(array &$data)
@@ -262,64 +341,5 @@ class Message
             }
         }
         unset($value);
-    }
-
-    /**
-     * 生成报文签名
-     *
-     * @param array  $packet
-     * @param string $secret
-     * @return string
-     */
-    public static function sign(array $packet, $secret)
-    {
-        $base = implode('|', array(
-            isset($packet['cmd']) ? (string)$packet['cmd'] : '',
-            isset($packet['seq']) ? (string)$packet['seq'] : '',
-            isset($packet['ts']) ? (string)$packet['ts'] : '',
-            isset($packet['device_id']) ? (string)$packet['device_id'] : '',
-            isset($packet['token']) ? (string)$packet['token'] : '',
-            self::canonicalize($packet['data'] ?? array()),
-        ));
-        return hash_hmac('sha256', $base, (string)$secret);
-    }
-
-    /**
-     * 报文合法性校验：签名 + 时效
-     *
-     * 纯本地计算，无 Redis 交互，可在网关进程安全调用。
-     *
-     * @param array $packet
-     * @param array $authConfig app.auth 配置
-     * @return array ['ok' => bool, 'code' => int, 'msg' => string]
-     */
-    public static function verify(array $packet, array $authConfig)
-    {
-        if (empty($authConfig['sign_enable'])) {
-            return array('ok' => true, 'code' => self::CODE_OK, 'msg' => 'ok');
-        }
-
-        $secret = isset($authConfig['secret']) ? (string)$authConfig['secret'] : '';
-        if ($secret === '') {
-            return array('ok' => false, 'code' => self::CODE_BAD_SIGN, 'msg' => '服务端未配置签名密钥');
-        }
-
-        // 时效校验
-        $ts    = (int)(isset($packet['ts']) ? $packet['ts'] : 0);
-        $skew  = (int)(isset($authConfig['clock_skew']) ? $authConfig['clock_skew'] : 300);
-        if ($ts > 0 && $skew > 0 && abs(time() - $ts) > $skew) {
-            return array('ok' => false, 'code' => self::CODE_BAD_TIMESTAMP, 'msg' => '时间戳偏差超出允许范围');
-        }
-
-        // 签名校验（hash_equals 防时序攻击）
-        $sign = isset($packet['sign']) ? (string)$packet['sign'] : '';
-        if ($sign === '') {
-            return array('ok' => false, 'code' => self::CODE_BAD_SIGN, 'msg' => '缺少 sign 字段');
-        }
-        if (!hash_equals(self::sign($packet, $secret), $sign)) {
-            return array('ok' => false, 'code' => self::CODE_BAD_SIGN, 'msg' => '签名校验失败');
-        }
-
-        return array('ok' => true, 'code' => self::CODE_OK, 'msg' => 'ok');
     }
 }

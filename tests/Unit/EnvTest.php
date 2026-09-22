@@ -36,32 +36,6 @@ class EnvTest extends TestCase
         $this->injected = [];
     }
 
-    /**
-     * 向 $_ENV 注入测试值
-     *
-     * @param string $key
-     * @param mixed  $value
-     * @return string 便于链式使用
-     */
-    private function inject($key, $value)
-    {
-        $this->injected[] = $key;
-        $_ENV[$key] = $value;
-
-        return $key;
-    }
-
-    /**
-     * 保证不存在的键名，用于验证默认值回落
-     *
-     * @param string $suffix
-     * @return string
-     */
-    private static function absent($suffix)
-    {
-        return 'GW_UNIT_TEST_ABSENT_' . $suffix;
-    }
-
     /* ---------------------------------------------------------------------
      | str
      --------------------------------------------------------------------- */
@@ -95,7 +69,7 @@ class EnvTest extends TestCase
 
     public function testStrFallsBackForArrayValue(): void
     {
-        self::assertSame('fallback', Env::str($this->inject('GW_UNIT_TEST_STR_ARR', array('x')), 'fallback'));
+        self::assertSame('fallback', Env::str($this->inject('GW_UNIT_TEST_STR_ARR', ['x']), 'fallback'));
     }
 
     /* ---------------------------------------------------------------------
@@ -135,7 +109,7 @@ class EnvTest extends TestCase
 
     public function testBoolRecognizesTruthyLiteralsCaseInsensitively(): void
     {
-        foreach (array('1', 'true', 'TRUE', 'yes', 'On', ' on ') as $literal) {
+        foreach (['1', 'true', 'TRUE', 'yes', 'On', ' on '] as $literal) {
             self::assertTrue(
                 Env::bool($this->inject('GW_UNIT_TEST_BOOL_TRUE', $literal), false),
                 '应识别为真：' . $literal
@@ -146,7 +120,7 @@ class EnvTest extends TestCase
     public function testBoolTreatsOtherLiteralsAsFalse(): void
     {
         // 注意：这些返回 false 而非默认值 —— 避免 'false' 被 PHP 强转为 true
-        foreach (array('0', 'false', 'no', 'off') as $literal) {
+        foreach (['0', 'false', 'no', 'off'] as $literal) {
             self::assertFalse(
                 Env::bool($this->inject('GW_UNIT_TEST_BOOL_FALSE', $literal), true),
                 '应识别为假：' . $literal
@@ -176,16 +150,16 @@ class EnvTest extends TestCase
     public function testListSplitsTrimsAndDropsEmptyItems(): void
     {
         self::assertSame(
-            array('a', 'b', 'c'),
-            Env::list($this->inject('GW_UNIT_TEST_LIST', 'a, b ,,c '), array('x'))
+            ['a', 'b', 'c'],
+            Env::list($this->inject('GW_UNIT_TEST_LIST', 'a, b ,,c '), ['x'])
         );
     }
 
     public function testListFallsBackForBlankOrAbsent(): void
     {
-        self::assertSame(array('x'), Env::list($this->inject('GW_UNIT_TEST_LIST_BLANK', '   '), array('x')));
-        self::assertSame(array('x'), Env::list($this->inject('GW_UNIT_TEST_LIST_COMMAS', ',,'), array('x')));
-        self::assertSame(array('x'), Env::list(self::absent('LIST'), array('x')));
+        self::assertSame(['x'], Env::list($this->inject('GW_UNIT_TEST_LIST_BLANK', '   '), ['x']));
+        self::assertSame(['x'], Env::list($this->inject('GW_UNIT_TEST_LIST_COMMAS', ',,'), ['x']));
+        self::assertSame(['x'], Env::list(self::absent('LIST'), ['x']));
     }
 
     /* ---------------------------------------------------------------------
@@ -196,5 +170,33 @@ class EnvTest extends TestCase
     {
         self::assertTrue(Env::has($this->inject('GW_UNIT_TEST_HAS', '')));
         self::assertFalse(Env::has(self::absent('HAS')));
+    }
+
+    /**
+     * 向 $_ENV 注入测试值
+     *
+     * @param string $key
+     * @param mixed  $value
+     *
+     * @return string 便于链式使用
+     */
+    private function inject($key, $value)
+    {
+        $this->injected[] = $key;
+        $_ENV[$key] = $value;
+
+        return $key;
+    }
+
+    /**
+     * 保证不存在的键名，用于验证默认值回落
+     *
+     * @param string $suffix
+     *
+     * @return string
+     */
+    private static function absent($suffix)
+    {
+        return 'GW_UNIT_TEST_ABSENT_' . $suffix;
     }
 }

@@ -28,35 +28,10 @@ final class UdpTransportTest extends TestCase
     /** @var FakeUdpConnection */
     private $fake;
 
-    private function makeTransport(array $options = [], &$fake = null)
-    {
-        $this->makeTimers();
-
-        $fake         = new FakeUdpConnection();
-        $this->fake   = $fake;
-        $capturedFake = &$fake;
-
-        return new UdpTransport(
-            'udp://127.0.0.1:8283',
-            $options,
-            function () use (&$capturedFake) {
-                return $capturedFake;
-            },
-            $this->timerAdd,
-            $this->timerDel
-        );
-    }
-
-    /** 建连并走完预热窗口 */
-    private function connectAndWarmup(UdpTransport $transport)
-    {
-        $transport->connect();
-        $this->fireTimer($this->lastTimerId()); // 预热窗口结束
-    }
-
     public function testInvalidUrlThrowsConfig()
     {
         $this->makeTimers();
+
         try {
             new UdpTransport('ws://127.0.0.1:8283', [], null, $this->timerAdd, $this->timerDel);
             self::fail('非 udp:// 的地址必须抛 ClientException');
@@ -150,18 +125,18 @@ final class UdpTransportTest extends TestCase
         // 第一笔下行：确认最旧一笔（frame-1）
         $fake->emit('ack-1');
         self::assertSame(1, $transport->inflightCount());
-        self::assertSame(array('ack-1'), $frames);
+        self::assertSame(['ack-1'], $frames);
 
         // 第二笔下行：确认 frame-2，在途清空，重传定时器应被取消
         $fake->emit('ack-2');
         self::assertSame(0, $transport->inflightCount());
-        self::assertSame(array('ack-1', 'ack-2'), $frames);
+        self::assertSame(['ack-1', 'ack-2'], $frames);
 
         // 推进时间：不应有任何重传发生
         $sentBefore = count($fake->sent);
         $this->fireTimer($this->lastTimerId());
         $this->fireTimer($this->lastTimerId());
-        self::assertSame($sentBefore, count($fake->sent), '在途清空后不得再重传');
+        self::assertCount($sentBefore, $fake->sent, '在途清空后不得再重传');
     }
 
     public function testRetransmitResendsInflightUntilAcked()
@@ -180,15 +155,15 @@ final class UdpTransportTest extends TestCase
         $fake->emit('ack');
         $sentBefore = count($fake->sent);
         $this->fireTimer($this->lastTimerId());
-        self::assertSame($sentBefore, count($fake->sent));
+        self::assertCount($sentBefore, $fake->sent);
     }
 
     public function testRetransmitExhaustionDropsFrameAndFiresError()
     {
-        $transport   = $this->makeTransport(array('max_attempts' => 2), $fake);
+        $transport   = $this->makeTransport(['max_attempts' => 2], $fake);
         $err         = null;
         $transport->onError(function ($code, $msg) use (&$err) {
-            $err = array($code, $msg);
+            $err = [$code, $msg];
         });
 
         $this->connectAndWarmup($transport);
@@ -210,7 +185,7 @@ final class UdpTransportTest extends TestCase
         // 放弃后不再安排重传
         $sentBefore = count($fake->sent);
         $this->fireTimer($this->lastTimerId());
-        self::assertSame($sentBefore, count($fake->sent));
+        self::assertCount($sentBefore, $fake->sent);
     }
 
     public function testCloseFiresOnCloseAndDiscardsConnection()
@@ -265,5 +240,31 @@ final class UdpTransportTest extends TestCase
         // 触发已删除的 warmup 定时器：不应有任何发送，也不应异常
         $this->fireTimer(count($this->timers));
         self::assertCount(0, $fake->sent);
+    }
+
+    private function makeTransport(array $options = [], &$fake = null)
+    {
+        $this->makeTimers();
+
+        $fake         = new FakeUdpConnection();
+        $this->fake   = $fake;
+        $capturedFake = &$fake;
+
+        return new UdpTransport(
+            'udp://127.0.0.1:8283',
+            $options,
+            function () use (&$capturedFake) {
+                return $capturedFake;
+            },
+            $this->timerAdd,
+            $this->timerDel
+        );
+    }
+
+    /** 建连并走完预热窗口 */
+    private function connectAndWarmup(UdpTransport $transport)
+    {
+        $transport->connect();
+        $this->fireTimer($this->lastTimerId()); // 预热窗口结束
     }
 }

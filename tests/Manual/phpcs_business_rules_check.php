@@ -23,7 +23,9 @@
 declare(strict_types=1);
 
 $root = dirname(__DIR__, 2);
+
 require $root . '/vendor/autoload.php';
+
 require $root . '/vendor/squizlabs/php_codesniffer/autoload.php';
 
 use GatewayPush\Common\RedisKeys;
@@ -31,6 +33,7 @@ use PHP_CodeSniffer\Standards\GatewayPush\Sniffs\Common\RedisKeyLiteralSniff;
 use PHP_CodeSniffer\Standards\GatewayPush\Sniffs\PHP\ForbiddenCallSniff;
 
 require_once $root . '/tools/phpcs/Sniffs/PHP/ForbiddenCallSniff.php';
+
 require_once $root . '/tools/phpcs/Sniffs/Common/RedisKeyLiteralSniff.php';
 
 $passed = 0;
@@ -46,13 +49,14 @@ $failed = 0;
 $check = static function (bool $ok, string $label, string $detail = '') use (&$passed, &$failed): void {
     if ($ok === true) {
         $passed++;
-        echo "  [PASS] $label\n";
+        echo "  [PASS] {$label}\n";
+
         return;
     }
 
     $failed++;
-    echo "  [FAIL] $label";
-    echo $detail === '' ? "\n" : "  —— $detail\n";
+    echo "  [FAIL] {$label}";
+    echo $detail === '' ? "\n" : "  —— {$detail}\n";
 };
 
 /**
@@ -90,8 +94,8 @@ function scanSample(string $stdinPath, string $code): array
     proc_close($proc);
 
     return [
-        'forbidden' => substr_count((string) $out, '常驻进程禁则'),
-        'redis' => substr_count((string) $out, 'Redis 键名禁止'),
+        'forbidden' => substr_count((string)$out, '常驻进程禁则'),
+        'redis' => substr_count((string)$out, 'Redis 键名禁止'),
     ];
 }
 
@@ -117,12 +121,13 @@ foreach ($constants as $name => $value) {
     foreach ($redisSniff->prefixes as $prefix) {
         if (str_starts_with($value, $prefix) === true) {
             $covered = true;
+
             break;
         }
     }
 
     if ($covered === false) {
-        $uncovered[] = "RedisKeys::$name = '$value'";
+        $uncovered[] = "RedisKeys::{$name} = '{$value}'";
     }
 }
 
@@ -145,32 +150,32 @@ $check(
  * ② 正例 / ③ 作用域矩阵
  * ------------------------------------------------------------------ */
 $sample = <<<'PHP'
-<?php
-class Probe
-{
-    public function a(): void
+    <?php
+    class Probe
     {
-        exit(1);
-    }
+        public function a(): void
+        {
+            exit(1);
+        }
 
-    public function b(): void
-    {
-        sleep(1);
-        usleep(1);
-        pcntl_fork();
-    }
+        public function b(): void
+        {
+            sleep(1);
+            usleep(1);
+            pcntl_fork();
+        }
 
-    public function c(): string
-    {
-        return 'session:' . 'x';
-    }
+        public function c(): string
+        {
+            return 'session:' . 'x';
+        }
 
-    public function d(): string
-    {
-        return "queue:udp:in";
+        public function d(): string
+        {
+            return "queue:udp:in";
+        }
     }
-}
-PHP;
+    PHP;
 
 $abs = str_replace('\\', '/', $root);
 
@@ -197,7 +202,7 @@ foreach ($matrix as $path => $expect) {
     );
 }
 
-/* ------------------------------------------------------------------ */
+// ------------------------------------------------------------------
 echo "\n===============================\n";
 printf("结论：%d 通过 / %d 失败\n", $passed, $failed);
 

@@ -37,6 +37,7 @@ final class PushCommand
      * @param array $gatewayConfig  config/gateway.php
      * @param array $businessConfig config/business.php
      * @param array $argvList       原始参数列表
+     *
      * @return int 退出码
      */
     public static function run(array $appConfig, array $gatewayConfig, array $businessConfig, array $argvList)
@@ -50,19 +51,21 @@ final class PushCommand
         if ($targetType === '' || $target === '') {
             fwrite(STDERR, "用法：php start.php push <uid|device|client> <target> [payload-json] [msg_id] [offline_mode]\n");
             fwrite(STDERR, "示例：php start.php push uid 1001 '{\"title\":\"hi\"}' msg-1\n");
+
             return 1;
         }
 
         $payload = json_decode($payloadRaw, true);
         if (!is_array($payload)) {
             fwrite(STDERR, '[FATAL] payload 不是合法 JSON 对象：' . $payloadRaw . "\n");
+
             return 1;
         }
 
         Push::init(
             $appConfig['push'],
             $businessConfig['push_queue'],
-            isset($gatewayConfig['udp']['out_queue']) ? $gatewayConfig['udp']['out_queue'] : []
+            $gatewayConfig['udp']['out_queue'] ?? []
         );
 
         $exitCode = 0;
@@ -81,15 +84,16 @@ final class PushCommand
                 Worker::stopAll();
             }, [], false);
 
-            Push::enqueue($targetType, $target, $payload, array(
+            Push::enqueue($targetType, $target, $payload, [
                 'msg_id'       => $msgId,
                 'offline_mode' => $offlineMode,
                 'source'       => 'cli',
-            ), function ($ok) use ($targetType, $target, $msgId, $offlineMode, $queueKey, &$exitCode) {
+            ], function ($ok) use ($targetType, $target, $msgId, $offlineMode, $queueKey, &$exitCode) {
                 if (!$ok) {
                     fwrite(STDERR, "[FATAL] 推送任务入队失败\n");
                     $exitCode = 1;
                     Worker::stopAll();
+
                     return;
                 }
 

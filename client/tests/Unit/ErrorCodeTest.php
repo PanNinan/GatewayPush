@@ -40,7 +40,7 @@ class ErrorCodeTest extends TestCase
 
     public function testMessageMatchesServerText(): void
     {
-        $codes = array(
+        $codes = [
             ErrorCode::OK,
             ErrorCode::BAD_PACKET,
             ErrorCode::BAD_SIGN,
@@ -52,7 +52,7 @@ class ErrorCodeTest extends TestCase
             ErrorCode::PARAM_MISSING,
             ErrorCode::RATE_LIMIT,
             ErrorCode::SERVER_ERROR,
-        );
+        ];
 
         foreach ($codes as $code) {
             self::assertSame(
@@ -131,13 +131,13 @@ class ErrorCodeTest extends TestCase
 
     public function testLocalCodesDoNotCollideWithServerCodes(): void
     {
-        $candidates = array(
+        $candidates = [
             ErrorCode::CLIENT_TIMEOUT,
             ErrorCode::CLIENT_TRANSPORT,
             ErrorCode::CLIENT_CONFIG,
             ErrorCode::CLIENT_STATE,
             ErrorCode::CLIENT_INTERNAL,
-        );
+        ];
 
         foreach ($candidates as $code) {
             self::assertGreaterThanOrEqual(10000, $code);
@@ -169,7 +169,7 @@ class ErrorCodeTest extends TestCase
 
     public function testFromPacketFallsBackToServerError(): void
     {
-        $packet = array('cmd' => 'error', 'data' => array());
+        $packet = ['cmd' => 'error', 'data' => []];
         $e      = ClientException::fromPacket($packet);
 
         self::assertSame(ErrorCode::SERVER_ERROR, $e->getCode());
@@ -180,7 +180,7 @@ class ErrorCodeTest extends TestCase
 
     public function testFromPacketToleratesNonArrayData(): void
     {
-        $e = ClientException::fromPacket(array('cmd' => 'error', 'data' => 'raw'));
+        $e = ClientException::fromPacket(['cmd' => 'error', 'data' => 'raw']);
 
         self::assertSame(ErrorCode::SERVER_ERROR, $e->getCode());
     }

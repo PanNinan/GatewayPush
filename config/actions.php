@@ -55,45 +55,43 @@ use GatewayPush\Common\Env;
 
 // 主题名规则：字母数字与 _ : . - 组成，长度 1~64。
 // 主题名会直接参与 Redis 键拼接，必须限制字符集以避免键空间被污染。
-$topicRule = array(
+$topicRule = [
     'type'     => 'string',
     'required' => true,
     'max_len'  => 64,
     'pattern'  => '/^[A-Za-z0-9_:.\-]{1,64}$/',
-);
+];
 
-return array(
-
-    'defaults' => array(
+return [
+    'defaults' => [
         'auth'    => true,
-        'reply'   => array(
+        'reply'   => [
             ActionContext::CHANNEL_WS   => ActionContext::REPLY_SYNC,
             ActionContext::CHANNEL_UDP  => ActionContext::REPLY_SYNC,
             ActionContext::CHANNEL_HTTP => ActionContext::REPLY_SYNC,
-        ),
+        ],
         'timeout' => Env::int('ACTION_TIMEOUT', 5),
-    ),
+    ],
 
-    'actions' => array(
-
+    'actions' => [
         /* ---------------------------------------------------------------
          | 链路验证类
          --------------------------------------------------------------- */
-        'echo' => array(
+        'echo' => [
             'handler'     => EchoAction::class,
             'description' => '原样回显，用于联通性验证与压测',
             'params'      => '*',
             'http'        => true,
-        ),
+        ],
 
-        'session' => array(
+        'session' => [
             'handler'     => SessionAction::class,
             'description' => '查询当前连接的会话摘要',
             'params'      => [],
             // 刻意不开放 HTTP：本动作的语义锚点是「当前连接」，HTTP 通道下
             // 没有连接实体（clientId 为 http:{request_id}），调用无意义。
             // 需要按 uid 查会话请走 handleAuth 落库的会话键或新增专用动作。
-        ),
+        ],
 
         /* ---------------------------------------------------------------
          | 上报类
@@ -101,24 +99,24 @@ return array(
          | 同一个处理器在 WS 上回执、在 UDP 上静默 —— 处理器内部不含任何
          | 通道判断，差异完全由下方 reply 声明表达。这是本清单的核心示范。
          --------------------------------------------------------------- */
-        'report' => array(
+        'report' => [
             'handler'     => ReportAction::class,
             'description' => '数据上报：按主题累加计数（UDP 下静默不回执）',
-            'reply'       => array(
+            'reply'       => [
                 ActionContext::CHANNEL_WS   => ActionContext::REPLY_SYNC,
                 ActionContext::CHANNEL_UDP  => ActionContext::REPLY_NONE,
                 ActionContext::CHANNEL_HTTP => ActionContext::REPLY_SYNC,
-            ),
-            'params'      => array(
+            ],
+            'params'      => [
                 'topic' => $topicRule,
-                'count' => array('type' => 'int', 'min' => 1, 'max' => 10000, 'default' => 1),
-                'value' => array('type' => 'json'),
-            ),
-            'options'     => array(
+                'count' => ['type' => 'int', 'min' => 1, 'max' => 10000, 'default' => 1],
+                'value' => ['type' => 'json'],
+            ],
+            'options'     => [
                 'ttl' => Env::int('ACTION_REPORT_TTL', 86400),
-            ),
+            ],
             'http'        => true,
-        ),
+        ],
 
         /* ---------------------------------------------------------------
          | 订阅关系类
@@ -128,45 +126,45 @@ return array(
          | 刻意不开放客户端 publish 动作：那等于允许任意连接借服务端
          | 向他人广播，属消息伪造面。
          --------------------------------------------------------------- */
-        'subscribe' => array(
+        'subscribe' => [
             'handler'     => SubscribeAction::class,
             'description' => '订阅主题',
-            'params'      => array('topic' => $topicRule),
+            'params'      => ['topic' => $topicRule],
             'http'        => true,
-        ),
+        ],
 
-        'unsubscribe' => array(
+        'unsubscribe' => [
             'handler'     => UnsubscribeAction::class,
             'description' => '取消订阅主题',
-            'params'      => array('topic' => $topicRule),
+            'params'      => ['topic' => $topicRule],
             'http'        => true,
-        ),
+        ],
 
-        'topics' => array(
+        'topics' => [
             'handler'     => TopicsAction::class,
             'description' => '查询本人已订阅的主题列表',
             'params'      => [],
             'http'        => true,
-        ),
+        ],
 
         /* ---------------------------------------------------------------
          | 推送触发类
          |
          | 目标恒为调用方自身 uid，不接受任意 uid 入参。
          --------------------------------------------------------------- */
-        'notify' => array(
+        'notify' => [
             'handler'     => NotifyAction::class,
             'description' => '请求服务端向本人推送一条消息（验证推送闭环）',
-            'params'      => array(
-                'value'        => array('type' => 'json'),
-                'msg_id'       => array('type' => 'string', 'max_len' => 64),
-                'offline_mode' => array(
+            'params'      => [
+                'value'        => ['type' => 'json'],
+                'msg_id'       => ['type' => 'string', 'max_len' => 64],
+                'offline_mode' => [
                     'type'    => 'string',
-                    'enum'    => array('', 'drop', 'queue'),
+                    'enum'    => ['', 'drop', 'queue'],
                     'default' => '',
-                ),
-            ),
+                ],
+            ],
             'http'        => true,
-        ),
-    ),
-);
+        ],
+    ],
+];

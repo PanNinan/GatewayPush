@@ -31,9 +31,10 @@ namespace GatewayPush\Business;
  */
 class ActionContext
 {
-    /* ---------------------- 通道 ---------------------- */
-    const CHANNEL_WS   = 'ws';
-    const CHANNEL_UDP  = 'udp';
+    // ---------------------- 通道 ----------------------
+    public const CHANNEL_WS   = 'ws';
+    public const CHANNEL_UDP  = 'udp';
+
     /**
      * HTTP 通道：由 Api 进程经动作队列投递而来，clientId 形如 http:{request_id}。
      *
@@ -41,11 +42,11 @@ class ActionContext
      * 「往某个连接方向下发」，而是写回 action:result:{request_id} 供 Api 取回
      * （见 ActionReply）。
      */
-    const CHANNEL_HTTP = 'http';
+    public const CHANNEL_HTTP = 'http';
 
-    /* ---------------------- 回执方式 ---------------------- */
-    const REPLY_SYNC = 'sync';   // 处理结果下发客户端
-    const REPLY_NONE = 'none';   // 静默处理，不下发任何报文
+    // ---------------------- 回执方式 ----------------------
+    public const REPLY_SYNC = 'sync';   // 处理结果下发客户端
+    public const REPLY_NONE = 'none';   // 静默处理，不下发任何报文
 
     /**
      * 动作名
@@ -127,7 +128,7 @@ class ActionContext
     /**
      * 首次回执后的钩子，供 ActionRunner 注销超时定时器
      *
-     * @var callable|null
+     * @var null|callable
      */
     protected $replyHook;
 
@@ -148,7 +149,7 @@ class ActionContext
      * @param callable $sender    function (array $packet): void
      * @param array    $options   动作私有配置
      */
-    public function __construct($action, array $packet, array $params, array $identity, $channel, $replyMode, callable $sender, array $options = array())
+    public function __construct($action, array $packet, array $params, array $identity, $channel, $replyMode, callable $sender, array $options = [])
     {
         $this->options = $options;
         $this->action    = (string)$action;
@@ -254,6 +255,7 @@ class ActionContext
      *
      * @param string $key
      * @param mixed  $default
+     *
      * @return mixed
      */
     public function param($key, $default = null)
@@ -266,6 +268,7 @@ class ActionContext
      *
      * @param string $key
      * @param mixed  $default
+     *
      * @return mixed
      */
     public function option($key, $default = null)
@@ -311,6 +314,7 @@ class ActionContext
      * 注册首次回执钩子
      *
      * @param callable $hook
+     *
      * @return void
      */
     public function setReplyHook(callable $hook)
@@ -324,9 +328,10 @@ class ActionContext
      * reply = none 时不实际下发，仅标记已回执（见类注释）。
      *
      * @param array $data 业务数据体
+     *
      * @return bool 是否真正下发
      */
-    public function reply(array $data = array())
+    public function reply(array $data = [])
     {
         return $this->send(Message::ack($this->seq(), $data));
     }
@@ -335,7 +340,8 @@ class ActionContext
      * 错误回执
      *
      * @param int    $code
-     * @param string $msg 为空时取错误码默认文案
+     * @param string $msg  为空时取错误码默认文案
+     *
      * @return bool 是否真正下发
      */
     public function replyError($code, $msg = '')
@@ -352,6 +358,7 @@ class ActionContext
      * 下发任意报文（需要自定义 cmd 时使用）
      *
      * @param array $packet
+     *
      * @return bool 是否真正下发
      */
     public function send(array $packet)
@@ -369,6 +376,7 @@ class ActionContext
         }
 
         ($this->sender)($packet);
+
         return true;
     }
 }

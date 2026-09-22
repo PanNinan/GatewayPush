@@ -21,6 +21,7 @@ final class CaseWsLink
      * 用例 A：WebSocket 正常鉴权链路
      *
      * @param Harness $h
+     *
      * @return void
      */
     public static function authLink(Harness $h)
@@ -31,12 +32,12 @@ final class CaseWsLink
 
         $connA->onConnect = function ($con) use ($h, $c) {
             echo "[A] WebSocket 已连接\n";
-            $con->send($h->encode($h->buildPacket(Message::CMD_AUTH, 'a-auth-1', array(
+            $con->send($h->encode($h->buildPacket(Message::CMD_AUTH, 'a-auth-1', [
                 'uid'       => $c['uid'],
                 'device_id' => $c['device_id'],
                 'token'     => $c['token'],
-                'data'      => array('client' => 'e2e-check'),
-            ))));
+                'data'      => ['client' => 'e2e-check'],
+            ])));
             echo "[A] -> auth（含签名）\n";
         };
 
@@ -47,14 +48,16 @@ final class CaseWsLink
                 return;
             }
             if ($packet['cmd'] === Message::CMD_ACK) {
-                $con->send($h->encode($h->buildPacket(Message::CMD_PING, 'a-ping-1', array())));
+                $con->send($h->encode($h->buildPacket(Message::CMD_PING, 'a-ping-1', [])));
                 echo "[A] -> ping\n";
+
                 return;
             }
             if ($packet['cmd'] === Message::CMD_PONG) {
                 $h->state['A'] = true;
                 $con->close();
                 $h->finish();
+
                 return;
             }
             if ($packet['cmd'] === Message::CMD_ERROR) {
@@ -86,6 +89,7 @@ final class CaseWsLink
      * 用例 B：WebSocket 越权拦截
      *
      * @param Harness $h
+     *
      * @return void
      */
     public static function unauthorizedProbe(Harness $h)
@@ -94,11 +98,11 @@ final class CaseWsLink
 
         $connB->onConnect = function ($con) use ($h) {
             echo "[B] WebSocket 已连接（不发送 auth）\n";
-            $con->send($h->encode($h->buildPacket(Message::CMD_DATA, 'b-data-1', array(
+            $con->send($h->encode($h->buildPacket(Message::CMD_DATA, 'b-data-1', [
                 'uid'       => 'probe-uid',
                 'device_id' => 'probe-device',
-                'data'      => array('probe' => 1),
-            ))));
+                'data'      => ['probe' => 1],
+            ])));
             echo "[B] -> data（未鉴权越权探测）\n";
         };
 

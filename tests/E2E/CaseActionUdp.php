@@ -32,6 +32,7 @@ final class CaseActionUdp
 {
     /**
      * @param Harness $h
+     *
      * @return void
      */
     public static function silentReport(Harness $h)
@@ -48,12 +49,12 @@ final class CaseActionUdp
                 if ($nEcho1Acked || $n > 4) {
                     return;
                 }
-                $con->send($h->encode($h->buildPacket(Message::CMD_DATA, $c['seq1'], array(
+                $con->send($h->encode($h->buildPacket(Message::CMD_DATA, $c['seq1'], [
                     'uid'       => $c['uid'],
                     'device_id' => $c['device_id'],
                     'token'     => $c['token'],
-                    'data'      => array('action' => 'echo', 'params' => array('phase' => 1)),
-                ))));
+                    'data'      => ['action' => 'echo', 'params' => ['phase' => 1]],
+                ])));
                 echo "[N] -> data/action=echo#1（建立 UDP 应用层会话，第 {$n} 次）\n";
 
                 Timer::add(1.2, function () use ($n, &$attempt) {
@@ -91,6 +92,7 @@ final class CaseActionUdp
                 if ($isActionReply) {
                     $fail('report 在 UDP 上声明为静默，却收到业务层回执：' . substr((string)$raw, 0, 120));
                 }
+
                 return;
             }
 
@@ -107,31 +109,33 @@ final class CaseActionUdp
                     || (string)$data['action'] !== 'echo'
                     || (isset($data['channel']) ? (string)$data['channel'] : '') !== 'udp') {
                     $fail('UDP echo 业务回执异常（期望 ack 且 channel=udp）：' . $raw);
+
                     return;
                 }
                 echo "[N] <- echo#1 业务回执（UDP 动作回执通道打通，channel=udp）\n";
 
                 // 连发 3 份上报以容忍 UDP 丢包，count 各计 1
                 for ($i = 0; $i < 3; $i++) {
-                    $con->send($h->encode($h->buildPacket(Message::CMD_DATA, $c['report_seq'], array(
+                    $con->send($h->encode($h->buildPacket(Message::CMD_DATA, $c['report_seq'], [
                         'uid'       => $c['uid'],
                         'device_id' => $c['device_id'],
                         'token'     => $c['token'],
-                        'data'      => array('action' => 'report', 'params' => array('topic' => $c['topic'], 'count' => 1)),
-                    ))));
+                        'data'      => ['action' => 'report', 'params' => ['topic' => $c['topic'], 'count' => 1]],
+                    ])));
                 }
                 echo "[N] -> data/action=report ×3（UDP 声明静默，期望无任何回执）\n";
 
                 // 延迟发 echo#2：若 report 违规回执，必然先于 echo#2 的 ack 到达
                 Timer::add(0.8, function () use ($h, $con, $c) {
-                    $con->send($h->encode($h->buildPacket(Message::CMD_DATA, $c['seq2'], array(
+                    $con->send($h->encode($h->buildPacket(Message::CMD_DATA, $c['seq2'], [
                         'uid'       => $c['uid'],
                         'device_id' => $c['device_id'],
                         'token'     => $c['token'],
-                        'data'      => array('action' => 'echo', 'params' => array('phase' => 2)),
-                    ))));
+                        'data'      => ['action' => 'echo', 'params' => ['phase' => 2]],
+                    ])));
                     echo "[N] -> data/action=echo#2（此刻前若收到 report 回执即为失败）\n";
                 }, [], false);
+
                 return;
             }
 
@@ -141,6 +145,7 @@ final class CaseActionUdp
                 }
                 if ($packet['cmd'] !== Message::CMD_ACK) {
                     $fail('echo#2 未返回业务回执：' . $raw);
+
                     return;
                 }
                 echo "[N] <- echo#2 业务回执（确认期间未收到 report 业务回执）\n";
@@ -166,6 +171,7 @@ final class CaseActionUdp
                                 : "[N] 静默上报计数未落库\n";
                             $con->close();
                             $h->finish();
+
                             return;
                         }
 
@@ -175,6 +181,7 @@ final class CaseActionUdp
                     });
                 };
                 $check(1);
+
                 return;
             }
         };

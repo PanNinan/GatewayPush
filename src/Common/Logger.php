@@ -35,35 +35,35 @@ use Throwable;
 class Logger
 {
     /** 日志级别常量 */
-    const DEBUG = 'debug';
-    const INFO  = 'info';
-    const WARN  = 'warn';
-    const ERROR = 'error';
+    public const DEBUG = 'debug';
+    public const INFO  = 'info';
+    public const WARN  = 'warn';
+    public const ERROR = 'error';
 
     /** 未显式切换日志通道时的默认角色名 */
-    const CHANNEL_DEFAULT = 'app';
+    public const CHANNEL_DEFAULT = 'app';
 
     /** 跨角色错误汇总通道前缀（error_{date}.log），保留字，不可作为角色名 */
-    const CHANNEL_ERROR_DIGEST = 'error';
+    public const CHANNEL_ERROR_DIGEST = 'error';
 
     /**
      * 级别权重，数值越大越严重
      *
      * @var array
      */
-    protected static $weight = array(
+    protected static $weight = [
         self::DEBUG => 0,
         self::INFO  => 1,
         self::WARN  => 2,
         self::ERROR => 3,
-    );
+    ];
 
     /**
      * 运行配置
      *
      * @var array
      */
-    protected static $config = array(
+    protected static $config = [
         'path'               => '',
         'level'              => self::DEBUG,
         'role'               => self::CHANNEL_DEFAULT,
@@ -74,7 +74,7 @@ class Logger
         'archive_dir'        => '',
         'archive_keep_days'  => 180,
         'archive_level'      => 6,
-    );
+    ];
 
     /**
      * 全局处理器是否已注册
@@ -101,20 +101,22 @@ class Logger
      * 初始化日志组件
      *
      * @param array $config
+     *
      * @return void
+     *
      * @throws \RuntimeException 日志目录无法创建时抛出
      */
-    public static function init(array $config = array())
+    public static function init(array $config = [])
     {
         self::$config = array_merge(self::$config, $config);
         self::$config['role'] = self::sanitizeRole(self::$config['role']);
-        if (! is_dir(self::$config['path']) && ! mkdir(
-                $concurrentDirectory = self::$config['path'],
-                0755,
-                true
-            ) && ! is_dir($concurrentDirectory)) {
-                throw new \RuntimeException(sprintf('Directory "%s" was not created', $concurrentDirectory));
-            }
+        if (!is_dir(self::$config['path']) && !mkdir(
+            $concurrentDirectory = self::$config['path'],
+            0o755,
+            true
+        ) && !is_dir($concurrentDirectory)) {
+            throw new \RuntimeException(sprintf('Directory "%s" was not created', $concurrentDirectory));
+        }
         self::$processTag = 'pid:' . getmypid();
     }
 
@@ -132,6 +134,7 @@ class Logger
      * fork 后若不刷新将残留父进程 pid。
      *
      * @param string $role
+     *
      * @return void
      */
     public static function useChannel($role)
@@ -156,28 +159,30 @@ class Logger
             if (!(error_reporting() & $errno)) {
                 return false;
             }
-            self::error($errstr, array(
+            self::error($errstr, [
                 'errno' => $errno,
                 'file'  => $errfile . ':' . $errline,
-            ));
+            ]);
+
             return true;
         });
 
         set_exception_handler(function ($e) {
             if ($e instanceof Throwable) {
                 self::exception($e, 'uncaught');
+
                 return;
             }
-            self::error('未捕获的异常对象', array('value' => var_export($e, true)));
+            self::error('未捕获的异常对象', ['value' => var_export($e, true)]);
         });
 
         register_shutdown_function(function () {
             $error = error_get_last();
-            if ($error && in_array($error['type'], array(E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR), true)) {
-                self::error($error['message'], array(
+            if ($error && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+                self::error($error['message'], [
                     'type' => 'fatal',
                     'file' => $error['file'] . ':' . $error['line'],
-                ));
+                ]);
             }
         });
     }
@@ -191,9 +196,10 @@ class Logger
      *
      * @param mixed $message
      * @param array $context
+     *
      * @return void
      */
-    public static function debug($message, array $context = array())
+    public static function debug($message, array $context = [])
     {
         self::log(self::DEBUG, $message, $context);
     }
@@ -203,9 +209,10 @@ class Logger
      *
      * @param mixed $message
      * @param array $context
+     *
      * @return void
      */
-    public static function info($message, array $context = array())
+    public static function info($message, array $context = [])
     {
         self::log(self::INFO, $message, $context);
     }
@@ -215,9 +222,10 @@ class Logger
      *
      * @param mixed $message
      * @param array $context
+     *
      * @return void
      */
-    public static function warn($message, array $context = array())
+    public static function warn($message, array $context = [])
     {
         self::log(self::WARN, $message, $context);
     }
@@ -227,9 +235,10 @@ class Logger
      *
      * @param mixed $message
      * @param array $context
+     *
      * @return void
      */
-    public static function error($message, array $context = array())
+    public static function error($message, array $context = [])
     {
         self::log(self::ERROR, $message, $context);
     }
@@ -239,16 +248,17 @@ class Logger
      *
      * @param Throwable $e
      * @param string    $tag 业务标记，便于检索
+     *
      * @return void
      */
     public static function exception(Throwable $e, $tag = '')
     {
-        self::log(self::ERROR, $e->getMessage(), array(
+        self::log(self::ERROR, $e->getMessage(), [
             'tag'   => $tag,
-            'class' => get_class($e),
+            'class' => $e::class,
             'at'    => $e->getFile() . ':' . $e->getLine(),
             'trace' => self::shortTrace($e),
-        ));
+        ]);
     }
 
     /**
@@ -257,9 +267,10 @@ class Logger
      * @param string $level
      * @param mixed  $message
      * @param array  $context
+     *
      * @return void
      */
-    public static function log($level, $message, array $context = array())
+    public static function log($level, $message, array $context = [])
     {
         if (!isset(self::$weight[$level])) {
             $level = self::INFO;
@@ -320,7 +331,7 @@ class Logger
                 continue;
             }
             $file = self::$config['path'] . DIRECTORY_SEPARATOR . $name;
-            if (!is_file($file) || ! str_ends_with($name, '.log')) {
+            if (!is_file($file) || !str_ends_with($name, '.log')) {
                 continue;
             }
             if (filemtime($file) < $deadline && @unlink($file)) {
@@ -330,8 +341,9 @@ class Logger
         closedir($handle);
 
         if ($removed > 0) {
-            self::info('清理过期日志完成', array('removed' => $removed, 'keep_days' => $keepDays));
+            self::info('清理过期日志完成', ['removed' => $removed, 'keep_days' => $keepDays]);
         }
+
         return $removed;
     }
 
@@ -365,10 +377,11 @@ class Logger
             return 0;
         }
         if ($afterDays >= $plainDays) {
-            self::warn('日志归档已跳过：archive_after_days 必须小于 keep_days', array(
+            self::warn('日志归档已跳过：archive_after_days 必须小于 keep_days', [
                 'archive_after_days' => $afterDays,
                 'keep_days'          => $plainDays,
-            ));
+            ]);
+
             return 0;
         }
 
@@ -378,7 +391,7 @@ class Logger
         // 收集待归档文件并按所属月份分组。只认 {channel}_{YYYY-MM-DD}.log 命名：
         // workerman.log / stdout.log 这类持续写入、无日期的文件被天然排除（它们归
         // LOG_MAX_MB 管），包名也因此能从文件名自身解析，不会跨月混装。
-        $groups = array();
+        $groups = [];
         $handle = @opendir($path);
         if ($handle === false) {
             return 0;
@@ -400,12 +413,12 @@ class Logger
             if ($body === false) {
                 continue;
             }
-            $groups[$month][] = array(
+            $groups[$month][] = [
                 'path'  => $file,
                 'name'  => $name,
                 'body'  => $body,
                 'mtime' => $mtime,
-            );
+            ];
         }
         closedir($handle);
 
@@ -418,6 +431,7 @@ class Logger
             // 也绝不能出现「明文已删、归档包却没有它」的数据空洞
             if (!self::appendTarGz($pack, $items, $level)) {
                 $failed += count($items);
+
                 continue;
             }
             foreach ($items as $item) {
@@ -430,19 +444,19 @@ class Logger
         $purged = self::purgeArchives($archiveDir, $keepDays);
 
         if ($archived > 0 || $purged > 0) {
-            self::info('日志归档完成', array(
+            self::info('日志归档完成', [
                 'archived'   => $archived,
                 'purged'     => $purged,
                 'after_days' => $afterDays,
                 'keep_days'  => $keepDays,
                 'dir'        => $archiveDir,
-            ));
+            ]);
         }
         if ($failed > 0) {
-            self::error('日志归档失败，明文已保留', array(
+            self::error('日志归档失败，明文已保留', [
                 'failed' => $failed,
                 'dir'    => $archiveDir,
-            ));
+            ]);
         }
 
         return $archived;
@@ -456,14 +470,26 @@ class Logger
      * 发生的时刻」决定：9 月 3 日归档 8 月 27 日的日志应进 2026-08 包，包内不跨月。
      *
      * @param string $name
-     * @return string|null 形如 2026-09；命名不匹配返回 null
+     *
+     * @return null|string 形如 2026-09；命名不匹配返回 null
      */
     public static function archiveMonthOf($name)
     {
         if (!preg_match('/^[a-z][a-z0-9_-]{0,15}_(\d{4})-(\d{2})-\d{2}\.log$/', (string)$name, $m)) {
             return null;
         }
+
         return $m[1] . '-' . $m[2];
+    }
+
+    /**
+     * 供监控上报使用：当前进程内存占用（字节）
+     *
+     * @return int
+     */
+    public static function memoryUsage()
+    {
+        return memory_get_usage(true);
     }
 
     /**
@@ -481,6 +507,7 @@ class Logger
         if ($dir === '') {
             $dir = rtrim((string)self::$config['path'], '/\\') . DIRECTORY_SEPARATOR . 'archive';
         }
+
         return rtrim($dir, '/\\');
     }
 
@@ -496,6 +523,7 @@ class Logger
      * @param string $pack  归档包路径
      * @param array  $items [['path','name','body','mtime'], ...]
      * @param int    $level gzip 压缩级别 1~9
+     *
      * @return bool 是否写入成功
      */
     protected static function appendTarGz($pack, array $items, $level)
@@ -506,7 +534,8 @@ class Logger
             $decoded  = $existing === false ? false : @gzdecode($existing);
             if (!is_string($decoded)) {
                 // 包已损坏：宁可不归档也不能覆盖它，否则会连带毁掉里面已有的历史
-                self::error('日志归档包损坏，已跳过本次归档以保护明文与既有归档', array('pack' => $pack));
+                self::error('日志归档包损坏，已跳过本次归档以保护明文与既有归档', ['pack' => $pack]);
+
                 return false;
             }
             $raw = substr($decoded, 0, self::tarPayloadEnd($decoded));
@@ -523,16 +552,19 @@ class Logger
         $raw .= str_repeat("\0", 1024);   // 归档终止标记：两个 512 字节空块
 
         $dir = dirname($pack);
-        if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
-            self::error('日志归档目录创建失败', array('dir' => $dir));
+        if (!is_dir($dir) && !@mkdir($dir, 0o755, true) && !is_dir($dir)) {
+            self::error('日志归档目录创建失败', ['dir' => $dir]);
+
             return false;
         }
 
         $gz = gzencode($raw, $level);
         if ($gz === false || @file_put_contents($pack, $gz, LOCK_EX) === false) {
-            self::error('日志归档包写入失败', array('pack' => $pack));
+            self::error('日志归档包写入失败', ['pack' => $pack]);
+
             return false;
         }
+
         return true;
     }
 
@@ -541,6 +573,7 @@ class Logger
      *
      * @param string $dir
      * @param int    $keepDays
+     *
      * @return int 删除的包数
      */
     protected static function purgeArchives($dir, $keepDays)
@@ -564,17 +597,8 @@ class Logger
             }
         }
         closedir($handle);
-        return $removed;
-    }
 
-    /**
-     * 供监控上报使用：当前进程内存占用（字节）
-     *
-     * @return int
-     */
-    public static function memoryUsage()
-    {
-        return memory_get_usage(true);
+        return $removed;
     }
 
     /* ---------------------------------------------------------------------
@@ -588,6 +612,7 @@ class Logger
      * 跨角色汇总通道占用，若作为角色名会与之撞名，一并回落到默认通道。
      *
      * @param mixed $role
+     *
      * @return string
      */
     protected static function sanitizeRole($role)
@@ -599,6 +624,7 @@ class Logger
         if ($role === self::CHANNEL_ERROR_DIGEST) {
             return self::CHANNEL_DEFAULT;
         }
+
         return $role;
     }
 
@@ -606,6 +632,7 @@ class Logger
      * context 序列化并做长度截断
      *
      * @param array $context
+     *
      * @return string
      */
     protected static function stringifyContext(array $context)
@@ -617,6 +644,7 @@ class Logger
         if (strlen($json) > self::$contextMaxLength) {
             $json = substr($json, 0, self::$contextMaxLength) . '...(truncated)';
         }
+
         return $json;
     }
 
@@ -624,6 +652,7 @@ class Logger
      * 精简堆栈：只保留前若干帧，附带上层调用文件
      *
      * @param Throwable $e
+     *
      * @return array
      */
     protected static function shortTrace(Throwable $e)
@@ -635,6 +664,7 @@ class Logger
                 . ($frame['function'] ?? '')
                 . (isset($frame['file']) ? ' @ ' . $frame['file'] . ':' . ($frame['line'] ?? 0) : '');
         }
+
         return $frames;
     }
 
@@ -660,12 +690,13 @@ class Logger
      * @param int    $size  数据长度
      * @param int    $mtime 修改时间戳
      * @param int    $mode  权限位
+     *
      * @return string 512 字节的头块
      */
-    protected static function tarHeader($name, $size, $mtime, $mode = 0644)
+    protected static function tarHeader($name, $size, $mtime, $mode = 0o644)
     {
         $header  = str_pad(substr((string)$name, 0, 100), 100, "\0");
-        $header .= str_pad(decoct($mode & 07777), 7, '0', STR_PAD_LEFT) . "\0";
+        $header .= str_pad(decoct($mode & 0o7777), 7, '0', STR_PAD_LEFT) . "\0";
         $header .= str_pad('0', 7, '0', STR_PAD_LEFT) . "\0";   // uid
         $header .= str_pad('0', 7, '0', STR_PAD_LEFT) . "\0";   // gid
         $header .= str_pad(decoct((int)$size), 11, '0', STR_PAD_LEFT) . "\0";
@@ -685,6 +716,7 @@ class Logger
         for ($i = 0; $i < 512; $i++) {
             $sum += ord($header[$i]);
         }
+
         return substr_replace($header, str_pad(decoct($sum), 6, '0', STR_PAD_LEFT) . "\0 ", 148, 8);
     }
 
@@ -696,6 +728,7 @@ class Logger
      * 条目。偏移始终至少前进 512，损坏数据也不会死循环。
      *
      * @param string $raw 解压后的 tar 缓冲区
+     *
      * @return int 有效载荷长度（不含尾部空块）
      */
     protected static function tarPayloadEnd($raw)
@@ -711,6 +744,7 @@ class Logger
             $size = $size === '' ? 0 : (int)octdec($size);
             $off += 512 + (int)(ceil($size / 512) * 512);
         }
+
         return min($off, $len);
     }
 
@@ -718,11 +752,13 @@ class Logger
      * gzip 级别归一化到 1~9
      *
      * @param mixed $level
+     *
      * @return int
      */
     protected static function normalizeGzipLevel($level)
     {
         $level = (int)$level;
+
         return ($level >= 1 && $level <= 9) ? $level : 6;
     }
 }

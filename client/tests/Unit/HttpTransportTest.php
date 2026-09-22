@@ -25,28 +25,10 @@ final class HttpTransportTest extends TestCase
     /** @var FakeHttpConnection */
     private $fake;
 
-    private function makeTransport(&$fake = null)
-    {
-        $this->makeTimers();
-
-        $fake       = new FakeHttpConnection();
-        $this->fake = $fake;
-        $captured   = &$fake;
-
-        return new HttpTransport(
-            'http://127.0.0.1:8290',
-            5.0,
-            function () use (&$captured) {
-                return $captured;
-            },
-            $this->timerAdd,
-            $this->timerDel
-        );
-    }
-
     public function testInvalidUrlThrowsConfig()
     {
         $this->makeTimers();
+
         try {
             new HttpTransport('ws://127.0.0.1:8290', 5.0, null, $this->timerAdd, $this->timerDel);
             self::fail('非 http:// 的 api_url 必须抛 ClientException');
@@ -59,7 +41,7 @@ final class HttpTransportTest extends TestCase
     {
         $transport = $this->makeTransport($fake);
         $done      = null;
-        $transport->request('GET', '/health', '', array('X-Sign' => 'abc'), function ($r) use (&$done) {
+        $transport->request('GET', '/health', '', ['X-Sign' => 'abc'], function ($r) use (&$done) {
             $done = $r;
         });
 
@@ -75,8 +57,7 @@ final class HttpTransportTest extends TestCase
     public function testPostRequestShape()
     {
         $transport = $this->makeTransport($fake);
-        $transport->request('POST', '/push', '{"k":"v"}', [], function () {
-        });
+        $transport->request('POST', '/push', '{"k":"v"}', [], function () {});
 
         $raw = $fake->sentRaw[0];
         self::assertStringStartsWith("POST /push HTTP/1.1\r\n", $raw);
@@ -186,5 +167,24 @@ final class HttpTransportTest extends TestCase
         $fake->emitError(1, 'late');
 
         self::assertSame(1, $count, '完成/关闭/错误叠加时只结算一次');
+    }
+
+    private function makeTransport(&$fake = null)
+    {
+        $this->makeTimers();
+
+        $fake       = new FakeHttpConnection();
+        $this->fake = $fake;
+        $captured   = &$fake;
+
+        return new HttpTransport(
+            'http://127.0.0.1:8290',
+            5.0,
+            function () use (&$captured) {
+                return $captured;
+            },
+            $this->timerAdd,
+            $this->timerDel
+        );
     }
 }

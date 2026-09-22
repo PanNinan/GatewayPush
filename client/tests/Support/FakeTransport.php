@@ -69,7 +69,7 @@ final class FakeTransport implements TransportInterface
         $this->errCb = $cb;
     }
 
-    /* ---- 模拟辅助 ---- */
+    // ---- 模拟辅助 ----
 
     /** 模拟服务端：握手完成 */
     public function open()

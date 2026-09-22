@@ -56,7 +56,7 @@ final class PendingRequest
     /**
      * 结算回调 function (bool $ok, array $packet): void
      *
-     * @var callable|null
+     * @var null|callable
      */
     public $onReply;
 }

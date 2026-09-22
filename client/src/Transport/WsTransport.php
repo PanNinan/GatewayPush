@@ -35,14 +35,14 @@ final class WsTransport implements TransportInterface
     /**
      * 连接工厂 function (string $url): object（单测注入假连接）
      *
-     * @var callable|null
+     * @var null|callable
      */
     private $connFactory;
 
     /**
      * 底层连接（断开后置 null，重连时新建）
      *
-     * @var AsyncTcpConnection|object|null
+     * @var null|AsyncTcpConnection|object
      */
     private $conn;
 
@@ -53,21 +53,22 @@ final class WsTransport implements TransportInterface
      */
     private $connected = false;
 
-    /** @var callable|null function (): void */
+    /** @var null|callable function (): void */
     private $onOpenCb;
 
-    /** @var callable|null function (string $frame): void */
+    /** @var null|callable function (string $frame): void */
     private $onMessageCb;
 
-    /** @var callable|null function (): void */
+    /** @var null|callable function (): void */
     private $onCloseCb;
 
-    /** @var callable|null function (int $code, string $message): void */
+    /** @var null|callable function (int $code, string $message): void */
     private $onErrorCb;
 
     /**
      * @param string        $url         ws://host:port 或 wss://host:port
-     * @param callable|null $connFactory 连接工厂（单测注入假连接）
+     * @param null|callable $connFactory 连接工厂（单测注入假连接）
+     *
      * @throws ClientException URL 非法
      */
     public function __construct($url, ?callable $connFactory = null)
@@ -75,7 +76,7 @@ final class WsTransport implements TransportInterface
         $url    = (string)$url;
         $scheme = parse_url($url, PHP_URL_SCHEME);
 
-        if (!in_array($scheme, array('ws', 'wss'), true)) {
+        if (!in_array($scheme, ['ws', 'wss'], true)) {
             throw ClientException::config('ws_url 必须以 ws:// 或 wss:// 开头，当前为：' . $url);
         }
 
@@ -84,7 +85,7 @@ final class WsTransport implements TransportInterface
     }
 
     /**
-     * @inheritDoc
+     * {@inheritDoc}
      */
     public function connect()
     {
@@ -136,7 +137,7 @@ final class WsTransport implements TransportInterface
     }
 
     /**
-     * @inheritDoc
+     * {@inheritDoc}
      *
      * @throws ClientException 连接未建立时抛出
      */
@@ -150,7 +151,7 @@ final class WsTransport implements TransportInterface
     }
 
     /**
-     * @inheritDoc
+     * {@inheritDoc}
      */
     public function close()
     {
@@ -160,7 +161,7 @@ final class WsTransport implements TransportInterface
     }
 
     /**
-     * @inheritDoc
+     * {@inheritDoc}
      */
     public function isConnected()
     {
@@ -168,7 +169,7 @@ final class WsTransport implements TransportInterface
     }
 
     /**
-     * @inheritDoc
+     * {@inheritDoc}
      */
     public function onOpen(callable $cb)
     {
@@ -176,7 +177,7 @@ final class WsTransport implements TransportInterface
     }
 
     /**
-     * @inheritDoc
+     * {@inheritDoc}
      */
     public function onMessage(callable $cb)
     {
@@ -184,7 +185,7 @@ final class WsTransport implements TransportInterface
     }
 
     /**
-     * @inheritDoc
+     * {@inheritDoc}
      */
     public function onClose(callable $cb)
     {
@@ -192,7 +193,7 @@ final class WsTransport implements TransportInterface
     }
 
     /**
-     * @inheritDoc
+     * {@inheritDoc}
      */
     public function onError(callable $cb)
     {

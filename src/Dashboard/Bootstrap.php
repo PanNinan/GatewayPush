@@ -47,22 +47,22 @@ use Workerman\Worker;
 class Bootstrap
 {
     /** 业务返回码（与 Api 进程保持同一取值空间，便于统一排查） */
-    const CODE_OK           = 0;
-    const CODE_NOT_FOUND    = 4004;
-    const CODE_SERVER_ERROR = 5000;
+    public const CODE_OK           = 0;
+    public const CODE_NOT_FOUND    = 4004;
+    public const CODE_SERVER_ERROR = 5000;
 
     /**
      * dashboard 配置（app.dashboard）
      *
      * @var array
      */
-    protected static $config = array(
+    protected static $config = [
         'enable'    => true,
         'listen'    => 'http://127.0.0.1:8291',
         'name'      => 'GW-DASH',
         'view_path' => '',
         'refresh'   => 30,
-    );
+    ];
 
     /**
      * app.php 配置（Redis / 监控等）
@@ -79,12 +79,13 @@ class Bootstrap
      *
      * @var array{content: string, mtime: int}
      */
-    protected static $page = array('content' => '', 'mtime' => 0);
+    protected static $page = ['content' => '', 'mtime' => 0];
 
     /**
      * 初始化监控面板进程
      *
      * @param array $appConfig config/app.php
+     *
      * @return void
      */
     public static function init(array $appConfig)
@@ -104,7 +105,7 @@ class Bootstrap
         $worker->name  = self::$config['name'];
         $worker->count = 1;   // 展示层无状态，单进程足够；Windows 下亦强制为 1
 
-        $worker->onMessage = array(self::class, 'onRequest');
+        $worker->onMessage = [self::class, 'onRequest'];
 
         $worker->onWorkerStart = function ($worker) {
             Logger::useChannel('dashboard');
@@ -112,19 +113,19 @@ class Bootstrap
             RedisClient::init(self::$appConfig['redis']);
             Monitor::init(self::$appConfig['monitor']);
 
-            Logger::info('监控面板已启动', array(
+            Logger::info('监控面板已启动', [
                 'listen'  => $worker->getSocketName(),
                 'refresh' => (int)self::$config['refresh'],
-            ));
+            ]);
 
             $page = self::pagePath();
             if (!is_file($page)) {
-                Logger::warn('监控面板模板缺失，页面将返回 500', array('path' => $page));
+                Logger::warn('监控面板模板缺失，页面将返回 500', ['path' => $page]);
             }
         };
 
         $worker->onWorkerStop = function ($worker) {
-            Logger::info('监控面板正在停止', array('id' => $worker->id));
+            Logger::info('监控面板正在停止', ['id' => $worker->id]);
             RedisClient::closeAll();
         };
 
@@ -136,7 +137,8 @@ class Bootstrap
      * 请求入口
      *
      * @param mixed $connection
-     * @param mixed $request Workerman\Protocols\Http\Request
+     * @param mixed $request    Workerman\Protocols\Http\Request
+     *
      * @return void
      */
     public static function onRequest($connection, $request)
@@ -144,6 +146,7 @@ class Bootstrap
         try {
             if (!$request instanceof Request) {
                 $connection->send(self::json(500, self::CODE_SERVER_ERROR, '协议解析异常', null, 500));
+
                 return;
             }
 
@@ -152,11 +155,13 @@ class Bootstrap
 
             if ($method === 'GET' && ($path === '/' || $path === '/index.html')) {
                 $connection->send(self::html());
+
                 return;
             }
 
             if ($method === 'GET' && $path === '/metrics.json') {
                 self::handleMetrics($connection);
+
                 return;
             }
 
@@ -178,6 +183,7 @@ class Bootstrap
      * gauge 的 TTL，才能判断当前数据是「新鲜」「滞后」还是「已过期」。
      *
      * @param mixed $connection
+     *
      * @return void
      */
     protected static function handleMetrics($connection)
@@ -185,13 +191,13 @@ class Bootstrap
         Monitor::snapshot(function ($snapshot) use ($connection) {
             $monitor = self::$appConfig['monitor'] ?? [];
 
-            $snapshot['meta'] = array(
+            $snapshot['meta'] = [
                 'now'      => time(),
                 'interval' => isset($monitor['interval']) ? (int)$monitor['interval'] : 60,
                 'ttl'      => isset($monitor['ttl']) ? (int)$monitor['ttl'] : 600,
                 'enable'   => !empty($monitor['enable']),
                 'refresh'  => (int)self::$config['refresh'],
-            );
+            ];
 
             $connection->send(self::json(200, self::CODE_OK, 'ok', $snapshot));
         });
@@ -214,20 +220,20 @@ class Bootstrap
         $mtime = is_file($path) ? (int)filemtime($path) : 0;
         if ($mtime !== self::$page['mtime']) {
             $content = $mtime > 0 ? file_get_contents($path) : false;
-            self::$page = array(
+            self::$page = [
                 'content' => ($content === false) ? '' : $content,
                 'mtime'   => $mtime,
-            );
+            ];
         }
 
         if (self::$page['content'] === '') {
             return self::json(500, self::CODE_SERVER_ERROR, '页面模板缺失：' . $path, null, 500);
         }
 
-        return new Response(200, array(
+        return new Response(200, [
             'Content-Type'  => 'text/html; charset=utf-8',
             'Cache-Control' => 'no-store',
-        ), self::$page['content']);
+        ], self::$page['content']);
     }
 
     /* ---------------------------------------------------------------------
@@ -242,6 +248,7 @@ class Bootstrap
     protected static function pagePath()
     {
         $dir = (string)self::$config['view_path'];
+
         return rtrim($dir, '/\\') . DIRECTORY_SEPARATOR . 'index.html';
     }
 
@@ -252,31 +259,34 @@ class Bootstrap
      * 不得硬编码。
      *
      * @param string $role
+     *
      * @return bool
      */
     protected static function roleEnabled($role)
     {
         $current = defined('APP_ROLE') ? APP_ROLE : 'all';
+
         return $current === 'all' || $current === $role;
     }
 
     /**
      * 构造 JSON 响应
      *
-     * @param int         $status
-     * @param int         $code
-     * @param string      $msg
-     * @param mixed       $data
-     * @param int|null    $http
+     * @param int      $status
+     * @param int      $code
+     * @param string   $msg
+     * @param mixed    $data
+     * @param null|int $http
+     *
      * @return Response
      */
     protected static function json($status, $code, $msg, $data = null, $http = null)
     {
-        $body = array(
+        $body = [
             'code' => (int)$code,
             'msg'  => (string)$msg,
             'ts'   => time(),
-        );
+        ];
         if ($data !== null) {
             $body['data'] = $data;
         }
@@ -286,8 +296,8 @@ class Bootstrap
             $payload = '{"code":5000,"msg":"response encode failed"}';
         }
 
-        return new Response($http ?? $status, array(
+        return new Response($http ?? $status, [
             'Content-Type' => 'application/json; charset=utf-8',
-        ), $payload);
+        ], $payload);
     }
 }

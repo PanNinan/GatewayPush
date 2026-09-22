@@ -26,18 +26,19 @@ class EchoAction implements ActionInterface
 {
     /**
      * @param ActionContext $ctx
+     *
      * @return void
      */
     public function handle(ActionContext $ctx)
     {
         Monitor::incr('action_echo');
 
-        $ctx->reply(array(
+        $ctx->reply([
             'action'   => 'echo',
             'channel'  => $ctx->channel(),
             'protocol' => $ctx->protocol(),
             'params'   => $ctx->params(),
             'at'       => time(),
-        ));
+        ]);
     }
 }

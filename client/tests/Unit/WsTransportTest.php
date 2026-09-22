@@ -23,17 +23,6 @@ final class WsTransportTest extends TestCase
     /** @var FakeTcpConnection */
     private $fake;
 
-    private function makeTransport(&$fake = null)
-    {
-        $fake       = new FakeTcpConnection();
-        $this->fake = $fake;
-        $captured   = &$fake;
-
-        return new WsTransport('ws://127.0.0.1:8282', function () use (&$captured) {
-            return $captured;
-        });
-    }
-
     public function testInvalidUrlThrowsConfig()
     {
         try {
@@ -61,7 +50,7 @@ final class WsTransportTest extends TestCase
         self::assertTrue($transport->isConnected());
 
         $fake->emit('{"cmd":"ack"}');
-        self::assertSame(array('{"cmd":"ack"}'), $frames);
+        self::assertSame(['{"cmd":"ack"}'], $frames);
     }
 
     public function testConnectFailureEmitsErrorThenCloseSignal()
@@ -70,7 +59,7 @@ final class WsTransportTest extends TestCase
         $errors    = [];
         $closed    = false;
         $transport->onError(function ($code, $msg) use (&$errors) {
-            $errors[] = array($code, $msg);
+            $errors[] = [$code, $msg];
         });
         $transport->onClose(function () use (&$closed) {
             $closed = true;
@@ -132,5 +121,16 @@ final class WsTransportTest extends TestCase
         } catch (ClientException $e) {
             self::assertSame(ErrorCode::CLIENT_STATE, $e->getCode());
         }
+    }
+
+    private function makeTransport(&$fake = null)
+    {
+        $fake       = new FakeTcpConnection();
+        $this->fake = $fake;
+        $captured   = &$fake;
+
+        return new WsTransport('ws://127.0.0.1:8282', function () use (&$captured) {
+            return $captured;
+        });
     }
 }

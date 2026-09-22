@@ -23,6 +23,7 @@ final class Text
      * 字符串在等宽终端下的显示宽度
      *
      * @param string $text
+     *
      * @return int
      */
     public static function displayWidth($text)
@@ -33,10 +34,10 @@ final class Text
         for ($i = 0; $i < $length;) {
             $byte = ord($text[$i]);
             if ($byte < 0x80) {          // ASCII
-                $width += 1;
-                $i     += 1;
+                $width++;
+                $i++;
             } elseif ($byte < 0xE0) {    // 2 字节序列（拉丁扩展等），按窄字符计
-                $width += 1;
+                $width++;
                 $i     += 2;
             } else {                     // 3 / 4 字节序列（CJK 等），按宽字符计
                 $width += 2;
@@ -52,11 +53,13 @@ final class Text
      *
      * @param string $text
      * @param int    $width
+     *
      * @return string
      */
     public static function pad($text, $width)
     {
         $pad = $width - self::displayWidth($text);
+
         return $pad > 0 ? $text . str_repeat(' ', $pad) : $text;
     }
 }

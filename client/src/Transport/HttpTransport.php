@@ -58,9 +58,10 @@ final class HttpTransport
     /**
      * @param string        $baseUrl     http://host:port
      * @param float         $timeout     请求超时（秒）
-     * @param callable|null $connFactory 连接工厂（单测注入假连接）
-     * @param callable|null $timerAdd    计时器创建
-     * @param callable|null $timerDel    计时器删除
+     * @param null|callable $connFactory 连接工厂（单测注入假连接）
+     * @param null|callable $timerAdd    计时器创建
+     * @param null|callable $timerDel    计时器删除
+     *
      * @throws ClientException URL 非法
      */
     public function __construct(
@@ -84,15 +85,11 @@ final class HttpTransport
         $self          = $this;
         $this->connFactory = $connFactory !== null
             ? $connFactory
-            : function ($tcpUrl) {
-                return new AsyncTcpConnection($tcpUrl);
-            };
+            : fn ($tcpUrl) => new AsyncTcpConnection($tcpUrl);
 
         $this->timerAdd = $timerAdd !== null
             ? $timerAdd
-            : function ($interval, $persistent, $fn) {
-                return Timer::add($interval, $fn, [], $persistent);
-            };
+            : fn ($interval, $persistent, $fn) => Timer::add($interval, $fn, [], $persistent);
         $this->timerDel = $timerDel !== null
             ? $timerDel
             : function ($timerId) {
@@ -103,13 +100,14 @@ final class HttpTransport
     /**
      * 发起一次 HTTP 请求（一次性连接）
      *
-     * @param string   $method   GET / POST / ...
-     * @param string   $path     以 / 开头的路径（如 /push）
-     * @param string   $body     原始请求体（GET 为空串）
-     * @param array    $headers  附加请求头（键名原样使用）
-     * @param callable $cb       function (array $response): void
-     *                           $response = {status:int, body:string, json:array|null, error:string}
-     *                           error 非空表示传输失败（status=0）
+     * @param string   $method  GET / POST / ...
+     * @param string   $path    以 / 开头的路径（如 /push）
+     * @param string   $body    原始请求体（GET 为空串）
+     * @param array    $headers 附加请求头（键名原样使用）
+     * @param callable $cb      function (array $response): void
+     *                          $response = {status:int, body:string, json:array|null, error:string}
+     *                          error 非空表示传输失败（status=0）
+     *
      * @return void
      */
     public function request($method, $path, $body, array $headers, $cb)
@@ -156,7 +154,8 @@ final class HttpTransport
         try {
             $conn = ($this->connFactory)($tcpUrl);
         } catch (\Throwable $e) {
-            $cb(array('status' => 0, 'body' => '', 'json' => null, 'error' => '建连失败：' . $e->getMessage()));
+            $cb(['status' => 0, 'body' => '', 'json' => null, 'error' => '建连失败：' . $e->getMessage()]);
+
             return;
         }
         $ctx->conn = $conn;
@@ -193,12 +192,12 @@ final class HttpTransport
             }
 
             $body = substr($body, 0, $length);
-            $settle(array(
+            $settle([
                 'status' => $status,
                 'body'   => $body,
                 'json'   => json_decode($body, true),
                 'error'  => '',
-            ));
+            ]);
         };
 
         $conn->onClose = function () use (&$buffer, $settle) {
@@ -210,21 +209,21 @@ final class HttpTransport
                 $status = (int)$m[1];
                 $body   = substr($buffer, $headEnd + 4);
             }
-            $settle(array(
+            $settle([
                 'status' => $status,
                 'body'   => $body,
                 'json'   => $body !== '' ? json_decode($body, true) : null,
                 'error'  => $status > 0 ? '' : '连接在收到完整响应前关闭',
-            ));
+            ]);
         };
 
         $conn->onError = function ($con, $code, $msg) use ($settle) {
-            $settle(array('status' => 0, 'body' => '', 'json' => null, 'error' => '传输错误 ' . $code . '：' . $msg));
+            $settle(['status' => 0, 'body' => '', 'json' => null, 'error' => '传输错误 ' . $code . '：' . $msg]);
         };
 
         // 超时保护
         $ctx->timerId = (int)($this->timerAdd)($this->timeout, false, function () use ($settle, $method, $path) {
-            $settle(array('status' => 0, 'body' => '', 'json' => null, 'error' => '请求超时：' . $method . ' ' . $path));
+            $settle(['status' => 0, 'body' => '', 'json' => null, 'error' => '请求超时：' . $method . ' ' . $path]);
         });
 
         $conn->connect();

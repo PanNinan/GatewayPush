@@ -36,6 +36,7 @@ interface ActionInterface
      * 执行动作
      *
      * @param ActionContext $ctx 身份、参数与回执的统一入口
+     *
      * @return void
      */
     public function handle(ActionContext $ctx);

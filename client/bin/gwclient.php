@@ -18,10 +18,12 @@ $basePath = dirname(__DIR__, 2);
 
 if (!is_file($basePath . '/vendor/autoload.php')) {
     fwrite(STDERR, '未找到 vendor/autoload.php，请先在项目根目录执行 composer install' . PHP_EOL);
+
     exit(1);
 }
 
 define('BASE_PATH', $basePath);
+
 require BASE_PATH . '/vendor/autoload.php';
 
 use GatewayPush\Client\Cli\Debugger;
@@ -35,6 +37,7 @@ $gatewayConfig = require BASE_PATH . '/config/gateway.php';
  * @param string $listen
  * @param string $scheme
  * @param string $default
+ *
  * @return string
  */
 $toClientUrl = function ($listen, $scheme, $default) {
@@ -44,19 +47,20 @@ $toClientUrl = function ($listen, $scheme, $default) {
     if ($listen === '') {
         return $default;
     }
+
     return $scheme . '://' . $listen;
 };
 
 $wsUrl  = $toClientUrl($gatewayConfig['websocket']['listen'], 'ws', 'ws://127.0.0.1:8282');
 $udpUrl = $toClientUrl($gatewayConfig['udp']['listen'], 'udp', 'udp://127.0.0.1:8283');
-$apiUrl = $toClientUrl(isset($appConfig['api']['listen']) ? $appConfig['api']['listen'] : '', 'http', 'http://127.0.0.1:8290');
+$apiUrl = $toClientUrl($appConfig['api']['listen'] ?? '', 'http', 'http://127.0.0.1:8290');
 
-$debugger = new Debugger(array(
+$debugger = new Debugger([
     'secret'     => isset($appConfig['auth']['secret']) ? (string)$appConfig['auth']['secret'] : '',
     'api_secret' => isset($appConfig['api']['secret']) ? (string)$appConfig['api']['secret'] : '',
     'ws_url'     => $wsUrl,
     'udp_url'    => $udpUrl,
     'api_url'    => $apiUrl,
-));
+]);
 
 exit($debugger->run(array_slice($argv, 1)));

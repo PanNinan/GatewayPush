@@ -20,7 +20,6 @@ $heartbeatInterval   = Env::int('HB_CHECK_INTERVAL', 10);
 $monitorInterval     = Env::int('MONITOR_INTERVAL', 60);
 
 return [
-
     /* ---------------------------------------------------------------
      | 业务进程
      --------------------------------------------------------------- */

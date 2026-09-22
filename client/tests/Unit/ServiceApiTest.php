@@ -23,68 +23,24 @@ final class ServiceApiTest extends TestCase
 {
     use FakeTimers;
 
-    private function makeReady(FakeTransport &$transport = null, array $overrides = array())
-    {
-        $this->makeTimers();
-
-        $transport = new FakeTransport();
-        $session   = new SessionManager(array_merge(array(
-            'uid'       => 'alice',
-            'device_id' => 'dev1',
-            'secret'    => 'test-secret',
-            'heartbeat' => 0,
-        ), $overrides), $transport, null, $this->timerAdd, $this->timerDel);
-
-        $session->connect();
-        $transport->open();
-        $auth = $transport->lastPacket();
-        $transport->receive(array(
-            'cmd'  => Message::CMD_ACK,
-            'seq'  => $auth['seq'],
-            'ts'   => time(),
-            'data' => array('uid' => 'alice', 'device_id' => 'dev1', 'protocol' => 'ws', 'reconnected' => 0),
-        ));
-
-        return $session;
-    }
-
-    private function lastDataPacket(FakeTransport $transport)
-    {
-        $p = $transport->lastPacket();
-        self::assertSame(Message::CMD_DATA, $p['cmd'], '动作 API 必须发 cmd=data 报文');
-
-        return $p;
-    }
-
-    private function ackLast(FakeTransport $transport, array $data)
-    {
-        $p = $transport->lastPacket();
-        $transport->receive(array(
-            'cmd'  => Message::CMD_ACK,
-            'seq'  => $p['seq'],
-            'ts'   => time(),
-            'data' => $data,
-        ));
-    }
-
     public function testEchoSendsParamsVerbatim()
     {
         $session = $this->makeReady($transport);
         $api     = new EchoApi($session);
 
         $result = null;
-        $seq    = $api->send(array('hello' => 'postman', 'n' => 1), function ($ok, $data, $error) use (&$result) {
-            $result = array($ok, $data, $error);
+        $seq    = $api->send(['hello' => 'postman', 'n' => 1], function ($ok, $data, $error) use (&$result) {
+            $result = [$ok, $data, $error];
         });
 
         $p = $this->lastDataPacket($transport);
         self::assertSame($seq, $p['seq']);
         self::assertSame('echo', $p['data']['action']);
-        self::assertSame(array('hello' => 'postman', 'n' => 1), $p['data']['params'], 'params=* 原样透传');
+        self::assertSame(['hello' => 'postman', 'n' => 1], $p['data']['params'], 'params=* 原样透传');
         self::assertSame('alice', $p['uid']);
         self::assertNotSame('', $p['sign']);
 
-        $this->ackLast($transport, array('action' => 'echo', 'params' => array('hello' => 'postman', 'n' => 1), 'at' => 1));
+        $this->ackLast($transport, ['action' => 'echo', 'params' => ['hello' => 'postman', 'n' => 1], 'at' => 1]);
         self::assertTrue($result[0]);
         self::assertSame('echo', $result[1]['action']);
         self::assertNull($result[2]);
@@ -107,13 +63,13 @@ final class ServiceApiTest extends TestCase
         $session = $this->makeReady($transport);
         $api     = new ReportApi($session);
 
-        $api->report('metric.cpu', 5, array('avg' => 0.8));
+        $api->report('metric.cpu', 5, ['avg' => 0.8]);
 
         $p = $this->lastDataPacket($transport);
         self::assertSame('report', $p['data']['action']);
         self::assertSame('metric.cpu', $p['data']['params']['topic']);
         self::assertSame(5, $p['data']['params']['count']);
-        self::assertSame(array('avg' => 0.8), $p['data']['params']['value']);
+        self::assertSame(['avg' => 0.8], $p['data']['params']['value']);
     }
 
     public function testReportDefaultsCountToOne()
@@ -138,7 +94,7 @@ final class ServiceApiTest extends TestCase
         self::assertSame('subscribe', $p['data']['action']);
         self::assertSame('topic.a', $p['data']['params']['topic']);
 
-        $this->ackLast($transport, array('action' => 'subscribe', 'subscribers' => 1));
+        $this->ackLast($transport, ['action' => 'subscribe', 'subscribers' => 1]);
         $api->unsubscribe('topic.a');
         $p = $this->lastDataPacket($transport);
         self::assertSame('unsubscribe', $p['data']['action']);
@@ -155,11 +111,11 @@ final class ServiceApiTest extends TestCase
         $session = $this->makeReady($transport);
         $api     = new NotifyApi($session);
 
-        $api->notify(array('x' => 1), 'msg-001', 'queue');
+        $api->notify(['x' => 1], 'msg-001', 'queue');
 
         $p = $this->lastDataPacket($transport);
         self::assertSame('notify', $p['data']['action']);
-        self::assertSame(array('x' => 1), $p['data']['params']['value']);
+        self::assertSame(['x' => 1], $p['data']['params']['value']);
         self::assertSame('msg-001', $p['data']['params']['msg_id']);
         self::assertSame('queue', $p['data']['params']['offline_mode']);
     }
@@ -183,18 +139,18 @@ final class ServiceApiTest extends TestCase
         $api     = new EchoApi($session);
 
         $result = null;
-        $api->send(array('x' => 1), function ($ok, $data, $error) use (&$result) {
-            $result = array($ok, $data, $error);
+        $api->send(['x' => 1], function ($ok, $data, $error) use (&$result) {
+            $result = [$ok, $data, $error];
         });
 
         $p = $transport->lastPacket();
-        $transport->receive(array(
+        $transport->receive([
             'cmd'  => Message::CMD_ERROR,
             'seq'  => $p['seq'],
             'ref'  => 'data',
             'ts'   => time(),
-            'data' => array('code' => ErrorCode::PARAM_MISSING, 'msg' => '参数错误'),
-        ));
+            'data' => ['code' => ErrorCode::PARAM_MISSING, 'msg' => '参数错误'],
+        ]);
 
         self::assertFalse($result[0]);
         self::assertSame(ErrorCode::PARAM_MISSING, $result[2]['code']);
@@ -204,12 +160,12 @@ final class ServiceApiTest extends TestCase
 
     public function testLocalTimeoutSurfacesAsClientTimeoutError()
     {
-        $session = $this->makeReady($transport, array('timeout' => 0.3));
+        $session = $this->makeReady($transport, ['timeout' => 0.3]);
         $api     = new EchoApi($session);
 
         $result = null;
-        $api->send(array('x' => 1), function ($ok, $data, $error) use (&$result) {
-            $result = array($ok, $data, $error);
+        $api->send(['x' => 1], function ($ok, $data, $error) use (&$result) {
+            $result = [$ok, $data, $error];
         });
 
         $this->fireTimer($this->lastTimerId()); // 请求超时定时器
@@ -223,20 +179,64 @@ final class ServiceApiTest extends TestCase
     {
         $this->makeTimers();
         $transport = new FakeTransport();
-        $session   = new SessionManager(array(
+        $session   = new SessionManager([
             'uid'       => 'alice',
             'device_id' => 'dev1',
             'secret'    => 'test-secret',
             'heartbeat' => 0,
-        ), $transport, null, $this->timerAdd, $this->timerDel);
+        ], $transport, null, $this->timerAdd, $this->timerDel);
 
         $api = new EchoApi($session);
 
         try {
-            $api->send(array());
+            $api->send([]);
             self::fail('未就绪发请求必须抛 ClientException');
         } catch (\GatewayPush\Client\Error\ClientException $e) {
             self::assertSame(ErrorCode::CLIENT_STATE, $e->getCode());
         }
+    }
+
+    private function makeReady(?FakeTransport &$transport = null, array $overrides = [])
+    {
+        $this->makeTimers();
+
+        $transport = new FakeTransport();
+        $session   = new SessionManager(array_merge([
+            'uid'       => 'alice',
+            'device_id' => 'dev1',
+            'secret'    => 'test-secret',
+            'heartbeat' => 0,
+        ], $overrides), $transport, null, $this->timerAdd, $this->timerDel);
+
+        $session->connect();
+        $transport->open();
+        $auth = $transport->lastPacket();
+        $transport->receive([
+            'cmd'  => Message::CMD_ACK,
+            'seq'  => $auth['seq'],
+            'ts'   => time(),
+            'data' => ['uid' => 'alice', 'device_id' => 'dev1', 'protocol' => 'ws', 'reconnected' => 0],
+        ]);
+
+        return $session;
+    }
+
+    private function lastDataPacket(FakeTransport $transport)
+    {
+        $p = $transport->lastPacket();
+        self::assertSame(Message::CMD_DATA, $p['cmd'], '动作 API 必须发 cmd=data 报文');
+
+        return $p;
+    }
+
+    private function ackLast(FakeTransport $transport, array $data)
+    {
+        $p = $transport->lastPacket();
+        $transport->receive([
+            'cmd'  => Message::CMD_ACK,
+            'seq'  => $p['seq'],
+            'ts'   => time(),
+            'data' => $data,
+        ]);
     }
 }

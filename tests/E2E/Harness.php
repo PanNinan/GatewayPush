@@ -38,7 +38,7 @@ final class Harness
     /**
      * 用例标签，键顺序即结果输出顺序
      */
-    const LABELS = array(
+    public const LABELS = [
         'A' => 'WebSocket 鉴权链路（auth -> ack -> ping -> pong）',
         'B' => 'WebSocket 越权拦截（未鉴权业务指令 -> 4003）',
         'C' => 'UDP 正常链路（合法签名 -> ack）',
@@ -55,12 +55,12 @@ final class Harness
         'N' => 'UDP 通道业务动作（echo 回执 / report 按声明静默）',
         'O' => '订阅与广播闭环（subscribe -> enqueueTopic -> push）',
         'P' => 'HTTP 动作调用（POST /action -> BusinessWorker -> 回执）',
-    );
+    ];
 
     /**
      * 参与超时保护的用例（H 为事件循环前同步执行，不纳入）
      */
-    const ASYNC_CASES = array('A', 'B', 'C', 'D', 'E', 'F', 'G', 'I', 'J', 'K', 'L', 'M', 'N', 'O');
+    public const ASYNC_CASES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'I', 'J', 'K', 'L', 'M', 'N', 'O'];
 
     /**
      * app.php 配置（Redis 等），供 RedisClient::init 使用
@@ -129,7 +129,7 @@ final class Harness
     /**
      * 构造（请使用 boot()）
      *
-     * @param array $appConfig
+     * @param array  $appConfig
      * @param string $secret
      * @param string $uid
      * @param string $deviceId
@@ -171,6 +171,7 @@ final class Harness
      * 用法：php tests/e2e_check.php <uid> [device_id] [timeout]
      *
      * @param array $argv
+     *
      * @return self
      */
     public static function boot(array $argv)
@@ -222,72 +223,16 @@ final class Harness
         echo str_repeat('-', 70) . "\n";
     }
 
-    /* ---------------------------------------------------------------------
-     | 用例上下文
-     --------------------------------------------------------------------- */
-
-    /**
-     * 构造各用例的独立身份与随机标识
-     *
-     * 各推送 / 动作用例使用独立 uid、device 与主题，避免互相干扰。
-     *
-     * @return void
-     */
-    protected function buildContexts()
-    {
-        $uid      = $this->uid;
-        $deviceId = $this->deviceId;
-
-        // A / C / D 共用基准身份
-        $baseToken = Auth::issue(array('uid' => $uid, 'device_id' => $deviceId));
-        $this->ctx['A'] = array('uid' => $uid, 'device_id' => $deviceId, 'token' => $baseToken);
-        $this->ctx['C'] = array('uid' => $uid, 'device_id' => $deviceId, 'token' => $baseToken);
-        $this->ctx['D'] = array('uid' => $uid, 'device_id' => $deviceId);
-
-        // B 的越权探测使用固定字面量，无独立身份
-        $this->ctx['B'] = [];
-
-        // H 使用基准 uid 的 -H 后缀，身份在用例内即时签发
-        $this->ctx['H'] = array('uid' => $uid . '-H');
-
-        $suffixes = array('E', 'F', 'G', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P');
-        foreach ($suffixes as $case) {
-            $cu = $uid . '-' . $case;
-            $cd = $deviceId . '-' . $case;
-            $this->ctx[$case] = array(
-                'uid'       => $cu,
-                'device_id' => $cd,
-                'token'     => Auth::issue(array('uid' => $cu, 'device_id' => $cd)),
-            );
-        }
-
-        // 上报 / 订阅用例使用独立主题，避免跨轮次互相污染
-        $this->ctx['M']['topic'] = 'e2e_m_' . bin2hex(random_bytes(3));
-        $this->ctx['N']['topic'] = 'e2e_n_' . bin2hex(random_bytes(3));
-        $this->ctx['O']['topic'] = 'e2e_o_' . bin2hex(random_bytes(3));
-        $this->ctx['P']['topic'] = 'e2e_p_' . bin2hex(random_bytes(3));
-
-        // 用例 N 的三条报文序号
-        $this->ctx['N']['seq1']       = 'n-echo-1';
-        $this->ctx['N']['seq2']       = 'n-echo-2';
-        $this->ctx['N']['report_seq'] = 'n-report-1';
-
-        $this->ctx['E']['msg_id'] = 'e2e-push-' . bin2hex(random_bytes(4));
-        $this->ctx['F']['msg_id'] = 'e2e-off-' . bin2hex(random_bytes(4));
-        $this->ctx['G']['msg_id'] = 'e2e-idem-' . bin2hex(random_bytes(4));
-        $this->ctx['I']['msg_id'] = 'e2e-udp-' . bin2hex(random_bytes(4));
-        $this->ctx['K']['msg_id'] = 'e2e-udpoff-' . bin2hex(random_bytes(4));
-    }
-
     /**
      * 取用例上下文
      *
      * @param string $case
+     *
      * @return array
      */
     public function ctx($case)
     {
-        return isset($this->ctx[$case]) ? $this->ctx[$case] : [];
+        return $this->ctx[$case] ?? [];
     }
 
     /* ---------------------------------------------------------------------
@@ -298,6 +243,7 @@ final class Harness
      * 标记用例通过
      *
      * @param string $case
+     *
      * @return void
      */
     public function pass($case)
@@ -310,6 +256,7 @@ final class Harness
      *
      * @param string $case
      * @param string $msg
+     *
      * @return void
      */
     public function fail($case, $msg)
@@ -352,6 +299,7 @@ final class Harness
         }
         echo str_repeat('=', 70) . "\n";
         echo $pass ? "端到端自检结论：全部通过\n" : "端到端自检结论：存在失败项\n";
+
         exit($pass ? 0 : 1);
     }
 
@@ -368,6 +316,7 @@ final class Harness
             foreach (self::ASYNC_CASES as $key) {
                 echo "  {$key}: " . ($this->state[$key] === 'pending' ? '未完成' : var_export($this->state[$key], true)) . "\n";
             }
+
             exit(1);
         }, [], false);
     }
@@ -382,11 +331,12 @@ final class Harness
      * @param string $cmd
      * @param string $seq
      * @param array  $extra
+     *
      * @return array
      */
     public function buildPacket($cmd, $seq, array $extra)
     {
-        $packet = array(
+        $packet = [
             'cmd'       => $cmd,
             'seq'       => $seq,
             'ts'        => time(),
@@ -394,7 +344,7 @@ final class Harness
             'device_id' => '',
             'token'     => '',
             'data'      => [],
-        );
+        ];
         foreach ($extra as $key => $value) {
             $packet[$key] = $value;
         }
@@ -407,6 +357,7 @@ final class Harness
      * 编码为可发送的报文串
      *
      * @param array $packet
+     *
      * @return string
      */
     public function encode(array $packet)
@@ -426,6 +377,7 @@ final class Harness
      * @param string                                   $case       用例标识（收到回执后由其 onMessage 置为非 pending）
      * @param int                                      $maxAttempt 最大发送次数
      * @param float                                    $interval   重传间隔（秒）
+     *
      * @return void
      */
     public function udpSendUntilAck($con, $payload, $case, $maxAttempt = 4, $interval = 1.2)
@@ -473,14 +425,15 @@ final class Harness
      * @param int    $timeout 连接与读取超时（秒）。默认 3s 覆盖普通接口；
      *                        POST /action 为同步等待语义，需按等待窗放宽
      *                        （API_ACTION_WAIT_MS + 动作超时余量）。
+     *
      * @return array ['ok' => bool, 'status' => int, 'body' => string, 'json' => array|null, 'error' => string]
      */
     public static function httpRequest($method, $url, array $headers = [], $body = '', $timeout = 3)
     {
         $parts = parse_url($url);
-        $host  = isset($parts['host']) ? $parts['host'] : '127.0.0.1';
+        $host  = $parts['host'] ?? '127.0.0.1';
         $port  = isset($parts['port']) ? (int)$parts['port'] : 80;
-        $path  = isset($parts['path']) ? $parts['path'] : '/';
+        $path  = $parts['path'] ?? '/';
         if ($path === '') {
             $path = '/';
         }
@@ -489,7 +442,7 @@ final class Harness
         $errstr = '';
         $fp     = @stream_socket_client("tcp://{$host}:{$port}", $errno, $errstr, (float)$timeout);
         if (!$fp) {
-            return array('ok' => false, 'status' => 0, 'body' => '', 'json' => null, 'error' => $errstr);
+            return ['ok' => false, 'status' => 0, 'body' => '', 'json' => null, 'error' => $errstr];
         }
 
         $req = "{$method} {$path} HTTP/1.1\r\n";
@@ -516,7 +469,8 @@ final class Harness
         }
         if ($head === '') {
             fclose($fp);
-            return array('ok' => false, 'status' => 0, 'body' => '', 'json' => null, 'error' => '未收到响应头');
+
+            return ['ok' => false, 'status' => 0, 'body' => '', 'json' => null, 'error' => '未收到响应头'];
         }
 
         $length = 0;
@@ -541,13 +495,13 @@ final class Harness
             $status = (int)$m[1];
         }
 
-        return array(
+        return [
             'ok'     => true,
             'status' => $status,
             'body'   => $raw,
             'json'   => json_decode($raw, true),
             'error'  => '',
-        );
+        ];
     }
 
     /**
@@ -564,10 +518,68 @@ final class Harness
      * 拼装 Redis 键（统一前缀）
      *
      * @param string $suffix
+     *
      * @return string
      */
     public static function redisKey($suffix)
     {
         return RedisClient::key($suffix);
+    }
+
+    /* ---------------------------------------------------------------------
+     | 用例上下文
+     --------------------------------------------------------------------- */
+
+    /**
+     * 构造各用例的独立身份与随机标识
+     *
+     * 各推送 / 动作用例使用独立 uid、device 与主题，避免互相干扰。
+     *
+     * @return void
+     */
+    protected function buildContexts()
+    {
+        $uid      = $this->uid;
+        $deviceId = $this->deviceId;
+
+        // A / C / D 共用基准身份
+        $baseToken = Auth::issue(['uid' => $uid, 'device_id' => $deviceId]);
+        $this->ctx['A'] = ['uid' => $uid, 'device_id' => $deviceId, 'token' => $baseToken];
+        $this->ctx['C'] = ['uid' => $uid, 'device_id' => $deviceId, 'token' => $baseToken];
+        $this->ctx['D'] = ['uid' => $uid, 'device_id' => $deviceId];
+
+        // B 的越权探测使用固定字面量，无独立身份
+        $this->ctx['B'] = [];
+
+        // H 使用基准 uid 的 -H 后缀，身份在用例内即时签发
+        $this->ctx['H'] = ['uid' => $uid . '-H'];
+
+        $suffixes = ['E', 'F', 'G', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P'];
+        foreach ($suffixes as $case) {
+            $cu = $uid . '-' . $case;
+            $cd = $deviceId . '-' . $case;
+            $this->ctx[$case] = [
+                'uid'       => $cu,
+                'device_id' => $cd,
+                'token'     => Auth::issue(['uid' => $cu, 'device_id' => $cd]),
+            ];
+        }
+
+        // 上报 / 订阅用例使用独立主题，避免跨轮次互相污染
+        $this->ctx['M']['topic'] = 'e2e_m_' . bin2hex(random_bytes(3));
+        $this->ctx['N']['topic'] = 'e2e_n_' . bin2hex(random_bytes(3));
+        $this->ctx['O']['topic'] = 'e2e_o_' . bin2hex(random_bytes(3));
+        $this->ctx['P']['topic'] = 'e2e_p_' . bin2hex(random_bytes(3));
+
+        // 用例 N 的三条报文序号
+        $this->ctx['N']['seq1']       = 'n-echo-1';
+        $this->ctx['N']['seq2']       = 'n-echo-2';
+        $this->ctx['N']['report_seq'] = 'n-report-1';
+
+        $this->ctx['E']['msg_id'] = 'e2e-push-' . bin2hex(random_bytes(4));
+        $this->ctx['F']['msg_id'] = 'e2e-off-' . bin2hex(random_bytes(4));
+        $this->ctx['G']['msg_id'] = 'e2e-idem-' . bin2hex(random_bytes(4));
+        $this->ctx['I']['msg_id'] = 'e2e-udp-' . bin2hex(random_bytes(4));
+        $this->ctx['K']['msg_id'] = 'e2e-udpoff-' . bin2hex(random_bytes(4));
     }
 }

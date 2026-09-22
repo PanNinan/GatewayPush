@@ -14,16 +14,16 @@ class CliParserTest extends TestCase
 {
     public function testParsesCommandAndPositionalArgs()
     {
-        $parsed = CommandParser::parse(array('echo', '{"a":1}', 'extra'));
+        $parsed = CommandParser::parse(['echo', '{"a":1}', 'extra']);
 
         self::assertSame('echo', $parsed['command']);
-        self::assertSame(array('{"a":1}', 'extra'), $parsed['args']);
+        self::assertSame(['{"a":1}', 'extra'], $parsed['args']);
         self::assertSame([], $parsed['options']);
     }
 
     public function testParsesLongOptionWithEqualsAndSpace()
     {
-        $parsed = CommandParser::parse(array('echo', '--uid=u1', '--device', 'd1'));
+        $parsed = CommandParser::parse(['echo', '--uid=u1', '--device', 'd1']);
 
         self::assertSame('u1', $parsed['options']['uid']);
         self::assertSame('d1', $parsed['options']['device']);
@@ -32,7 +32,7 @@ class CliParserTest extends TestCase
 
     public function testFlagWithoutValueBecomesTrue()
     {
-        $parsed = CommandParser::parse(array('push', '{}', '--bad-sign'));
+        $parsed = CommandParser::parse(['push', '{}', '--bad-sign']);
 
         self::assertTrue($parsed['options']['bad-sign']);
         self::assertTrue(CommandParser::flag($parsed['options'], 'bad-sign'));
@@ -41,30 +41,30 @@ class CliParserTest extends TestCase
 
     public function testShortOptionIsSwitch()
     {
-        $parsed = CommandParser::parse(array('help', '-v'));
+        $parsed = CommandParser::parse(['help', '-v']);
 
         self::assertTrue($parsed['options']['v']);
     }
 
     public function testDoubleDashStopsOptionParsing()
     {
-        $parsed = CommandParser::parse(array('echo', '--', '--not-an-option'));
+        $parsed = CommandParser::parse(['echo', '--', '--not-an-option']);
 
         self::assertSame('echo', $parsed['command']);
-        self::assertSame(array('--not-an-option'), $parsed['args']);
+        self::assertSame(['--not-an-option'], $parsed['args']);
         self::assertSame([], $parsed['options']);
     }
 
     public function testEmptyArgsYieldsEmptyCommand()
     {
-        $parsed = CommandParser::parse(array());
+        $parsed = CommandParser::parse([]);
 
         self::assertSame('', $parsed['command']);
     }
 
     public function testTypedAccessors()
     {
-        $options = array('timeout' => '2.5', 'hb' => true, 'uid' => 123);
+        $options = ['timeout' => '2.5', 'hb' => true, 'uid' => 123];
 
         self::assertSame('2.5', CommandParser::str($options, 'timeout', '5'));
         self::assertSame('123', CommandParser::str($options, 'uid', ''));

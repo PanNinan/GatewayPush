@@ -18,62 +18,19 @@ final class PushReceiverTest extends TestCase
 {
     use FakeTimers;
 
-    private function makeReady(FakeTransport &$transport = null, array $overrides = array())
-    {
-        $this->makeTimers();
-
-        $transport = new FakeTransport();
-        $session   = new SessionManager(array_merge(array(
-            'uid'       => 'alice',
-            'device_id' => 'dev1',
-            'secret'    => 'test-secret',
-            'heartbeat' => 0,
-        ), $overrides), $transport, null, $this->timerAdd, $this->timerDel);
-
-        $session->connect();
-        $transport->open();
-        $auth = $transport->lastPacket();
-        $transport->receive(array(
-            'cmd'  => Message::CMD_ACK,
-            'seq'  => $auth['seq'],
-            'ts'   => time(),
-            'data' => array('uid' => 'alice', 'device_id' => 'dev1', 'protocol' => 'ws', 'reconnected' => 0),
-        ));
-
-        return $session;
-    }
-
-    private function pushPacket(array $overrides = array())
-    {
-        return array_merge(array(
-            'cmd'       => Message::CMD_PUSH,
-            'seq'       => 'm-1',
-            'ts'        => 1700000000,
-            'uid'       => 'alice',
-            'device_id' => 'dev1',
-            'token'     => '',
-            'sign'      => '',
-            'data'      => array('title' => 'hi', 'n' => 1),
-            'msg_id'    => 'm-1',
-            'source'    => 'action.notify',
-            'offline'   => 0,
-            'pushed_at' => 1700000001,
-        ), $overrides);
-    }
-
     public function testPushIsParsedIntoPayloadAndMeta()
     {
         $session   = $this->makeReady($transport);
         $receiver  = new PushReceiver($session);
         $got       = null;
         $receiver->onPush(function (array $payload, array $meta) use (&$got) {
-            $got = array($payload, $meta);
+            $got = [$payload, $meta];
         });
 
         $transport->receive($this->pushPacket());
 
         self::assertNotNull($got);
-        self::assertSame(array('title' => 'hi', 'n' => 1), $got[0]);
+        self::assertSame(['title' => 'hi', 'n' => 1], $got[0]);
         self::assertSame('m-1', $got[1]['msg_id']);
         self::assertSame('m-1', $got[1]['seq']);
         self::assertSame('action.notify', $got[1]['source']);
@@ -85,10 +42,9 @@ final class PushReceiverTest extends TestCase
     {
         $session  = $this->makeReady($transport);
         $receiver = new PushReceiver($session);
-        $receiver->onPush(function () {
-        });
+        $receiver->onPush(function () {});
 
-        $transport->receive($this->pushPacket(array('msg_id' => 'm-42', 'seq' => 'm-42')));
+        $transport->receive($this->pushPacket(['msg_id' => 'm-42', 'seq' => 'm-42']));
 
         $ack = $transport->lastPacket();
         self::assertSame(Message::CMD_ACK, $ack['cmd']);
@@ -107,7 +63,7 @@ final class PushReceiverTest extends TestCase
         });
 
         // 服务端 buildFrame：msg_id 为空时 seq = genMsgId()，且 msg_id 字段为空串
-        $transport->receive($this->pushPacket(array('msg_id' => '', 'seq' => 'p-abcd1234')));
+        $transport->receive($this->pushPacket(['msg_id' => '', 'seq' => 'p-abcd1234']));
 
         self::assertSame('p-abcd1234', $got['msg_id']);
 
@@ -124,7 +80,7 @@ final class PushReceiverTest extends TestCase
             $got = $meta;
         });
 
-        $transport->receive($this->pushPacket(array('offline' => 1)));
+        $transport->receive($this->pushPacket(['offline' => 1]));
 
         self::assertSame(1, $got['offline'], 'offline=1 表示重连补投');
     }
@@ -145,12 +101,12 @@ final class PushReceiverTest extends TestCase
     {
         $this->makeTimers();
         $transport = new FakeTransport();
-        $session   = new SessionManager(array(
+        $session   = new SessionManager([
             'uid'       => 'alice',
             'device_id' => 'dev1',
             'secret'    => 'test-secret',
             'heartbeat' => 0,
-        ), $transport, null, $this->timerAdd, $this->timerDel);
+        ], $transport, null, $this->timerAdd, $this->timerDel);
 
         $receiver = new PushReceiver($session);
         $session->connect();
@@ -162,5 +118,48 @@ final class PushReceiverTest extends TestCase
             self::assertNotSame(Message::CMD_ACK, $p['cmd']);
         }
         self::assertSame(0, $receiver->ackedCount());
+    }
+
+    private function makeReady(?FakeTransport &$transport = null, array $overrides = [])
+    {
+        $this->makeTimers();
+
+        $transport = new FakeTransport();
+        $session   = new SessionManager(array_merge([
+            'uid'       => 'alice',
+            'device_id' => 'dev1',
+            'secret'    => 'test-secret',
+            'heartbeat' => 0,
+        ], $overrides), $transport, null, $this->timerAdd, $this->timerDel);
+
+        $session->connect();
+        $transport->open();
+        $auth = $transport->lastPacket();
+        $transport->receive([
+            'cmd'  => Message::CMD_ACK,
+            'seq'  => $auth['seq'],
+            'ts'   => time(),
+            'data' => ['uid' => 'alice', 'device_id' => 'dev1', 'protocol' => 'ws', 'reconnected' => 0],
+        ]);
+
+        return $session;
+    }
+
+    private function pushPacket(array $overrides = [])
+    {
+        return array_merge([
+            'cmd'       => Message::CMD_PUSH,
+            'seq'       => 'm-1',
+            'ts'        => 1700000000,
+            'uid'       => 'alice',
+            'device_id' => 'dev1',
+            'token'     => '',
+            'sign'      => '',
+            'data'      => ['title' => 'hi', 'n' => 1],
+            'msg_id'    => 'm-1',
+            'source'    => 'action.notify',
+            'offline'   => 0,
+            'pushed_at' => 1700000001,
+        ], $overrides);
     }
 }

@@ -10,6 +10,4 @@
 
 namespace GatewayPush\Tests\Unit;
 
-class NotAnAction
-{
-}
+class NotAnAction {}

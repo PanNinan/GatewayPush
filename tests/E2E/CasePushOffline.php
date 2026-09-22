@@ -26,6 +26,7 @@ final class CasePushOffline
      * 用例 F：离线缓存与重连补投（WS）
      *
      * @param Harness $h
+     *
      * @return void
      */
     public static function offlineCache(Harness $h)
@@ -33,11 +34,11 @@ final class CasePushOffline
         $c = $h->ctx('F');
 
         // 阶段一：目标离线时提交推送任务（应落入 push:offline:{uid}）
-        Push::enqueue('uid', $c['uid'], array('case' => 'F', 'value' => 'offline'), array(
+        Push::enqueue('uid', $c['uid'], ['case' => 'F', 'value' => 'offline'], [
             'msg_id'       => $c['msg_id'],
             'offline_mode' => 'queue',
             'source'       => 'e2e',
-        ));
+        ]);
         echo "[F] -> 离线推送任务已提交（uid 目标，离线策略 queue）\n";
 
         // 阶段二：设备上线，鉴权成功后应自动补投
@@ -45,11 +46,11 @@ final class CasePushOffline
 
         $connF->onConnect = function ($con) use ($h, $c) {
             echo "[F] WebSocket 已连接\n";
-            $con->send($h->encode($h->buildPacket(Message::CMD_AUTH, 'f-auth-1', array(
+            $con->send($h->encode($h->buildPacket(Message::CMD_AUTH, 'f-auth-1', [
                 'uid'       => $c['uid'],
                 'device_id' => $c['device_id'],
                 'token'     => $c['token'],
-            ))));
+            ])));
             echo "[F] -> auth（等待离线消息补投）\n";
         };
 
@@ -75,6 +76,7 @@ final class CasePushOffline
                 }
                 $con->close();
                 $h->finish();
+
                 return;
             }
 
@@ -104,6 +106,7 @@ final class CasePushOffline
      * 用例 K：UDP 离线补投
      *
      * @param Harness $h
+     *
      * @return void
      */
     public static function udpOfflineBackfill(Harness $h)
@@ -111,11 +114,11 @@ final class CasePushOffline
         $c = $h->ctx('K');
 
         // 阶段一：uidK 无任何在线连接时提交，应落入 push:offline:{uidK}
-        Push::enqueue('uid', $c['uid'], array('case' => 'K', 'value' => 'udp-offline'), array(
+        Push::enqueue('uid', $c['uid'], ['case' => 'K', 'value' => 'udp-offline'], [
             'msg_id'       => $c['msg_id'],
             'offline_mode' => 'queue',
             'source'       => 'e2e',
-        ));
+        ]);
         echo "[K] -> UDP 离线推送任务已提交（目标无在线连接，预期落入离线列表）\n";
 
         $udpK      = new AsyncUdpConnection($h->udpAddress);
@@ -132,12 +135,12 @@ final class CasePushOffline
                 return;
             }
             $kAttempt++;
-            $udpK->send($h->encode($h->buildPacket(Message::CMD_DATA, 'k-udp-' . $kAttempt, array(
+            $udpK->send($h->encode($h->buildPacket(Message::CMD_DATA, 'k-udp-' . $kAttempt, [
                 'uid'       => $c['uid'],
                 'device_id' => $c['device_id'],
                 'token'     => $c['token'],
-                'data'      => array('type' => 'udp-offline-report'),
-            ))));
+                'data'      => ['type' => 'udp-offline-report'],
+            ])));
             echo "[K] -> 上报报文（第 {$kAttempt} 次，重建 UDP 会话以触发补投）\n";
 
             Timer::add(1.0, function () use (&$sendReportK, &$kReported) {
@@ -172,6 +175,7 @@ final class CasePushOffline
             if ($packet['cmd'] === Message::CMD_ACK) {
                 $kReported = true;
                 echo "[K] <- ack（UDP 会话已重建，等待离线补投）\n";
+
                 return;
             }
 

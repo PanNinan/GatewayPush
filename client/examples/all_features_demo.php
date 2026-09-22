@@ -46,23 +46,24 @@ use Workerman\Worker;
 
 // ----------------------------- 配置 -----------------------------
 // 服务端地址（与服务端 config/gateway.php / config/api.php 一致）
-define('WS_URL',  'ws://127.0.0.1:8282');
+define('WS_URL', 'ws://127.0.0.1:8282');
 define('UDP_URL', 'udp://127.0.0.1:8283');
 define('API_URL', 'http://127.0.0.1:8290');
 
 // 自动读取项目根 .env 的密钥（与服务端同一套）；缺省回退占位符，此时 auth 会失败需自行填写
 $env = loadEnv(__DIR__ . '/../../.env');
 define('AUTH_SECRET', $env['AUTH_SECRET'] ?? 'AUTH_SECRET');
-define('API_SECRET',  $env['API_SECRET'] ?: ($env['AUTH_SECRET'] ?? 'API_SECRET'));
+define('API_SECRET', $env['API_SECRET'] ?: ($env['AUTH_SECRET'] ?? 'API_SECRET'));
 if (AUTH_SECRET === 'AUTH_SECRET') {
     fwrite(STDERR, "警告：未从 .env 读到 AUTH_SECRET，auth 将失败。请填写真实密钥或配置 .env。\n");
 }
 
-define('UID',       'demo-user');
+define('UID', 'demo-user');
 define('DEVICE_ID', 'demo-device');
 
 /**
  * 极简 .env 解析（不依赖服务端 Env 类，保持示例自包含）
+ *
  * @return array<string,string>
  */
 function loadEnv(string $path): array
@@ -80,6 +81,7 @@ function loadEnv(string $path): array
             $out[$m[1]] = trim($m[2], "\"'");
         }
     }
+
     return $out;
 }
 
@@ -156,7 +158,7 @@ function demoWs(callable $next): void
     });
 
     // 就绪后串联 7 个动作
-    $session->onStateChange(function (string $new) use ($session, $receiver, $next) {
+    $session->onStateChange(function (string $new) use ($session, $receiver) {
         static $fired = false;
         if ($new !== SessionManager::STATE_READY || $fired) {
             return;
@@ -191,14 +193,18 @@ function demoWs(callable $next): void
                             $subscribe->unsubscribe('topic.demo', function (bool $ok, $data, $error) use ($notify, $receiver) {
                                 logLine('P2', 'unsubscribe ' . ($ok ? 'ok' : 'FAIL ' . json_encode($error)));
                                 // ⑦ notify 触发对自身推送 → PushReceiver 自动回执（见上方 onPush）
-                                $notify->notify(['hi' => 1], 'demo-msg-1', 'queue',
+                                $notify->notify(
+                                    ['hi' => 1],
+                                    'demo-msg-1',
+                                    'queue',
                                     function (bool $ok, $data, $error) use ($receiver) {
                                         logLine('P2', 'notify 受理 ' . ($ok ? 'ok' : 'FAIL ' . json_encode($error)));
                                         // 等推送下行抵达（异步）后打印自动回执数
                                         Timer::add(1.5, function () use ($receiver) {
                                             logLine('P2', '自动回执数 acked=' . $receiver->ackedCount());
                                         }, [], false);
-                                    });
+                                    }
+                                );
                             });
                         });
                     });
@@ -255,7 +261,7 @@ function demoUdp(callable $next): void
         $report = new ReportApi($session);
 
         // auth 已在 auto_auth 完成；直接发业务
-        $echo->send(['udp' => 1], function (bool $ok, $data, $error) use ($report, $transport, $session, $next) {
+        $echo->send(['udp' => 1], function (bool $ok, $data, $error) use ($report, $transport, $next) {
             logLine('P3', 'echo ' . ($ok ? 'ok' : 'FAIL ' . json_encode($error)));
             // report 在 UDP 侧静默不回执（cb 只会收到本地超时，属预期）
             $report->report('metric.udp', 1, ['v' => 1], function (bool $ok, $data, $error) {
@@ -334,7 +340,7 @@ $worker->onWorkerStart = function () {
 // client/examples/ 里凭空多出一个 workerman.log。显式收敛到仓库 runtime/logs，
 // 与服务端 start.php 同一处，运行时产物不散落在源码树里。
 $logDir = dirname(__DIR__, 2) . '/runtime/logs';
-if (!is_dir($logDir) && !@mkdir($logDir, 0755, true) && !is_dir($logDir)) {
+if (!is_dir($logDir) && !@mkdir($logDir, 0o755, true) && !is_dir($logDir)) {
     fwrite(STDERR, "[WARN] 日志目录创建失败：{$logDir}\n");
 }
 Worker::$logFile = $logDir . '/all_features_demo.log';

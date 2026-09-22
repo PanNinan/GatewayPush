@@ -36,10 +36,12 @@ final class EnvChecker
      * @param array $gatewayConfig  config/gateway.php
      * @param array $businessConfig config/business.php
      * @param array $actionConfig   config/actions.php
+     *
      * @return array ['ok' => bool, 'text' => string]
+     *
      * @throws \RuntimeException 运行时目录无法创建时抛出
      */
-    public static function check(array $appConfig, array $gatewayConfig, array $businessConfig, array $actionConfig = array())
+    public static function check(array $appConfig, array $gatewayConfig, array $businessConfig, array $actionConfig = [])
     {
         $runtime = $appConfig['runtime'];
         $lines   = [];
@@ -92,10 +94,10 @@ final class EnvChecker
         }
 
         // 运行时目录
-        foreach (array('runtime_path', 'log_path', 'pid_path') as $key) {
+        foreach (['runtime_path', 'log_path', 'pid_path'] as $key) {
             $dir = $runtime[$key];
             if (!is_dir($dir)) {
-                if (! mkdir($dir, 0755, true) && ! is_dir($dir)) {
+                if (!mkdir($dir, 0o755, true) && !is_dir($dir)) {
                     throw new \RuntimeException(sprintf('Directory "%s" was not created', $dir));
                 }
             }
@@ -175,7 +177,7 @@ final class EnvChecker
             $lines[] = '[WARN] 定向推送已关闭（PUSH_ENABLE=false）';
         } else {
             $mode    = (string)$appConfig['push']['offline_mode'];
-            $modeOk  = in_array($mode, array('drop', 'queue'), true);
+            $modeOk  = in_array($mode, ['drop', 'queue'], true);
             $lines[] = sprintf(
                 '[%-4s] 定向推送已开启（离线策略 %s，指令队列 %s）',
                 $modeOk ? 'OK' : 'FAIL',
@@ -246,7 +248,7 @@ final class EnvChecker
             $lines[] = '[WARN] 报文级限流已关闭（RATE_LIMIT_ENABLE=false）';
         } else {
             $rateConf = $appConfig['rate_limit'];
-            $dims     = array('conn' => '连接', 'uid' => '用户', 'ip' => 'IP', 'ping' => '心跳');
+            $dims     = ['conn' => '连接', 'uid' => '用户', 'ip' => 'IP', 'ping' => '心跳'];
             $active   = 0;
             $desc     = [];
             $badBurst = [];
@@ -257,6 +259,7 @@ final class EnvChecker
 
                 if ($rate <= 0) {
                     $desc[] = $label . ' 已关闭';
+
                     continue;
                 }
                 $active++;
@@ -309,8 +312,9 @@ final class EnvChecker
             foreach ($actionList as $name => $decl) {
                 $handler = is_array($decl) && isset($decl['handler']) ? (string)$decl['handler'] : '';
                 if ($handler === '' || !class_exists($handler)
-                    || !in_array('GatewayPush\\Business\\ActionInterface', (array)class_implements($handler), true)) {
+                    || !in_array('GatewayPush\Business\ActionInterface', (array)class_implements($handler), true)) {
                     $invalid[] = $name;
+
                     continue;
                 }
 
@@ -385,14 +389,19 @@ final class EnvChecker
         }
         foreach ($ports as $label => $listen) {
             $probe = PortProbe::isUsed($listen);
-            $lines[] = sprintf('[%-4s] %s 端口 %s%s', $probe ? 'WARN' : 'OK', $label,
-                preg_replace('#^[a-z]+://#i', '', $listen), $probe ? ' 已被占用（若为本服务实例可忽略）' : '');
+            $lines[] = sprintf(
+                '[%-4s] %s 端口 %s%s',
+                $probe ? 'WARN' : 'OK',
+                $label,
+                preg_replace('#^[a-z]+://#i', '', $listen),
+                $probe ? ' 已被占用（若为本服务实例可忽略）' : ''
+            );
         }
 
         $lines[] = str_repeat('=', 70);
         $lines[] = $ok ? '自检结论：通过' : '自检结论：未通过，请修正上述 FAIL 项';
         $lines[] = '';
 
-        return array('ok' => $ok, 'text' => implode("\n", $lines) . "\n");
+        return ['ok' => $ok, 'text' => implode("\n", $lines) . "\n"];
     }
 }

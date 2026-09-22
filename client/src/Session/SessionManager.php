@@ -39,12 +39,12 @@ use Workerman\Timer;
  */
 class SessionManager
 {
-    const STATE_DISCONNECTED   = 'disconnected';
-    const STATE_CONNECTING     = 'connecting';
-    const STATE_CONNECTED      = 'connected';
-    const STATE_AUTHENTICATING = 'authenticating';
-    const STATE_READY          = 'ready';
-    const STATE_RECONNECTING   = 'reconnecting';
+    public const STATE_DISCONNECTED   = 'disconnected';
+    public const STATE_CONNECTING     = 'connecting';
+    public const STATE_CONNECTED      = 'connected';
+    public const STATE_AUTHENTICATING = 'authenticating';
+    public const STATE_READY          = 'ready';
+    public const STATE_RECONNECTING   = 'reconnecting';
 
     /**
      * 配置（已合并默认值）
@@ -115,24 +115,24 @@ class SessionManager
     /**
      * 心跳定时器 id
      *
-     * @var int|null
+     * @var null|int
      */
     private $heartbeatTimerId;
 
     /**
      * 重连定时器 id
      *
-     * @var int|null
+     * @var null|int
      */
     private $reconnectTimerId;
 
-    /** @var callable|null function (array $packet): void */
+    /** @var null|callable function (array $packet): void */
     private $onPushCb;
 
-    /** @var callable|null function (ClientException $e): void */
+    /** @var null|callable function (ClientException $e): void */
     private $onErrorCb;
 
-    /** @var callable|null function (string $new, string $old): void */
+    /** @var null|callable function (string $new, string $old): void */
     private $onStateChangeCb;
 
     /**
@@ -150,11 +150,12 @@ class SessionManager
     private $timerDel;
 
     /**
-     * @param array                  $config    见 self::defaultConfig()
-     * @param TransportInterface|null $transport 缺省按 ws_url 构造 WsTransport
-     * @param TokenIssuer|null       $issuer    缺省按 secret/token_ttl 构造
-     * @param callable|null          $timerAdd  计时器创建（单测注入假计时器）
-     * @param callable|null          $timerDel  计时器删除
+     * @param array                   $config    见 self::defaultConfig()
+     * @param null|TransportInterface $transport 缺省按 ws_url 构造 WsTransport
+     * @param null|TokenIssuer        $issuer    缺省按 secret/token_ttl 构造
+     * @param null|callable           $timerAdd  计时器创建（单测注入假计时器）
+     * @param null|callable           $timerDel  计时器删除
+     *
      * @throws ClientException 配置非法
      */
     public function __construct(
@@ -166,7 +167,7 @@ class SessionManager
     ) {
         $this->config = array_merge(self::defaultConfig(), $config);
 
-        foreach (array('uid', 'device_id', 'secret') as $key) {
+        foreach (['uid', 'device_id', 'secret'] as $key) {
             if ((string)$this->config[$key] === '') {
                 throw ClientException::config('客户端配置缺少 ' . $key);
             }
@@ -197,9 +198,7 @@ class SessionManager
 
         $this->timerAdd = $timerAdd !== null
             ? $timerAdd
-            : function ($interval, $persistent, $fn) {
-                return Timer::add($interval, $fn, [], $persistent);
-            };
+            : fn ($interval, $persistent, $fn) => Timer::add($interval, $fn, [], $persistent);
         $this->timerDel = $timerDel !== null
             ? $timerDel
             : function ($timerId) {
@@ -214,7 +213,7 @@ class SessionManager
      */
     public static function defaultConfig()
     {
-        return array(
+        return [
             'ws_url'         => '',       // ws://host:port
             'uid'            => '',
             'device_id'      => '',
@@ -227,7 +226,7 @@ class SessionManager
             'reconnect_max'  => 15.0,     // 退避封顶（秒）
             'auto_auth'      => true,     // 握手完成后立即自动发 auth（15s 窗口内抢先）
             'attach_token'   => false,    // 业务报文随包携带 Token（UDP 通道必需，见 sendPacket）
-        );
+        ];
     }
 
     /* ---------------------------------------------------------------------
@@ -238,11 +237,12 @@ class SessionManager
      * 建立连接
      *
      * @return void
+     *
      * @throws ClientException 状态非法（已连接/正在建连时重复调用）
      */
     public function connect()
     {
-        if (!in_array($this->state, array(self::STATE_DISCONNECTED, self::STATE_RECONNECTING), true)) {
+        if (!in_array($this->state, [self::STATE_DISCONNECTED, self::STATE_RECONNECTING], true)) {
             throw ClientException::state('当前状态为 ' . $this->state . '，不能重复建连');
         }
 
@@ -254,9 +254,11 @@ class SessionManager
     /**
      * 发送鉴权（auto_auth=false 时由调用方在建连后手动触发）
      *
-     * @param callable|null $cb function (bool $ok, array $packet): void
+     * @param null|callable $cb function (bool $ok, array $packet): void
      *                          成功时 $packet['data'] = {uid, device_id, protocol, reconnected}
+     *
      * @return void
+     *
      * @throws ClientException 状态非法 / Token 签发失败
      */
     public function auth($cb = null)
@@ -265,18 +267,18 @@ class SessionManager
             throw ClientException::state('当前状态为 ' . $this->state . '，须先 connect 且握手完成');
         }
 
-        $token = $this->issuer->issue(array(
+        $token = $this->issuer->issue([
             'uid'       => $this->config['uid'],
             'device_id' => $this->config['device_id'],
-        ));
+        ]);
         $this->token = $token; // attach_token 开启时供后续业务报文携带
 
-        $packet = Message::packet(Message::CMD_AUTH, array('client' => 'gateway-push-client'), array(
+        $packet = Message::packet(Message::CMD_AUTH, ['client' => 'gateway-push-client'], [
             'seq'       => $this->newSeq(),
             'uid'       => $this->config['uid'],
             'device_id' => $this->config['device_id'],
             'token'     => $token,
-        ));
+        ]);
 
         $this->registerPending($packet['seq'], 'auth', (float)$this->config['timeout'], $cb);
         $this->setState(self::STATE_AUTHENTICATING);
@@ -286,15 +288,17 @@ class SessionManager
     /**
      * 发送心跳（测量 RTT 与存活探测）
      *
-     * @param callable|null $cb function (bool $ok, array $packet): void
+     * @param null|callable $cb function (bool $ok, array $packet): void
+     *
      * @return void
+     *
      * @throws ClientException 未就绪
      */
     public function ping($cb = null)
     {
         $this->assertReady();
 
-        $packet = Message::packet(Message::CMD_PING, [], array('seq' => $this->newSeq()));
+        $packet = Message::packet(Message::CMD_PING, [], ['seq' => $this->newSeq()]);
         $this->registerPending($packet['seq'], 'ping', (float)$this->config['timeout'], $cb);
         $this->sendPacket($packet);
     }
@@ -304,23 +308,25 @@ class SessionManager
      *
      * @param string        $action  动作名（须在服务端 config/actions.php 登记）
      * @param array         $params  动作参数
-     * @param callable|null $cb      function (bool $ok, array $packet): void（完整回执报文，data 载荷在 $packet['data']）
-     * @param float|null    $timeout 覆盖全局 timeout
+     * @param null|callable $cb      function (bool $ok, array $packet): void（完整回执报文，data 载荷在 $packet['data']）
+     * @param null|float    $timeout 覆盖全局 timeout
+     *
      * @return string 本请求 seq
+     *
      * @throws ClientException 未就绪
      */
     public function request($action, array $params = [], $cb = null, $timeout = null)
     {
         $this->assertReady();
 
-        $packet = Message::packet(Message::CMD_DATA, array(
+        $packet = Message::packet(Message::CMD_DATA, [
             'action' => (string)$action,
             'params' => $params,
-        ), array(
+        ], [
             'seq'       => $this->newSeq(),
             'uid'       => $this->config['uid'],
             'device_id' => $this->config['device_id'],
-        ));
+        ]);
 
         $what    = 'data.' . (string)$action;
         $timeout = $timeout !== null ? (float)$timeout : (float)$this->config['timeout'];
@@ -337,20 +343,21 @@ class SessionManager
      *
      * @param string $msgId 推送报文的 msg_id（即服务端 seq）
      * @param array  $data  附加数据
+     *
      * @return bool 是否已发送（未就绪时静默跳过）
      */
-    public function sendAck($msgId, array $data = array())
+    public function sendAck($msgId, array $data = [])
     {
         $msgId = (string)$msgId;
         if ($msgId === '' || $this->state !== self::STATE_READY) {
             return false;
         }
 
-        $packet = Message::packet(Message::CMD_ACK, array_merge(array(
+        $packet = Message::packet(Message::CMD_ACK, array_merge([
             'msg_id' => $msgId,
-        ), $data), array(
+        ], $data), [
             'seq' => $msgId,
-        ));
+        ]);
         $this->sendPacket($packet);
 
         return true;
@@ -378,6 +385,7 @@ class SessionManager
         if ($this->state === self::STATE_RECONNECTING) {
             // 重连等待期没有活动连接（onClose 不会再触发），直接落状态
             $this->setState(self::STATE_DISCONNECTED);
+
             return;
         }
 
@@ -435,20 +443,21 @@ class SessionManager
      */
     public function stats()
     {
-        return array(
+        return [
             'state'              => $this->state,
             'uid'                => $this->config['uid'],
             'device_id'          => $this->config['device_id'],
             'pending'            => count($this->pending),
             'last_rtt'           => round($this->lastRtt, 4),
             'reconnect_attempts' => $this->reconnectAttempts,
-        );
+        ];
     }
 
     /**
      * 注册推送回调（P2 将由 PushReceiver 承接，当前直接暴露原始报文）
      *
      * @param callable $cb function (array $packet): void
+     *
      * @return void
      */
     public function onPush($cb)
@@ -460,6 +469,7 @@ class SessionManager
      * 注册错误回调（服务端 error 报文 / 本地超时 / 传输错误）
      *
      * @param callable $cb function (ClientException $e): void
+     *
      * @return void
      */
     public function onError($cb)
@@ -471,6 +481,7 @@ class SessionManager
      * 注册状态变更回调
      *
      * @param callable $cb function (string $newState, string $oldState): void
+     *
      * @return void
      */
     public function onStateChange($cb)
@@ -518,6 +529,7 @@ class SessionManager
      * 下行分发：按 cmd 路由
      *
      * @param string $frame
+     *
      * @return void
      */
     private function handleFrame($frame)
@@ -527,17 +539,19 @@ class SessionManager
             $this->fireError(new ClientException(
                 ErrorCode::BAD_PACKET,
                 '收到非法报文：' . $error,
-                array('raw' => (string)$frame)
+                ['raw' => (string)$frame]
             ));
+
             return;
         }
 
         switch ($packet['cmd']) {
             case Message::CMD_PING:
                 // 服务端反向心跳必须应答：网关 25s/次、漏 2 次判定死亡并断开
-                $this->sendPacket(Message::packet(Message::CMD_PONG, [], array(
+                $this->sendPacket(Message::packet(Message::CMD_PONG, [], [
                     'seq' => $packet['seq'],
-                )));
+                ]));
+
                 return;
 
             case Message::CMD_PONG:
@@ -545,7 +559,7 @@ class SessionManager
                 // UDP 双层回执（硬约束⑳）：网关收包即回传输层 ack（data 为空且无
                 // action）。业务请求（data.*）的结算必须等业务层回执，传输层 ack
                 // 在此跳过；auth/ping 无业务层回执，以传输层 ack 结算。
-                $ackSeq = (string)(isset($packet['seq']) ? $packet['seq'] : '');
+                $ackSeq = (string)($packet['seq'] ?? '');
                 if ($packet['cmd'] === Message::CMD_ACK
                     && Codec::isTransportAck($packet)
                     && isset($this->pending[$ackSeq])
@@ -554,17 +568,20 @@ class SessionManager
                     return;
                 }
                 $this->settle($packet, true);
+
                 return;
 
             case Message::CMD_ERROR:
                 $this->settle($packet, false);
                 $this->fireError(ClientException::fromPacket($packet));
+
                 return;
 
             case Message::CMD_PUSH:
                 if ($this->onPushCb !== null) {
                     ($this->onPushCb)($packet);
                 }
+
                 return;
 
             default:
@@ -585,19 +602,21 @@ class SessionManager
         if ($this->closing) {
             $this->reconnectAttempts = 0;
             $this->setState(self::STATE_DISCONNECTED);
+
             return;
         }
 
         if (!$this->config['reconnect']) {
             $this->setState(self::STATE_DISCONNECTED);
             $this->fireError(ClientException::transport('连接已断开（自动重连未启用）'));
+
             return;
         }
 
         $this->reconnectAttempts++;
         $base = (float)$this->config['reconnect_base'];
         $max  = (float)$this->config['reconnect_max'];
-        $delay = min($base * pow(2, $this->reconnectAttempts - 1), $max);
+        $delay = min($base * 2 ** ($this->reconnectAttempts - 1), $max);
 
         $this->setState(self::STATE_RECONNECTING);
         $this->reconnectTimerId = $this->addTimer($delay, false, function () {
@@ -615,7 +634,8 @@ class SessionManager
      * @param string        $seq
      * @param string        $what
      * @param float         $timeout
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return void
      */
     private function registerPending($seq, $what, $timeout, $cb)
@@ -635,7 +655,7 @@ class SessionManager
 
             $ex = ClientException::timeout($timedOut->what, $seq, $timedOut->timeout);
             if ($timedOut->onReply !== null) {
-                ($timedOut->onReply)(false, array());
+                ($timedOut->onReply)(false, []);
             }
             $this->fireError($ex);
         });
@@ -648,6 +668,7 @@ class SessionManager
      *
      * @param array $packet 服务端回执报文
      * @param bool  $ok
+     *
      * @return void
      */
     private function settle(array $packet, $ok)
@@ -677,6 +698,7 @@ class SessionManager
      * 全部 pending 以传输失败结算（断线时）
      *
      * @param string $reason
+     *
      * @return void
      */
     private function failAllPending($reason)
@@ -684,7 +706,7 @@ class SessionManager
         foreach ($this->pending as $req) {
             $this->delTimer($req->timerId);
             if ($req->onReply !== null) {
-                ($req->onReply)(false, array('reason' => $reason));
+                ($req->onReply)(false, ['reason' => $reason]);
             }
         }
         $this->pending = [];
@@ -708,6 +730,7 @@ class SessionManager
      * 断言会话已就绪（业务请求的前置条件）
      *
      * @return void
+     *
      * @throws ClientException 尚未完成鉴权时抛出
      */
     private function assertReady()
@@ -721,6 +744,7 @@ class SessionManager
      * 发送上行报文（统一补齐 Token 与签名）
      *
      * @param array $packet 八字段报文；缺失的 token / sign 在此补齐
+     *
      * @return void
      */
     private function sendPacket(array $packet)
@@ -746,6 +770,7 @@ class SessionManager
      * 切换会话状态（附带心跳的启停与状态变更回调）
      *
      * @param string $new 目标状态
+     *
      * @return void
      */
     private function setState($new)
@@ -806,6 +831,7 @@ class SessionManager
      * @param float    $interval
      * @param bool     $persistent
      * @param callable $fn
+     *
      * @return int 计时器 ID
      */
     private function addTimer($interval, $persistent, $fn)
@@ -816,7 +842,8 @@ class SessionManager
     /**
      * 删除计时器（ID 为 0 / null 时静默跳过）
      *
-     * @param int|null $timerId
+     * @param null|int $timerId
+     *
      * @return void
      */
     private function delTimer($timerId)
@@ -830,6 +857,7 @@ class SessionManager
      * 向上抛出错误（转发给 onError 回调）
      *
      * @param ClientException $e
+     *
      * @return void
      */
     private function fireError(ClientException $e)

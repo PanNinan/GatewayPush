@@ -21,7 +21,6 @@ namespace GatewayPush\Client\Protocol;
 
 use GatewayPush\Business\Auth;
 use GatewayPush\Client\Error\ClientException;
-use GatewayPush\Client\Error\ErrorCode;
 
 /**
  * Token 签发与本地校验（服务端 Auth 的薄适配）
@@ -31,10 +30,10 @@ use GatewayPush\Client\Error\ErrorCode;
 final class TokenIssuer
 {
     /** 与服务端 `app.auth.token_ttl` 默认值一致 */
-    const DEFAULT_TTL = 7200;
+    public const DEFAULT_TTL = 7200;
 
     /** 与服务端 `app.auth.clock_skew` 默认值一致 */
-    const DEFAULT_CLOCK_SKEW = 300;
+    public const DEFAULT_CLOCK_SKEW = 300;
 
     /**
      * 密钥（对应服务端 app.auth.secret）
@@ -58,9 +57,10 @@ final class TokenIssuer
     private $clockSkew;
 
     /**
-     * @param string $secret            与服务端 `app.auth.secret` 一致的密钥
-     * @param int    $defaultTtl        默认有效期（秒），<=0 取 7200
-     * @param int    $clockSkew         允许的签发时间偏差（秒），<0 取 300
+     * @param string $secret     与服务端 `app.auth.secret` 一致的密钥
+     * @param int    $defaultTtl 默认有效期（秒），<=0 取 7200
+     * @param int    $clockSkew  允许的签发时间偏差（秒），<0 取 300
+     *
      * @throws ClientException 密钥为空，或有效期 / 偏差为负时抛出
      */
     public function __construct($secret, $defaultTtl = 0, $clockSkew = self::DEFAULT_CLOCK_SKEW)
@@ -97,7 +97,9 @@ final class TokenIssuer
      *
      * @param array $claims 至少包含非空 uid，可选 device_id
      * @param int   $ttl    有效期（秒），<=0 取默认值
+     *
      * @return string
+     *
      * @throws ClientException uid 缺失或底层熵源不可用
      */
     public function issue(array $claims, $ttl = 0)
@@ -128,6 +130,7 @@ final class TokenIssuer
      * 完整本地校验（签名 + 时效）
      *
      * @param string $token
+     *
      * @return array ['ok'=>bool,'code'=>int,'msg'=>string,'claims'=>array]
      */
     public function inspect($token)
@@ -141,6 +144,7 @@ final class TokenIssuer
      * 是否合法
      *
      * @param string $token
+     *
      * @return bool
      */
     public function verify($token)
@@ -154,6 +158,7 @@ final class TokenIssuer
      * 校验通过时返回载荷，否则返回空数组
      *
      * @param string $token
+     *
      * @return array
      */
     public function claims($token)
@@ -172,6 +177,7 @@ final class TokenIssuer
      * 结论不可作为安全依据。
      *
      * @param string $token
+     *
      * @return array 结构非法时返回空数组
      */
     public function peek($token)
@@ -201,17 +207,18 @@ final class TokenIssuer
      */
     private function apply()
     {
-        Auth::init(array(
+        Auth::init([
             'secret'     => $this->secret,
             'token_ttl'  => $this->defaultTtl,
             'clock_skew' => $this->clockSkew,
-        ));
+        ]);
     }
 
     /**
      * URL 安全 Base64 解码（与服务端 Auth 同规则）
      *
      * @param string $data
+     *
      * @return string
      */
     private static function base64UrlDecode($data)

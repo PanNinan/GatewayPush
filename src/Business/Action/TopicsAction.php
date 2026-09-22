@@ -25,6 +25,7 @@ class TopicsAction implements ActionInterface
 {
     /**
      * @param ActionContext $ctx
+     *
      * @return void
      */
     public function handle(ActionContext $ctx)
@@ -34,17 +35,18 @@ class TopicsAction implements ActionInterface
         $uid = $ctx->uid();
         if ($uid === '') {
             $ctx->replyError(Message::CODE_UNAUTHORIZED, '缺少用户身份');
+
             return;
         }
 
         Subscribe::topicsOf($uid, function ($topics) use ($ctx, $uid) {
-            $ctx->reply(array(
+            $ctx->reply([
                 'action' => 'topics',
                 'uid'    => $uid,
                 'topics' => $topics,
                 'count'  => count($topics),
                 'at'     => time(),
-            ));
+            ]);
         });
     }
 }

@@ -45,7 +45,7 @@ class Task
      *
      * @var float
      */
-    const START_RUN_DELAY = 1.0;
+    public const START_RUN_DELAY = 1.0;
 
     /**
      * 任务运行时状态
@@ -74,6 +74,7 @@ class Task
      * @param array  $jobConfigs config/business.php 的 tasks 配置
      * @param int    $workerId
      * @param string $workerName
+     *
      * @return void
      */
     public static function init(array $jobConfigs, $workerId = 0, $workerName = '')
@@ -91,18 +92,19 @@ class Task
             }
         }
 
-        Logger::info('定时任务注册完成', array(
+        Logger::info('定时任务注册完成', [
             'worker_id'   => self::$workerId,
             'worker_name' => self::$workerName,
             'registered'  => $started,
             'total'       => count($jobConfigs),
-        ));
+        ]);
     }
 
     /**
      * 注册单个任务
      *
      * @param array $job ['name','interval','class','method','persistent','timeout','scope']
+     *
      * @return bool
      */
     public static function start(array $job)
@@ -110,33 +112,37 @@ class Task
         $name = isset($job['name']) ? (string)$job['name'] : '';
         if ($name === '') {
             Logger::error('定时任务缺少 name 配置');
+
             return false;
         }
         if (isset(self::$jobs[$name])) {
-            Logger::warn('定时任务重复注册，已忽略', array('name' => $name));
+            Logger::warn('定时任务重复注册，已忽略', ['name' => $name]);
+
             return false;
         }
 
         $class  = isset($job['class']) ? (string)$job['class'] : '';
         $method = isset($job['method']) ? (string)$job['method'] : '';
         if ($class === '' || $method === '' || !class_exists($class) || !method_exists($class, $method)) {
-            Logger::error('定时任务处理器不可用', array(
+            Logger::error('定时任务处理器不可用', [
                 'name'    => $name,
                 'handler' => $class . '::' . $method,
-            ));
+            ]);
+
             return false;
         }
 
         $interval = isset($job['interval']) ? (float)$job['interval'] : 0.0;
         if ($interval <= 0) {
-            Logger::error('定时任务执行间隔非法', array('name' => $name, 'interval' => $interval));
+            Logger::error('定时任务执行间隔非法', ['name' => $name, 'interval' => $interval]);
+
             return false;
         }
 
-        $persistent = ! isset($job['persistent']) || $job['persistent'];
+        $persistent = !isset($job['persistent']) || $job['persistent'];
         $timeout    = isset($job['timeout']) ? (int)$job['timeout'] : 0;
 
-        self::$jobs[$name] = array(
+        self::$jobs[$name] = [
             'name'       => $name,
             'interval'   => $interval,
             'handler'    => $class . '::' . $method,
@@ -149,7 +155,7 @@ class Task
             'last_start' => 0.0,
             'last_cost'  => 0.0,
             'timer'      => 0,
-        );
+        ];
 
         $timerId = Timer::add($interval, function () use ($name) {
             self::execute($name);
@@ -157,26 +163,26 @@ class Task
 
         self::$jobs[$name]['timer'] = $timerId;
 
-        Logger::info('定时任务已注册', array(
+        Logger::info('定时任务已注册', [
             'name'       => $name,
             'handler'    => $class . '::' . $method,
             'interval'   => $interval . 's',
             'persistent' => $persistent,
-        ));
+        ]);
 
         // 补跑首次执行：周期任务默认要空等一个 interval 才启动第一轮，
         // 对 86400s 级的任务而言，进程活不满一天就永远不会跑（静默失效）——
         // 在频繁重启的环境里，这等于没有清理。
         // 非持久化的 Timer 即「延迟一次」，与周期定时器互不影响。
-        if (! empty($job['run_at_start'])) {
+        if (!empty($job['run_at_start'])) {
             Timer::add(self::START_RUN_DELAY, function () use ($name) {
                 self::execute($name);
             }, [], false);
 
-            Logger::info('定时任务已安排启动后补跑一次', array(
+            Logger::info('定时任务已安排启动后补跑一次', [
                 'name'  => $name,
                 'delay' => self::START_RUN_DELAY . 's',
-            ));
+            ]);
         }
 
         return true;
@@ -186,6 +192,7 @@ class Task
      * 停止任务
      *
      * @param string $name
+     *
      * @return bool
      */
     public static function stop($name)
@@ -197,7 +204,8 @@ class Task
             Timer::del((int)self::$jobs[$name]['timer']);
         }
         unset(self::$jobs[$name]);
-        Logger::info('定时任务已停止', array('name' => $name));
+        Logger::info('定时任务已停止', ['name' => $name]);
+
         return true;
     }
 
@@ -210,15 +218,16 @@ class Task
     {
         $stats = [];
         foreach (self::$jobs as $name => $job) {
-            $stats[$name] = array(
+            $stats[$name] = [
                 'interval'   => $job['interval'],
                 'count'      => $job['count'],
                 'skip'       => $job['skip'],
                 'fail'       => $job['fail'],
                 'last_cost'  => round($job['last_cost'], 4),
                 'running'    => $job['running'],
-            );
+            ];
         }
+
         return $stats;
     }
 
@@ -240,6 +249,7 @@ class Task
      * 执行任务（含防重入与异常隔离）
      *
      * @param string $name
+     *
      * @return void
      */
     protected static function execute($name)
@@ -251,10 +261,11 @@ class Task
 
         if ($job['running']) {
             $job['skip']++;
-            Logger::warn('上一周期任务尚未结束，跳过本次执行', array(
+            Logger::warn('上一周期任务尚未结束，跳过本次执行', [
                 'name'     => $name,
                 'interval' => $job['interval'],
-            ));
+            ]);
+
             return;
         }
 
@@ -273,11 +284,11 @@ class Task
         $job['last_cost'] = microtime(true) - $job['last_start'];
 
         if ($job['timeout'] > 0 && $job['last_cost'] > $job['timeout']) {
-            Logger::warn('定时任务执行耗时超出预期', array(
+            Logger::warn('定时任务执行耗时超出预期', [
                 'name'    => $name,
                 'cost'    => round($job['last_cost'], 4),
                 'timeout' => $job['timeout'],
-            ));
+            ]);
         }
     }
 
@@ -285,6 +296,7 @@ class Task
      * 判断任务是否应在当前进程注册
      *
      * @param array $job
+     *
      * @return bool
      */
     protected static function matchScope(array $job)
@@ -293,6 +305,7 @@ class Task
         if ($scope === 'all') {
             return true;
         }
+
         return self::$workerId === 0;
     }
 }

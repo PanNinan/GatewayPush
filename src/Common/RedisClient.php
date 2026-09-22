@@ -30,7 +30,7 @@ class RedisClient
      *
      * KEYS[1] = 队列键，ARGV[1] = 单批最大条数
      */
-    const LUA_POP_BATCH = "local items = redis.call('LRANGE', KEYS[1], 0, tonumber(ARGV[1]) - 1) "
+    public const LUA_POP_BATCH = "local items = redis.call('LRANGE', KEYS[1], 0, tonumber(ARGV[1]) - 1) "
         . "if #items > 0 then redis.call('LTRIM', KEYS[1], #items, -1) end return items";
 
     /**
@@ -38,8 +38,8 @@ class RedisClient
      *
      * KEYS[1] = 键，ARGV[1] = 值，ARGV[2] = TTL 秒
      */
-    const LUA_SET_NX_EX = "local ok = redis.call('SET', KEYS[1], ARGV[1], 'EX', tonumber(ARGV[2]), 'NX') "
-        . "if ok then return 1 end return 0";
+    public const LUA_SET_NX_EX = "local ok = redis.call('SET', KEYS[1], ARGV[1], 'EX', tonumber(ARGV[2]), 'NX') "
+        . 'if ok then return 1 end return 0';
 
     /**
      * Lua：多桶令牌桶限流（单次往返原子判定 N 个桶）
@@ -63,37 +63,37 @@ class RedisClient
      *   tokens  当前剩余令牌（浮点）
      *   ts      上次结算时间（毫秒）
      */
-    const LUA_TOKEN_BUCKET = "local n = #KEYS "
-        . "local now = tonumber(ARGV[1]) "
-        . "local cost = tonumber(ARGV[2]) "
-        . "local state = {} "
-        . "local allowed = 1 "
-        . "for i = 1, n do "
+    public const LUA_TOKEN_BUCKET = 'local n = #KEYS '
+        . 'local now = tonumber(ARGV[1]) '
+        . 'local cost = tonumber(ARGV[2]) '
+        . 'local state = {} '
+        . 'local allowed = 1 '
+        . 'for i = 1, n do '
         . "  local d = redis.call('HMGET', KEYS[i], 'tokens', 'ts') "
-        . "  local tokens = tonumber(d[1]) "
-        . "  local ts = tonumber(d[2]) "
-        . "  local rate = tonumber(ARGV[1 + i * 2]) "
-        . "  local burst = tonumber(ARGV[2 + i * 2]) "
-        . "  if tokens == nil then tokens = burst; ts = now end "
-        . "  tokens = math.min(burst, tokens + math.max(0, now - ts) * rate / 1000) "
-        . "  state[i] = {tokens = tokens, rate = rate, burst = burst} "
-        . "  if tokens < cost then allowed = 0 end "
-        . "end "
-        . "if allowed == 1 then "
-        . "  for i = 1, n do state[i].tokens = state[i].tokens - cost end "
-        . "end "
-        . "for i = 1, n do "
+        . '  local tokens = tonumber(d[1]) '
+        . '  local ts = tonumber(d[2]) '
+        . '  local rate = tonumber(ARGV[1 + i * 2]) '
+        . '  local burst = tonumber(ARGV[2 + i * 2]) '
+        . '  if tokens == nil then tokens = burst; ts = now end '
+        . '  tokens = math.min(burst, tokens + math.max(0, now - ts) * rate / 1000) '
+        . '  state[i] = {tokens = tokens, rate = rate, burst = burst} '
+        . '  if tokens < cost then allowed = 0 end '
+        . 'end '
+        . 'if allowed == 1 then '
+        . '  for i = 1, n do state[i].tokens = state[i].tokens - cost end '
+        . 'end '
+        . 'for i = 1, n do '
         . "  redis.call('HMSET', KEYS[i], 'tokens', tostring(state[i].tokens), 'ts', tostring(now)) "
         . "  redis.call('PEXPIRE', KEYS[i], math.ceil(state[i].burst / state[i].rate * 1000) + 1000) "
-        . "end "
-        . "return allowed";
+        . 'end '
+        . 'return allowed';
 
     /**
      * 连接配置
      *
      * @var array
      */
-    protected static $config = array(
+    protected static $config = [
         'host'       => '127.0.0.1',
         'port'       => 6379,
         'password'   => '',
@@ -102,7 +102,7 @@ class RedisClient
         'pool_size'  => 8,
         'prefix'     => '',
         'reconnect_interval' => 1.0,
-    );
+    ];
 
     /**
      * 异步连接池
@@ -138,9 +138,10 @@ class RedisClient
      * 初始化连接配置
      *
      * @param array $config
+     *
      * @return void
      */
-    public static function init(array $config = array())
+    public static function init(array $config = [])
     {
         self::$config = array_merge(self::$config, $config);
         self::$inited = true;
@@ -150,6 +151,7 @@ class RedisClient
      * 拼接全局前缀
      *
      * @param string $name
+     *
      * @return string
      */
     public static function key($name)
@@ -161,6 +163,7 @@ class RedisClient
      * 取出一个可用连接（轮询）
      *
      * @return Client
+     *
      * @throws RuntimeException 未调用 init()，或缺少 workerman/redis 依赖时抛出
      */
     public static function connection()
@@ -178,163 +181,8 @@ class RedisClient
         if (!isset(self::$pool[$index]) || self::$pool[$index] === null) {
             self::$pool[$index] = self::createConnection($index);
         }
+
         return self::$pool[$index];
-    }
-
-    /**
-     * 创建异步连接
-     *
-     * @param int $index 池内序号，仅用于日志
-     * @return Client
-     */
-    protected static function createConnection($index)
-    {
-        $address = sprintf('redis://%s:%d', self::$config['host'], (int)self::$config['port']);
-        $options = array(
-            'connect_timeout' => (float)self::$config['timeout'],
-        );
-
-        $client = new Client($address, $options, function ($success, $client) use ($index, $address) {
-            if (!$success) {
-                Logger::error('Redis 连接失败', array(
-                    'pool'    => $index,
-                    'address' => $address,
-                    'error'   => $client->error(),
-                ));
-                return;
-            }
-            Logger::info('Redis 连接成功', array(
-                'pool'     => $index,
-                'address'  => $address,
-                'database' => (int)self::$config['database'],
-            ));
-
-            // 兜底路径：正常情况已由 primeConnection() 预设属性、由客户端自动补发完成；
-            // 仅当反射预设失败时才需要在这里显式下发（此时首批命令可能已落错库，属已知降级）
-            if (!empty(self::$primed[spl_object_id($client)])) {
-                return;
-            }
-
-            $password = (string)self::$config['password'];
-            if ($password !== '') {
-                $client->auth($password, function ($result, $c) {
-                    if ($c->error() !== '') {
-                        Logger::error('Redis AUTH 失败', array('error' => $c->error()));
-                    }
-                });
-            }
-
-            $database = (int)self::$config['database'];
-            if ($database > 0) {
-                $client->select($database, function () {
-                });
-            }
-        });
-
-        // 必须在任何业务命令入队前完成，原因见 primeConnection()
-        self::primeConnection($client);
-
-        return $client;
-    }
-
-    /**
-     * 预设连接的 DB / 认证信息（关键修复，勿删）
-     *
-     * 背景：
-     *   workerman/redis 的 Client 内部维护 $_db / $_auth，并在**每次连接建立时**
-     *   把 [['SELECT', $_db]] / [['AUTH', $_auth]] 插入命令队列首位（Client::connect 中）。
-     *   但 select() / auth() 是在**命令响应返回后**才通过 format 回调写入这两个属性的，
-     *   而 onConnect 的执行顺序是「先 process() 发送队列，再回调用户 callback」。
-     *
-     *   后果：若首个业务命令与连接建立落在同一事件循环周期（连接池懒加载时必然如此），
-     *   该命令会先于 SELECT 发出，静默落到默认 DB 0。实测复现：
-     *   Push::enqueue 的首条 RPUSH 写入 DB 0，而消费端读 DB 9，队列恒为空。
-     *
-     *   解决：构造完成后立即用反射预设属性，使自动补发机制在连接建立时就
-     *   把 SELECT / AUTH 排到队首，从根源消除竞态。
-     *
-     * @param Client $client
-     * @return void
-     */
-    protected static function primeConnection(Client $client)
-    {
-        $database = (int)self::$config['database'];
-        $password = (string)self::$config['password'];
-
-        self::$primed[spl_object_id($client)] = false;
-
-        if ($database <= 0 && $password === '') {
-            // 使用默认 DB 且无密码，无需预设
-            self::$primed[spl_object_id($client)] = true;
-            return;
-        }
-
-        try {
-            $ref = new \ReflectionObject($client);
-
-            if ($database > 0 && $ref->hasProperty('_db')) {
-                $prop = $ref->getProperty('_db');
-                $prop->setAccessible(true);
-                $prop->setValue($client, $database);
-            }
-
-            if ($password !== '' && $ref->hasProperty('_auth')) {
-                $prop = $ref->getProperty('_auth');
-                $prop->setAccessible(true);
-                $prop->setValue($client, $password);
-            }
-
-            self::$primed[spl_object_id($client)] = true;
-        } catch (\Throwable $e) {
-            Logger::warn('Redis 连接预设失败，DB / AUTH 可能延迟生效', array(
-                'error' => $e->getMessage(),
-            ));
-        }
-    }
-
-    /**
-     * 统一回调包装
-     *
-     * 未显式传入回调时，自动消费命令结果并记录错误，避免错误静默丢失。
-     *
-     * @param string        $command
-     * @param callable|null $cb
-     * @param string        $traceKey
-     * @return callable
-     */
-    protected static function wrap($command, ?callable $cb = null, $traceKey = '')
-    {
-        if ($cb !== null) {
-            return $cb;
-        }
-        return function ($result, $client = null) use ($command, $traceKey) {
-            if ($client && method_exists($client, 'error')) {
-                $err = $client->error();
-                if ($err !== '') {
-                    Logger::error('Redis 命令执行失败', array(
-                        'cmd'   => $command,
-                        'key'   => $traceKey,
-                        'error' => $err,
-                    ));
-                }
-            }
-            return $result;
-        };
-    }
-
-    /**
-     * 批量补齐 key 前缀
-     *
-     * @param array $keys
-     * @return array
-     */
-    protected static function prefixKeys(array $keys)
-    {
-        $result = [];
-        foreach ($keys as $key) {
-            $result[] = self::key($key);
-        }
-        return $result;
     }
 
     /* ---------------------------------------------------------------------
@@ -351,8 +199,9 @@ class RedisClient
      *
      * @param string        $key
      * @param mixed         $value
-     * @param int           $ttl 秒，0 表示不过期
-     * @param callable|null $cb
+     * @param int           $ttl   秒，0 表示不过期
+     * @param null|callable $cb
+     *
      * @return mixed
      */
     public static function set($key, $value, $ttl = 0, ?callable $cb = null)
@@ -361,6 +210,7 @@ class RedisClient
         if ((int)$ttl > 0) {
             return self::connection()->setEx($fullKey, (int)$ttl, $value, self::wrap('SETEX', $cb, $key));
         }
+
         return self::connection()->set($fullKey, $value, self::wrap('SET', $cb, $key));
     }
 
@@ -368,7 +218,8 @@ class RedisClient
      * 批量读取（自动补前缀），返回顺序与入参一致，缺失元素为 false
      *
      * @param array         $keys
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return mixed
      */
     public static function mGet(array $keys, ?callable $cb = null)
@@ -376,10 +227,12 @@ class RedisClient
         $fullKeys = self::prefixKeys($keys);
         if (!$fullKeys) {
             if ($cb) {
-                $cb(array());
+                $cb([]);
             }
+
             return null;
         }
+
         return self::connection()->mGet($fullKeys, self::wrap('MGET', $cb, count($fullKeys) . ' keys'));
     }
 
@@ -387,7 +240,8 @@ class RedisClient
      * 判断 key 是否存在
      *
      * @param string        $key
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return mixed
      */
     public static function exists($key, ?callable $cb = null)
@@ -400,7 +254,8 @@ class RedisClient
      *
      * @param string        $key
      * @param int           $ttl
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return mixed
      */
     public static function expire($key, $ttl, ?callable $cb = null)
@@ -412,7 +267,8 @@ class RedisClient
      * 读取 key 的剩余生存时间（秒；-1 = 永久，-2 = 不存在）
      *
      * @param string        $key
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return mixed
      */
     public static function ttl($key, ?callable $cb = null)
@@ -425,7 +281,8 @@ class RedisClient
      *
      * @param string        $key
      * @param int           $step
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return mixed
      */
     public static function incr($key, $step = 1, ?callable $cb = null)
@@ -440,8 +297,9 @@ class RedisClient
     /**
      * 删除 key（支持单个或数组）
      *
-     * @param string|array  $keys
-     * @param callable|null $cb
+     * @param array|string  $keys
+     * @param null|callable $cb
+     *
      * @return mixed
      */
     public static function del($keys, ?callable $cb = null)
@@ -452,6 +310,7 @@ class RedisClient
         }
         $args   = $fullKeys;
         $args[] = self::wrap('DEL', $cb, implode(',', $fullKeys));
+
         return self::connection()->del(...$args);
     }
 
@@ -465,7 +324,8 @@ class RedisClient
      * @param string        $key
      * @param string        $field
      * @param mixed         $value
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return mixed
      */
     public static function hSet($key, $field, $value, ?callable $cb = null)
@@ -480,7 +340,8 @@ class RedisClient
      *
      * @param string        $key
      * @param array         $hash
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return mixed
      */
     public static function hMSet($key, array $hash, ?callable $cb = null)
@@ -493,7 +354,8 @@ class RedisClient
      *
      * @param string        $key
      * @param string        $field
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return mixed
      */
     public static function hGet($key, $field, ?callable $cb = null)
@@ -505,7 +367,8 @@ class RedisClient
      * 读取 Hash 的全部字段
      *
      * @param string        $key
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return mixed
      */
     public static function hGetAll($key, ?callable $cb = null)
@@ -517,17 +380,19 @@ class RedisClient
      * 删除一个或多个 Hash 字段
      *
      * @param string        $key
-     * @param string|array  $fields
-     * @param callable|null $cb
+     * @param array|string  $fields
+     * @param null|callable $cb
+     *
      * @return mixed
      */
     public static function hDel($key, $fields, ?callable $cb = null)
     {
-        $args   = array(self::key($key));
+        $args   = [self::key($key)];
         foreach ((array)$fields as $field) {
             $args[] = $field;
         }
         $args[] = self::wrap('HDEL', $cb, $key);
+
         return self::connection()->hDel(...$args);
     }
 
@@ -537,7 +402,8 @@ class RedisClient
      * @param string        $key
      * @param string        $field
      * @param int           $step
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return mixed
      */
     public static function hIncrBy($key, $field, $step = 1, ?callable $cb = null)
@@ -554,7 +420,8 @@ class RedisClient
      *
      * @param string        $key
      * @param mixed         $value
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return mixed
      */
     public static function rPush($key, $value, ?callable $cb = null)
@@ -566,7 +433,8 @@ class RedisClient
      * 读取列表长度
      *
      * @param string        $key
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return mixed
      */
     public static function lLen($key, ?callable $cb = null)
@@ -580,7 +448,8 @@ class RedisClient
      * @param string        $key
      * @param int           $start
      * @param int           $stop
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return mixed
      */
     public static function lRange($key, $start, $stop, ?callable $cb = null)
@@ -599,7 +468,8 @@ class RedisClient
      * @param string        $key
      * @param int           $start
      * @param int           $stop
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return mixed
      */
     public static function lTrim($key, $start, $stop, ?callable $cb = null)
@@ -619,7 +489,8 @@ class RedisClient
      *
      * @param string        $key
      * @param int           $keep
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return mixed
      */
     public static function lTrimKeepLast($key, $keep, ?callable $cb = null)
@@ -642,17 +513,19 @@ class RedisClient
      * 添加集合成员
      *
      * @param string        $key
-     * @param string|array  $members
-     * @param callable|null $cb
+     * @param array|string  $members
+     * @param null|callable $cb
+     *
      * @return mixed
      */
     public static function sAdd($key, $members, ?callable $cb = null)
     {
-        $args = array(self::key($key));
+        $args = [self::key($key)];
         foreach ((array)$members as $member) {
             $args[] = $member;
         }
         $args[] = self::wrap('SADD', $cb, $key);
+
         return self::connection()->sAdd(...$args);
     }
 
@@ -660,17 +533,19 @@ class RedisClient
      * 移除集合成员
      *
      * @param string        $key
-     * @param string|array  $members
-     * @param callable|null $cb
+     * @param array|string  $members
+     * @param null|callable $cb
+     *
      * @return mixed
      */
     public static function sRem($key, $members, ?callable $cb = null)
     {
-        $args = array(self::key($key));
+        $args = [self::key($key)];
         foreach ((array)$members as $member) {
             $args[] = $member;
         }
         $args[] = self::wrap('SREM', $cb, $key);
+
         return self::connection()->sRem(...$args);
     }
 
@@ -678,7 +553,8 @@ class RedisClient
      * 读取集合全部成员
      *
      * @param string        $key
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return mixed
      */
     public static function sMembers($key, ?callable $cb = null)
@@ -690,7 +566,8 @@ class RedisClient
      * 获取集合成员数
      *
      * @param string        $key
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return mixed
      */
     public static function sCard($key, ?callable $cb = null)
@@ -703,7 +580,8 @@ class RedisClient
      *
      * @param string        $key
      * @param string        $member
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return mixed
      */
     public static function sIsMember($key, $member, ?callable $cb = null)
@@ -724,7 +602,8 @@ class RedisClient
      *
      * @param string        $key
      * @param int           $batch 单次最大弹出条数
-     * @param callable|null $cb    function(array $items)
+     * @param null|callable $cb    function(array $items)
+     *
      * @return mixed
      */
     public static function popBatch($key, $batch = 100, ?callable $cb = null)
@@ -734,17 +613,18 @@ class RedisClient
 
         return self::eval(
             self::LUA_POP_BATCH,
-            array($fullKey, $batch),
+            [$fullKey, $batch],
             1,
             function ($result, $client = null) use ($key, $cb) {
                 if ($client && method_exists($client, 'error') && $client->error() !== '') {
-                    Logger::error('Redis 批量弹出失败', array('key' => $key, 'error' => $client->error()));
+                    Logger::error('Redis 批量弹出失败', ['key' => $key, 'error' => $client->error()]);
                     $result = [];
                 }
                 $items = is_array($result) ? $result : [];
                 if ($cb) {
                     $cb($items);
                 }
+
                 return $items;
             }
         );
@@ -758,7 +638,8 @@ class RedisClient
      * @param string        $key
      * @param string        $value
      * @param int           $ttl
-     * @param callable|null $cb function(bool $first)
+     * @param null|callable $cb    function(bool $first)
+     *
      * @return mixed
      */
     public static function setNxEx($key, $value, $ttl = 0, ?callable $cb = null)
@@ -768,17 +649,18 @@ class RedisClient
 
         return self::eval(
             self::LUA_SET_NX_EX,
-            array($fullKey, (string)$value, (string)$ttl),
+            [$fullKey, (string)$value, (string)$ttl],
             1,
             function ($result, $client = null) use ($key, $cb) {
                 if ($client && method_exists($client, 'error') && $client->error() !== '') {
-                    Logger::error('Redis SETNX 执行失败', array('key' => $key, 'error' => $client->error()));
+                    Logger::error('Redis SETNX 执行失败', ['key' => $key, 'error' => $client->error()]);
                     $result = 0;
                 }
                 $first = (int)$result === 1;
                 if ($cb) {
                     $cb($first);
                 }
+
                 return $first;
             }
         );
@@ -789,7 +671,8 @@ class RedisClient
      *
      * @param array         $buckets 桶定义列表：[['key'=>string, 'rate'=>int, 'burst'=>int], ...]
      * @param int           $cost    本次消耗令牌数
-     * @param callable|null $cb      function(bool $allowed)
+     * @param null|callable $cb      function(bool $allowed)
+     *
      * @return mixed
      */
     public static function tokenBuckets(array $buckets, $cost = 1, ?callable $cb = null)
@@ -798,6 +681,7 @@ class RedisClient
             if ($cb) {
                 $cb(true);
             }
+
             return true;
         }
 
@@ -807,8 +691,8 @@ class RedisClient
         $sizes = [];
 
         foreach ($buckets as $bucket) {
-            $rate  = max(1, (int)(isset($bucket['rate']) ? $bucket['rate'] : 1));
-            $burst = max($rate, (int)(isset($bucket['burst']) ? $bucket['burst'] : $rate));
+            $rate  = max(1, (int)($bucket['rate'] ?? 1));
+            $burst = max($rate, (int)($bucket['burst'] ?? $rate));
 
             $keys[]  = self::key($bucket['key']);
             $rates[] = (string)$rate;
@@ -816,7 +700,7 @@ class RedisClient
         }
 
         // 参数顺序：now, cost, 然后按桶顺序 (rate, burst) 两两成对
-        $args = array((string)(int)(microtime(true) * 1000), (string)$cost);
+        $args = [(string)(int)(microtime(true) * 1000), (string)$cost];
         $n    = count($keys);
         for ($i = 0; $i < $n; $i++) {
             $args[] = $rates[$i];
@@ -831,16 +715,18 @@ class RedisClient
                 $error = ($client && method_exists($client, 'error')) ? $client->error() : '';
                 if ($error !== '') {
                     // 交由调用方决定降级策略（RateLimiter 采用 fail-open）
-                    Logger::error('Redis 令牌桶执行失败', array('error' => $error));
+                    Logger::error('Redis 令牌桶执行失败', ['error' => $error]);
                     if ($cb) {
                         $cb(null, $error);
                     }
+
                     return null;
                 }
                 $allowed = (int)$result === 1;
                 if ($cb) {
                     $cb($allowed, '');
                 }
+
                 return $allowed;
             }
         );
@@ -862,12 +748,13 @@ class RedisClient
      * @param string        $script
      * @param array         $args    KEYS + ARGV 顺序拼接（key 需已带全局前缀）
      * @param int           $numKeys KEYS 个数
-     * @param callable|null $cb      function(mixed $result, Client $client = null)
+     * @param null|callable $cb      function(mixed $result, Client $client = null)
+     *
      * @return mixed
      */
     public static function eval($script, array $args = [], $numKeys = 0, ?callable $cb = null)
     {
-        $flat = array_merge(array((int)$numKeys), array_values($args));
+        $flat = array_merge([(int)$numKeys], array_values($args));
 
         return self::connection()->eval(
             (string)$script,
@@ -886,7 +773,8 @@ class RedisClient
      * 说明：workerman/redis 的 __call 对无参命令（PING）会误判回调位置，
      * 因此统一使用 EXISTS 做健康检查。
      *
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return mixed
      */
     public static function healthCheck(?callable $cb = null)
@@ -914,5 +802,169 @@ class RedisClient
         self::$pool   = [];
         self::$cursor = 0;
         self::$primed = [];
+    }
+
+    /**
+     * 创建异步连接
+     *
+     * @param int $index 池内序号，仅用于日志
+     *
+     * @return Client
+     */
+    protected static function createConnection($index)
+    {
+        $address = sprintf('redis://%s:%d', self::$config['host'], (int)self::$config['port']);
+        $options = [
+            'connect_timeout' => (float)self::$config['timeout'],
+        ];
+
+        $client = new Client($address, $options, function ($success, $client) use ($index, $address) {
+            if (!$success) {
+                Logger::error('Redis 连接失败', [
+                    'pool'    => $index,
+                    'address' => $address,
+                    'error'   => $client->error(),
+                ]);
+
+                return;
+            }
+            Logger::info('Redis 连接成功', [
+                'pool'     => $index,
+                'address'  => $address,
+                'database' => (int)self::$config['database'],
+            ]);
+
+            // 兜底路径：正常情况已由 primeConnection() 预设属性、由客户端自动补发完成；
+            // 仅当反射预设失败时才需要在这里显式下发（此时首批命令可能已落错库，属已知降级）
+            if (!empty(self::$primed[spl_object_id($client)])) {
+                return;
+            }
+
+            $password = (string)self::$config['password'];
+            if ($password !== '') {
+                $client->auth($password, function ($result, $c) {
+                    if ($c->error() !== '') {
+                        Logger::error('Redis AUTH 失败', ['error' => $c->error()]);
+                    }
+                });
+            }
+
+            $database = (int)self::$config['database'];
+            if ($database > 0) {
+                $client->select($database, function () {});
+            }
+        });
+
+        // 必须在任何业务命令入队前完成，原因见 primeConnection()
+        self::primeConnection($client);
+
+        return $client;
+    }
+
+    /**
+     * 预设连接的 DB / 认证信息（关键修复，勿删）
+     *
+     * 背景：
+     *   workerman/redis 的 Client 内部维护 $_db / $_auth，并在**每次连接建立时**
+     *   把 [['SELECT', $_db]] / [['AUTH', $_auth]] 插入命令队列首位（Client::connect 中）。
+     *   但 select() / auth() 是在**命令响应返回后**才通过 format 回调写入这两个属性的，
+     *   而 onConnect 的执行顺序是「先 process() 发送队列，再回调用户 callback」。
+     *
+     *   后果：若首个业务命令与连接建立落在同一事件循环周期（连接池懒加载时必然如此），
+     *   该命令会先于 SELECT 发出，静默落到默认 DB 0。实测复现：
+     *   Push::enqueue 的首条 RPUSH 写入 DB 0，而消费端读 DB 9，队列恒为空。
+     *
+     *   解决：构造完成后立即用反射预设属性，使自动补发机制在连接建立时就
+     *   把 SELECT / AUTH 排到队首，从根源消除竞态。
+     *
+     * @param Client $client
+     *
+     * @return void
+     */
+    protected static function primeConnection(Client $client)
+    {
+        $database = (int)self::$config['database'];
+        $password = (string)self::$config['password'];
+
+        self::$primed[spl_object_id($client)] = false;
+
+        if ($database <= 0 && $password === '') {
+            // 使用默认 DB 且无密码，无需预设
+            self::$primed[spl_object_id($client)] = true;
+
+            return;
+        }
+
+        try {
+            $ref = new \ReflectionObject($client);
+
+            if ($database > 0 && $ref->hasProperty('_db')) {
+                $prop = $ref->getProperty('_db');
+                $prop->setAccessible(true);
+                $prop->setValue($client, $database);
+            }
+
+            if ($password !== '' && $ref->hasProperty('_auth')) {
+                $prop = $ref->getProperty('_auth');
+                $prop->setAccessible(true);
+                $prop->setValue($client, $password);
+            }
+
+            self::$primed[spl_object_id($client)] = true;
+        } catch (\Throwable $e) {
+            Logger::warn('Redis 连接预设失败，DB / AUTH 可能延迟生效', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * 统一回调包装
+     *
+     * 未显式传入回调时，自动消费命令结果并记录错误，避免错误静默丢失。
+     *
+     * @param string        $command
+     * @param null|callable $cb
+     * @param string        $traceKey
+     *
+     * @return callable
+     */
+    protected static function wrap($command, ?callable $cb = null, $traceKey = '')
+    {
+        if ($cb !== null) {
+            return $cb;
+        }
+
+        return function ($result, $client = null) use ($command, $traceKey) {
+            if ($client && method_exists($client, 'error')) {
+                $err = $client->error();
+                if ($err !== '') {
+                    Logger::error('Redis 命令执行失败', [
+                        'cmd'   => $command,
+                        'key'   => $traceKey,
+                        'error' => $err,
+                    ]);
+                }
+            }
+
+            return $result;
+        };
+    }
+
+    /**
+     * 批量补齐 key 前缀
+     *
+     * @param array $keys
+     *
+     * @return array
+     */
+    protected static function prefixKeys(array $keys)
+    {
+        $result = [];
+        foreach ($keys as $key) {
+            $result[] = self::key($key);
+        }
+
+        return $result;
     }
 }

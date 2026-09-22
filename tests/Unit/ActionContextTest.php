@@ -43,46 +43,6 @@ class ActionContextTest extends TestCase
         $this->hookCalls = 0;
     }
 
-    /**
-     * 构造被测上下文
-     *
-     * @param string $action
-     * @param array  $packet
-     * @param array  $params
-     * @param string $channel
-     * @param string $replyMode
-     * @param array  $options
-     * @param string $protocol
-     * @return ActionContext
-     */
-    private function context(
-        $action = 'echo',
-        array $packet = [],
-        array $params = [],
-        $channel = ActionContext::CHANNEL_WS,
-        $replyMode = ActionContext::REPLY_SYNC,
-        array $options = [],
-        $protocol = 'ws'
-    ) {
-        return new ActionContext(
-            $action,
-            $packet,
-            $params,
-            array(
-                'client_id' => '1234567890123456789',
-                'uid'       => 'uid-1001',
-                'device_id' => 'dev-A',
-                'protocol'  => $protocol,
-            ),
-            $channel,
-            $replyMode,
-            function (array $p) {
-                $this->sent[] = $p;
-            },
-            $options
-        );
-    }
-
     /* ---------------------------------------------------------------------
      | 身份与来源
      --------------------------------------------------------------------- */
@@ -121,15 +81,15 @@ class ActionContextTest extends TestCase
 
     public function testSeqIsReadFromPacketAndDefaultsToEmpty(): void
     {
-        $ctx = $this->context('echo', array('seq' => 'sp-1'));
+        $ctx = $this->context('echo', ['seq' => 'sp-1']);
         $this->assertSame('sp-1', $ctx->seq());
 
-        $this->assertSame('', $this->context('echo', array())->seq());
+        $this->assertSame('', $this->context('echo', [])->seq());
     }
 
     public function testPacketIsReturnedVerbatim(): void
     {
-        $packet = array('cmd' => 'data', 'seq' => 'x', 'data' => array('action' => 'echo'));
+        $packet = ['cmd' => 'data', 'seq' => 'x', 'data' => ['action' => 'echo']];
         $ctx    = $this->context('echo', $packet);
 
         $this->assertSame($packet, $ctx->packet());
@@ -141,16 +101,16 @@ class ActionContextTest extends TestCase
 
     public function testParamsExposeValidatedValues(): void
     {
-        $ctx = $this->context('report', [], array('topic' => 'a/b', 'count' => 5));
+        $ctx = $this->context('report', [], ['topic' => 'a/b', 'count' => 5]);
 
-        $this->assertSame(array('topic' => 'a/b', 'count' => 5), $ctx->params());
+        $this->assertSame(['topic' => 'a/b', 'count' => 5], $ctx->params());
         $this->assertSame('a/b', $ctx->param('topic'));
         $this->assertSame(5, $ctx->param('count'));
     }
 
     public function testParamFallsBackToDefaultOnlyWhenKeyAbsent(): void
     {
-        $ctx = $this->context('report', [], array('flag' => null, 'zero' => 0));
+        $ctx = $this->context('report', [], ['flag' => null, 'zero' => 0]);
 
         // 键存在即使是 null / 0 也应原样返回，不回落默认值
         $this->assertNull($ctx->param('flag', 'fallback'));
@@ -160,9 +120,9 @@ class ActionContextTest extends TestCase
 
     public function testOptionsAreReadableWithDefault(): void
     {
-        $ctx = $this->context('report', [], [], ActionContext::CHANNEL_WS, ActionContext::REPLY_SYNC, array('ttl' => 3600));
+        $ctx = $this->context('report', [], [], ActionContext::CHANNEL_WS, ActionContext::REPLY_SYNC, ['ttl' => 3600]);
 
-        $this->assertSame(array('ttl' => 3600), $ctx->options());
+        $this->assertSame(['ttl' => 3600], $ctx->options());
         $this->assertSame(3600, $ctx->option('ttl'));
         $this->assertSame('d', $ctx->option('absent', 'd'));
     }
@@ -184,23 +144,23 @@ class ActionContextTest extends TestCase
 
     public function testReplySendsAckCarryingSeqAndData(): void
     {
-        $ctx = $this->context('echo', array('seq' => 'sp-9'));
+        $ctx = $this->context('echo', ['seq' => 'sp-9']);
 
         $this->assertFalse($ctx->isReplied(), '构造后不应处于已回执状态');
 
-        $sent = $ctx->reply(array('ok' => 1));
+        $sent = $ctx->reply(['ok' => 1]);
 
         $this->assertTrue($sent, 'sync 模式应真正下发');
         $this->assertTrue($ctx->isReplied());
         $this->assertCount(1, $this->sent);
         $this->assertSame(Message::CMD_ACK, $this->sent[0]['cmd']);
         $this->assertSame('sp-9', $this->sent[0]['seq']);
-        $this->assertSame(array('ok' => 1), $this->sent[0]['data']);
+        $this->assertSame(['ok' => 1], $this->sent[0]['data']);
     }
 
     public function testReplyErrorSendsErrorPacketWithCodeSeqAndRef(): void
     {
-        $ctx = $this->context('echo', array('seq' => 'sp-10', 'cmd' => 'data'));
+        $ctx = $this->context('echo', ['seq' => 'sp-10', 'cmd' => 'data']);
 
         $sent = $ctx->replyError(Message::CODE_PARAM_MISSING);
 
@@ -216,7 +176,7 @@ class ActionContextTest extends TestCase
 
     public function testReplyErrorPrefersExplicitMessage(): void
     {
-        $ctx = $this->context('echo', array('seq' => 'sp-11'));
+        $ctx = $this->context('echo', ['seq' => 'sp-11']);
 
         $ctx->replyError(Message::CODE_SERVER_ERROR, '自定义文案');
 
@@ -229,9 +189,9 @@ class ActionContextTest extends TestCase
 
     public function testReplyNoneSuppressesSendButMarksReplied(): void
     {
-        $ctx = $this->context('report', array('seq' => 'sp-12'), [], ActionContext::CHANNEL_UDP, ActionContext::REPLY_NONE);
+        $ctx = $this->context('report', ['seq' => 'sp-12'], [], ActionContext::CHANNEL_UDP, ActionContext::REPLY_NONE);
 
-        $sent = $ctx->reply(array('count' => 3));
+        $sent = $ctx->reply(['count' => 3]);
 
         $this->assertFalse($sent, 'reply=none 时不应真正下发');
         $this->assertSame([], $this->sent, '下发器不得被调用');
@@ -240,7 +200,7 @@ class ActionContextTest extends TestCase
 
     public function testReplyErrorIsAlsoSuppressedWhenReplyNone(): void
     {
-        $ctx = $this->context('report', array('seq' => 'sp-13'), [], ActionContext::CHANNEL_UDP, ActionContext::REPLY_NONE);
+        $ctx = $this->context('report', ['seq' => 'sp-13'], [], ActionContext::CHANNEL_UDP, ActionContext::REPLY_NONE);
 
         $this->assertFalse($ctx->replyError(Message::CODE_SERVER_ERROR));
         $this->assertSame([], $this->sent);
@@ -254,7 +214,7 @@ class ActionContextTest extends TestCase
             $this->hookCalls++;
         });
 
-        $ctx->reply(array());
+        $ctx->reply([]);
 
         $this->assertSame(1, $this->hookCalls, '静默回执也必须注销超时定时器');
     }
@@ -280,9 +240,9 @@ class ActionContextTest extends TestCase
             $this->hookCalls++;
         });
 
-        $ctx->reply(array('n' => 1));
-        $ctx->reply(array('n' => 2));
-        $ctx->send(array('cmd' => 'push', 'data' => array()));
+        $ctx->reply(['n' => 1]);
+        $ctx->reply(['n' => 2]);
+        $ctx->send(['cmd' => 'push', 'data' => []]);
 
         // 定时器只需注销一次；后续下发不应重复触发钩子
         $this->assertSame(1, $this->hookCalls);
@@ -293,9 +253,9 @@ class ActionContextTest extends TestCase
     {
         $ctx = $this->context('echo');
 
-        $this->assertTrue($ctx->send(array('cmd' => 'push', 'seq' => 'p-1', 'data' => array('x' => 1))));
+        $this->assertTrue($ctx->send(['cmd' => 'push', 'seq' => 'p-1', 'data' => ['x' => 1]]));
         $this->assertSame('push', $this->sent[0]['cmd']);
-        $this->assertSame(array('x' => 1), $this->sent[0]['data']);
+        $this->assertSame(['x' => 1], $this->sent[0]['data']);
     }
 
     public function testWithoutReplyHookSendStillWorks(): void
@@ -303,7 +263,48 @@ class ActionContextTest extends TestCase
         $ctx = $this->context('echo');
 
         // 未注册钩子时不得报错（钩子由 ActionRunner 注入，属可选依赖）
-        $this->assertTrue($ctx->reply(array('ok' => 1)));
+        $this->assertTrue($ctx->reply(['ok' => 1]));
         $this->assertCount(1, $this->sent);
+    }
+
+    /**
+     * 构造被测上下文
+     *
+     * @param string $action
+     * @param array  $packet
+     * @param array  $params
+     * @param string $channel
+     * @param string $replyMode
+     * @param array  $options
+     * @param string $protocol
+     *
+     * @return ActionContext
+     */
+    private function context(
+        $action = 'echo',
+        array $packet = [],
+        array $params = [],
+        $channel = ActionContext::CHANNEL_WS,
+        $replyMode = ActionContext::REPLY_SYNC,
+        array $options = [],
+        $protocol = 'ws'
+    ) {
+        return new ActionContext(
+            $action,
+            $packet,
+            $params,
+            [
+                'client_id' => '1234567890123456789',
+                'uid'       => 'uid-1001',
+                'device_id' => 'dev-A',
+                'protocol'  => $protocol,
+            ],
+            $channel,
+            $replyMode,
+            function (array $p) {
+                $this->sent[] = $p;
+            },
+            $options
+        );
     }
 }

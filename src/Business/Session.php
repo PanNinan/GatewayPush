@@ -32,29 +32,30 @@ use GatewayWorker\Lib\Gateway as GatewayClient;
 class Session
 {
     /** 支持的协议标识 */
-    const PROTOCOL_WS  = 'ws';
-    const PROTOCOL_UDP = 'udp';
+    public const PROTOCOL_WS  = 'ws';
+    public const PROTOCOL_UDP = 'udp';
+
+    /**
+     * 单次批量取值的最大 key 数量，避免超长命令
+     */
+    public const BATCH_SIZE = 500;
 
     /**
      * 会话配置
      *
      * @var array
      */
-    protected static $config = array(
+    protected static $config = [
         'ttl'           => 7200,
         'heartbeat_ttl' => 90,
         'restore'       => true,
-    );
-
-    /**
-     * 单次批量取值的最大 key 数量，避免超长命令
-     */
-    const BATCH_SIZE = 500;
+    ];
 
     /**
      * 初始化
      *
      * @param array $config app.session 配置
+     *
      * @return void
      */
     public static function init(array $config)
@@ -73,7 +74,8 @@ class Session
      * @param array         $identity ['uid'=>..., 'device_id'=>...]
      * @param string        $protocol Session::PROTOCOL_WS / PROTOCOL_UDP
      * @param array         $connInfo ['client_ip','client_port','gateway','connect_at']
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return void
      */
     public static function bind($clientId, array $identity, $protocol, array $connInfo = [], ?callable $cb = null)
@@ -83,7 +85,7 @@ class Session
         $uid      = isset($identity['uid']) ? (string)$identity['uid'] : '';
         $deviceId = isset($identity['device_id']) ? (string)$identity['device_id'] : '';
 
-        $fields = array(
+        $fields = [
             'client_id'   => (string)$clientId,
             'uid'         => $uid,
             'device_id'   => $deviceId,
@@ -93,7 +95,7 @@ class Session
             'gateway'     => isset($connInfo['gateway']) ? (string)$connInfo['gateway'] : '',
             'connect_at'  => isset($connInfo['connect_at']) ? (int)$connInfo['connect_at'] : $now,
             'last_active' => $now,
-        );
+        ];
 
         RedisClient::hMSet(RedisKeys::session($clientId), $fields);
         RedisClient::expire(RedisKeys::session($clientId), $ttl);
@@ -109,12 +111,12 @@ class Session
             RedisClient::set(RedisKeys::deviceClient($deviceId), $clientId, $ttl);
         }
 
-        Logger::info('会话绑定完成', array(
+        Logger::info('会话绑定完成', [
             'client_id' => $clientId,
             'uid'       => $uid,
             'device_id' => $deviceId,
             'protocol'  => $protocol,
-        ));
+        ]);
 
         if ($cb) {
             $cb(true);
@@ -127,7 +129,8 @@ class Session
      * 高频操作，仅写单个 String 键。
      *
      * @param string        $clientId
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return void
      */
     public static function touch($clientId, ?callable $cb = null)
@@ -147,7 +150,8 @@ class Session
      * 仅摘除在线索引与心跳记录，避免离线连接被计入在线数或被巡检判定为僵死。
      *
      * @param string        $clientId
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return void
      */
     public static function markOffline($clientId, ?callable $cb = null)
@@ -165,11 +169,11 @@ class Session
                 RedisClient::hSet(RedisKeys::session($clientId), 'offline_at', time());
             }
 
-            Logger::info('会话已标记离线，等待断线重连', array(
+            Logger::info('会话已标记离线，等待断线重连', [
                 'client_id' => $clientId,
                 'protocol'  => $protocol,
                 'retained'  => is_array($session) && $session ? 1 : 0,
-            ));
+            ]);
 
             if ($cb) {
                 $cb(true);
@@ -181,7 +185,8 @@ class Session
      * 解绑会话（连接关闭时调用）
      *
      * @param string        $clientId
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return void
      */
     public static function unbind($clientId, ?callable $cb = null)
@@ -191,10 +196,10 @@ class Session
             $deviceId = is_array($session) && isset($session['device_id']) ? (string)$session['device_id'] : '';
             $protocol = is_array($session) && isset($session['protocol']) ? (string)$session['protocol'] : '';
 
-            RedisClient::del(array(
+            RedisClient::del([
                 RedisKeys::session($clientId),
                 RedisKeys::heartbeat($clientId),
-            ));
+            ]);
             RedisClient::sRem(RedisKeys::online(''), $clientId);
             if ($protocol !== '') {
                 RedisClient::sRem(RedisKeys::online($protocol), $clientId);
@@ -212,11 +217,11 @@ class Session
                 });
             }
 
-            Logger::info('会话已解绑', array(
+            Logger::info('会话已解绑', [
                 'client_id' => $clientId,
                 'uid'       => $uid,
                 'device_id' => $deviceId,
-            ));
+            ]);
 
             if ($cb) {
                 $cb(true);
@@ -232,13 +237,14 @@ class Session
      * 读取会话内容
      *
      * @param string   $clientId
-     * @param callable $cb function(array $session)
+     * @param callable $cb       function(array $session)
+     *
      * @return void
      */
     public static function get($clientId, callable $cb)
     {
         RedisClient::hGetAll(RedisKeys::session($clientId), function ($session) use ($cb) {
-            $cb(is_array($session) ? $session : array());
+            $cb(is_array($session) ? $session : []);
         });
     }
 
@@ -249,7 +255,8 @@ class Session
      * （如 UDP 每次报文前的「会话是否重建」探测，避免整表读取）。
      *
      * @param string   $clientId
-     * @param callable $cb function(bool $exists)
+     * @param callable $cb       function(bool $exists)
+     *
      * @return void
      */
     public static function exists($clientId, callable $cb)
@@ -263,7 +270,8 @@ class Session
      * 按设备查当前活跃 clientId
      *
      * @param string   $deviceId
-     * @param callable $cb function(string $clientId)
+     * @param callable $cb       function(string $clientId)
+     *
      * @return void
      */
     public static function findByDevice($deviceId, callable $cb)
@@ -277,13 +285,14 @@ class Session
      * 按 uid 查全部 clientId（多设备在线）
      *
      * @param string   $uid
-     * @param callable $cb function(array $clientIds)
+     * @param callable $cb  function(array $clientIds)
+     *
      * @return void
      */
     public static function findByUid($uid, callable $cb)
     {
         RedisClient::sMembers(RedisKeys::uidClients($uid), function ($members) use ($cb) {
-            $cb(is_array($members) ? $members : array());
+            $cb(is_array($members) ? $members : []);
         });
     }
 
@@ -291,19 +300,22 @@ class Session
      * 断线重连恢复：按 device_id 找回历史会话
      *
      * @param string   $deviceId
-     * @param callable $cb function(array $session) 未命中返回空数组
+     * @param callable $cb       function(array $session) 未命中返回空数组
+     *
      * @return void
      */
     public static function restore($deviceId, callable $cb)
     {
         if (empty(self::$config['restore'])) {
-            $cb(array());
+            $cb([]);
+
             return;
         }
 
         self::findByDevice($deviceId, function ($clientId) use ($cb) {
             if ($clientId === '') {
-                $cb(array());
+                $cb([]);
+
                 return;
             }
             self::get($clientId, function ($session) use ($cb) {
@@ -316,14 +328,14 @@ class Session
      * 统计在线连接数
      *
      * @param string        $protocol 为空表示全部
-     * @param callable|null $cb       function(int $count)
+     * @param null|callable $cb       function(int $count)
+     *
      * @return void
      */
     public static function countOnline($protocol = '', ?callable $cb = null)
     {
         if ($cb === null) {
-            $cb = function () {
-            };
+            $cb = function () {};
         }
         $key = RedisKeys::online($protocol);
         RedisClient::sCard($key, function ($count) use ($cb) {
@@ -373,11 +385,11 @@ class Session
                         // 心跳记录已过期，说明会话进入回收阶段，交由 cleanExpired 处理
                         continue;
                     }
-                    Logger::warn('检测到心跳超时连接，执行清理', array(
+                    Logger::warn('检测到心跳超时连接，执行清理', [
                         'client_id'   => $clientId,
                         'last_active' => $last,
                         'timeout'     => $now - $last,
-                    ));
+                    ]);
                     Monitor::incr('heartbeat_timeout');
                     self::forceClose($clientId);
                 }
@@ -412,7 +424,7 @@ class Session
                 }
                 $stale = [];
                 foreach ($clientIds as $index => $clientId) {
-                    $value = isset($values[$index]) ? $values[$index] : false;
+                    $value = $values[$index] ?? false;
                     if ($value === false || $value === null || $value === '') {
                         $stale[] = $clientId;
                     }
@@ -425,7 +437,7 @@ class Session
                 RedisClient::sRem(RedisKeys::online(self::PROTOCOL_WS), $stale);
                 RedisClient::sRem(RedisKeys::online(self::PROTOCOL_UDP), $stale);
 
-                Logger::info('清理过期会话索引完成', array('count' => count($stale)));
+                Logger::info('清理过期会话索引完成', ['count' => count($stale)]);
             });
         });
     }
@@ -438,6 +450,7 @@ class Session
      * 且其 clientId 无法被 GatewayWorker 地址解析器识别，因此仅回收会话数据。
      *
      * @param string $clientId
+     *
      * @return void
      */
     protected static function forceClose($clientId)

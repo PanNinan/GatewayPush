@@ -39,7 +39,7 @@ class Auth
      *
      * @var array
      */
-    protected static $config = array(
+    protected static $config = [
         'enable'       => true,
         'mode'         => 'hmac',
         'secret'       => '',
@@ -48,13 +48,14 @@ class Auth
         'bind_device'  => true,
         'fail_close'   => true,
         'auth_timeout' => 15,
-        'allow_cmds'   => array('auth', 'ping'),
-    );
+        'allow_cmds'   => ['auth', 'ping'],
+    ];
 
     /**
      * 初始化
      *
      * @param array $config app.auth 配置
+     *
      * @return void
      */
     public static function init(array $config)
@@ -79,6 +80,7 @@ class Auth
      * 判断指令是否允许在鉴权前执行
      *
      * @param string $cmd
+     *
      * @return bool
      */
     public static function isAllowedBeforeAuth($cmd)
@@ -117,8 +119,10 @@ class Auth
      * 本方法主要用于联调自测与内部服务调用。
      *
      * @param array $claims 至少包含 uid，可选 device_id
-     * @param int $ttl 有效期（秒），0 取配置默认值
+     * @param int   $ttl    有效期（秒），0 取配置默认值
+     *
      * @return string
+     *
      * @throws RandomException nonce 生成失败时抛出
      */
     public static function issue(array $claims, $ttl = 0)
@@ -126,13 +130,13 @@ class Auth
         $now = time();
         $ttl = $ttl > 0 ? (int)$ttl : (int)self::$config['token_ttl'];
 
-        $payload = array_merge(array(
+        $payload = array_merge([
             'uid'       => '',
             'device_id' => '',
             'iat'       => $now,
             'exp'       => $now + $ttl,
             'nonce'     => bin2hex(random_bytes(8)),
-        ), $claims);
+        ], $claims);
 
         $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         $body = self::base64UrlEncode($json);
@@ -149,13 +153,12 @@ class Auth
      * 本地校验：签名 + 时效（同步，无 IO）
      *
      * @param string $token
+     *
      * @return array ['ok'=>bool, 'code'=>int, 'msg'=>string, 'claims'=>array]
      */
     public static function verifyLocal($token)
     {
-        $fail = function ($code, $msg) {
-            return array('ok' => false, 'code' => $code, 'msg' => $msg, 'claims' => array());
-        };
+        $fail = fn ($code, $msg) => ['ok' => false, 'code' => $code, 'msg' => $msg, 'claims' => []];
 
         if (!is_string($token) || $token === '') {
             return $fail(Message::CODE_AUTH_FAILED, 'Token 不能为空');
@@ -188,14 +191,15 @@ class Auth
             return $fail(Message::CODE_AUTH_FAILED, 'Token 签发时间异常');
         }
 
-        return array('ok' => true, 'code' => Message::CODE_OK, 'msg' => 'ok', 'claims' => $claim);
+        return ['ok' => true, 'code' => Message::CODE_OK, 'msg' => 'ok', 'claims' => $claim];
     }
 
     /**
      * 查询 Token 是否已被撤销（异步）
      *
      * @param string   $token
-     * @param callable $cb function(bool $revoked, string $error)
+     * @param callable $cb    function(bool $revoked, string $error)
+     *
      * @return void
      */
     public static function isRevoked($token, callable $cb)
@@ -206,7 +210,7 @@ class Auth
                 $error = $client->error();
             }
             // Redis 异常时按「不可用即拒绝」处理，避免鉴权被绕过
-            $revoked = $error !== '' || ! empty($result);
+            $revoked = $error !== '' || !empty($result);
             $cb($revoked, $error);
         });
     }
@@ -216,7 +220,8 @@ class Auth
      *
      * @param string        $token
      * @param int           $ttl   0 取配置默认值
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return void
      */
     public static function revoke($token, $ttl = 0, ?callable $cb = null)
@@ -225,7 +230,7 @@ class Auth
         RedisClient::set(RedisKeys::authRevoked(self::tokenFingerprint($token)), 1, $ttl, function ($result, $client = null) use ($token, $cb) {
             $error = $client && method_exists($client, 'error') ? $client->error() : '';
             if ($error === '') {
-                Logger::info('Token 已加入撤销名单', array('fingerprint' => self::tokenFingerprint($token)));
+                Logger::info('Token 已加入撤销名单', ['fingerprint' => self::tokenFingerprint($token)]);
             }
             if ($cb) {
                 $cb($error === '');
@@ -245,35 +250,41 @@ class Auth
      *
      * @param string   $uid
      * @param string   $deviceId
-     * @param callable $cb function(bool $pass, string $msg)
+     * @param callable $cb       function(bool $pass, string $msg)
+     *
      * @return void
      */
     public static function checkDeviceBind($uid, $deviceId, callable $cb)
     {
         if (empty(self::$config['bind_device'])) {
             $cb(true, 'device bind check disabled');
+
             return;
         }
         if ($uid === '' || $deviceId === '') {
             $cb(false, 'uid 或 device_id 为空');
+
             return;
         }
 
         $key = RedisKeys::authBind($uid);
-        RedisClient::get($key, function ($result, $client = null) use ($uid, $deviceId, $key, $cb) {
+        RedisClient::get($key, function ($result, $client = null) use ($deviceId, $key, $cb) {
             $error = $client && method_exists($client, 'error') ? $client->error() : '';
             if ($error !== '') {
                 $cb(false, '设备绑定校验失败：' . $error);
+
                 return;
             }
             if (empty($result)) {
                 $ttl = (int)self::$config['token_ttl'];
                 RedisClient::set($key, $deviceId, $ttl);
                 $cb(true, 'device bind created');
+
                 return;
             }
             if ((string)$result !== (string)$deviceId) {
                 $cb(false, '设备不匹配，该账号已绑定其他设备');
+
                 return;
             }
             $cb(true, 'device bind matched');
@@ -284,7 +295,8 @@ class Auth
      * 主动解绑设备（如用户退出登录）
      *
      * @param string        $uid
-     * @param callable|null $cb
+     * @param null|callable $cb
+     *
      * @return void
      */
     public static function unbindDevice($uid, ?callable $cb = null)
@@ -300,6 +312,7 @@ class Auth
      * 计算 Token 主体签名
      *
      * @param string $body
+     *
      * @return string 二进制摘要
      */
     protected static function hash($body)
@@ -311,6 +324,7 @@ class Auth
      * Token 指纹（用于 Redis key，避免明文 Token 落盘）
      *
      * @param string $token
+     *
      * @return string
      */
     protected static function tokenFingerprint($token)
@@ -322,6 +336,7 @@ class Auth
      * URL 安全 Base64 编码
      *
      * @param string $data
+     *
      * @return string
      */
     protected static function base64UrlEncode($data)
@@ -333,6 +348,7 @@ class Auth
      * URL 安全 Base64 解码
      *
      * @param string $data
+     *
      * @return string
      */
     protected static function base64UrlDecode($data)
@@ -343,6 +359,7 @@ class Auth
             $data .= str_repeat('=', 4 - $pad);
         }
         $decoded = base64_decode($data, true);
+
         return $decoded === false ? '' : $decoded;
     }
 }

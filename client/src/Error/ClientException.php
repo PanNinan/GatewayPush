@@ -9,7 +9,6 @@
  * 携带触发异常的原始报文（若来自服务端），便于调用方与日志排查。
  *
  * 兼容 PHP 8.1 ~ 8.5
- *
  */
 
 namespace GatewayPush\Client\Error;
@@ -32,7 +31,7 @@ class ClientException extends \RuntimeException
      * @param int             $code     错误码（报文码或客户端本地码）
      * @param string          $message  错误描述
      * @param array           $packet   原始报文
-     * @param \Throwable|null $previous 上游异常
+     * @param null|\Throwable $previous 上游异常
      */
     public function __construct($code, $message, array $packet = [], ?\Throwable $previous = null)
     {
@@ -58,6 +57,7 @@ class ClientException extends \RuntimeException
      * `data` 非数组或缺少 code 时回落为 5000（服务端内部错误）。
      *
      * @param array $packet
+     *
      * @return self
      */
     public static function fromPacket(array $packet)
@@ -82,6 +82,7 @@ class ClientException extends \RuntimeException
      * @param string $what   超时的请求描述（如 `data.echo`）
      * @param string $seq    请求序号
      * @param float  $waited 已等待秒数
+     *
      * @return self
      */
     public static function timeout($what, $seq = '', $waited = 0.0)
@@ -99,7 +100,8 @@ class ClientException extends \RuntimeException
      * 传输层错误
      *
      * @param string          $message
-     * @param \Throwable|null $previous
+     * @param null|\Throwable $previous
+     *
      * @return self
      */
     public static function transport($message, ?\Throwable $previous = null)
@@ -111,6 +113,7 @@ class ClientException extends \RuntimeException
      * 配置非法
      *
      * @param string $message
+     *
      * @return self
      */
     public static function config($message)
@@ -122,6 +125,7 @@ class ClientException extends \RuntimeException
      * 状态非法
      *
      * @param string $message
+     *
      * @return self
      */
     public static function state($message)
@@ -133,7 +137,8 @@ class ClientException extends \RuntimeException
      * 客户端内部错误（底层库抛出且无法归类）
      *
      * @param string          $message
-     * @param \Throwable|null $previous
+     * @param null|\Throwable $previous
+     *
      * @return self
      */
     public static function internal($message, ?\Throwable $previous = null)

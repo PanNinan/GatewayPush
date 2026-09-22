@@ -30,18 +30,18 @@ final class LoggerTest extends TestCase
     {
         $this->logDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'gwpush-logger-test';
         if (!is_dir($this->logDir)) {
-            mkdir($this->logDir, 0777, true);
+            mkdir($this->logDir, 0o777, true);
         }
         $this->clearLogs();
 
         // Logger 是静态类，配置会跨用例残留，每个用例前完整重置一次
-        Logger::init(array(
+        Logger::init([
             'path'      => $this->logDir,
             'level'     => Logger::DEBUG,
             'role'      => Logger::CHANNEL_DEFAULT,
             'keep_days' => 30,
             'stdout'    => false,
-        ));
+        ]);
     }
 
     protected function tearDown(): void
@@ -49,7 +49,7 @@ final class LoggerTest extends TestCase
         $this->clearLogs();
         @rmdir($this->logDir);
         // 复位默认通道，避免影响后续用例
-        Logger::init(array('role' => Logger::CHANNEL_DEFAULT));
+        Logger::init(['role' => Logger::CHANNEL_DEFAULT]);
     }
 
     /* ---------------------------------------------------------------------
@@ -148,15 +148,15 @@ final class LoggerTest extends TestCase
      */
     public function invalidRoleProvider(): array
     {
-        return array(
-            '空串'         => array(''),
-            '路径穿越'     => array('../../evil'),
-            '含正斜杠'     => array('foo/bar'),
-            '含反斜杠'     => array('foo\\bar'),
-            '数字开头'     => array('1abc'),
-            '超长(17 字符)' => array(str_repeat('a', 17)),
-            'error 保留字' => array(Logger::CHANNEL_ERROR_DIGEST),
-        );
+        return [
+            '空串'         => [''],
+            '路径穿越'     => ['../../evil'],
+            '含正斜杠'     => ['foo/bar'],
+            '含反斜杠'     => ['foo\bar'],
+            '数字开头'     => ['1abc'],
+            '超长(17 字符)' => [str_repeat('a', 17)],
+            'error 保留字' => [Logger::CHANNEL_ERROR_DIGEST],
+        ];
     }
 
     public function testReservedErrorRoleDoesNotShadowDigestChannel(): void
@@ -176,7 +176,7 @@ final class LoggerTest extends TestCase
 
     public function testLevelThresholdDiscardsLowerLevels(): void
     {
-        Logger::init(array('path' => $this->logDir, 'level' => Logger::WARN, 'stdout' => false));
+        Logger::init(['path' => $this->logDir, 'level' => Logger::WARN, 'stdout' => false]);
         Logger::useChannel('gateway');
 
         Logger::info('应被丢弃');
@@ -196,7 +196,7 @@ final class LoggerTest extends TestCase
         $fresh = $this->path('business_2020-01-01.log');
         file_put_contents($fresh, "new\n");
 
-        Logger::init(array('path' => $this->logDir, 'keep_days' => 30, 'stdout' => false));
+        Logger::init(['path' => $this->logDir, 'keep_days' => 30, 'stdout' => false]);
         $removed = Logger::cleanup();
 
         $this->assertSame(1, $removed);
@@ -277,7 +277,7 @@ final class LoggerTest extends TestCase
     public function testArchiveKeepsPlaintextWhenExistingPackIsCorrupt(): void
     {
         if (!is_dir($this->archiveDir())) {
-            mkdir($this->archiveDir(), 0777, true);
+            mkdir($this->archiveDir(), 0o777, true);
         }
         file_put_contents($this->archivePath('2026-08'), 'not-a-gzip-stream');
 
@@ -309,12 +309,12 @@ final class LoggerTest extends TestCase
 
     public function archiveNoOpProvider(): array
     {
-        return array(
-            '未开启归档'       => array(array('archive_enable' => false)),
-            '阈值等于保留期'   => array(array('archive_after_days' => 30)),
-            '阈值大于保留期'   => array(array('archive_after_days' => 45)),
-            '阈值为零'         => array(array('archive_after_days' => 0)),
-        );
+        return [
+            '未开启归档'       => [['archive_enable' => false]],
+            '阈值等于保留期'   => [['archive_after_days' => 30]],
+            '阈值大于保留期'   => [['archive_after_days' => 45]],
+            '阈值为零'         => [['archive_after_days' => 0]],
+        ];
     }
 
     public function testArchivePurgesExpiredPacks(): void
@@ -386,18 +386,18 @@ final class LoggerTest extends TestCase
 
     public function archiveMonthProvider(): array
     {
-        return array(
-            '角色日志'     => array('api_2026-09-01.log', '2026-09'),
-            '汇总通道'     => array('error_2026-12-31.log', '2026-12'),
-            '含下划线角色' => array('my_role_2026-01-05.log', '2026-01'),
-            'workerman'    => array('workerman.log', null),
-            'stdout'       => array('stdout.log', null),
-            '归档产物'     => array('2026-09.tar.gz', null),
-            '缺日期'       => array('api_2026-09.log', null),
-            '角色名超长'   => array(str_repeat('a', 17) . '_2026-09-01.log', null),
-            '大写角色'     => array('API_2026-09-01.log', null),
-            '路径穿越尝试' => array('../api_2026-09-01.log', null),
-        );
+        return [
+            '角色日志'     => ['api_2026-09-01.log', '2026-09'],
+            '汇总通道'     => ['error_2026-12-31.log', '2026-12'],
+            '含下划线角色' => ['my_role_2026-01-05.log', '2026-01'],
+            'workerman'    => ['workerman.log', null],
+            'stdout'       => ['stdout.log', null],
+            '归档产物'     => ['2026-09.tar.gz', null],
+            '缺日期'       => ['api_2026-09.log', null],
+            '角色名超长'   => [str_repeat('a', 17) . '_2026-09-01.log', null],
+            '大写角色'     => ['API_2026-09-01.log', null],
+            '路径穿越尝试' => ['../api_2026-09-01.log', null],
+        ];
     }
 
     /* ---------------------------------------------------------------------
@@ -420,12 +420,12 @@ final class LoggerTest extends TestCase
 
     public function testEveryOnWorkerStartSwitchesToItsOwnChannel(): void
     {
-        $expect = array(
+        $expect = [
             'src/Gateway/Bootstrap.php'   => 3,   // register / gateway / udp
             'src/Business/Bootstrap.php'  => 1,
             'src/Api/Bootstrap.php'       => 1,
             'src/Dashboard/Bootstrap.php' => 1,
-        );
+        ];
 
         foreach ($expect as $file => $count) {
             $code = (string)file_get_contents($this->root($file));
@@ -440,7 +440,7 @@ final class LoggerTest extends TestCase
             foreach ($hits[0] as $hit) {
                 $body = substr($code, $hit[1], 500);
                 $this->assertMatchesRegularExpression(
-                    "/Logger::useChannel\('[a-z]+'\)/",
+                    "/Logger::useChannel\\('[a-z]+'\\)/",
                     $body,
                     $file . ' 存在未切换日志通道的 onWorkerStart'
                 );
@@ -462,17 +462,17 @@ final class LoggerTest extends TestCase
         $block = $this->taskBlock('log-cleanup');
 
         $this->assertMatchesRegularExpression(
-            "/'interval'\s*=>\s*86400/",
+            "/'interval'\\s*=>\\s*86400/",
             $block,
             '日志清理的周期应为 24h（86400s）'
         );
         $this->assertMatchesRegularExpression(
-            "/'scope'\s*=>\s*'first'/",
+            "/'scope'\\s*=>\\s*'first'/",
             $block,
             'log-cleanup 须全局唯一：多进程同时删同一批文件没有意义'
         );
         $this->assertMatchesRegularExpression(
-            "/'run_at_start'\s*=>\s*true/",
+            "/'run_at_start'\\s*=>\\s*true/",
             $block,
             'log-cleanup 周期长达 86400s：不声明 run_at_start，进程活不满一天就永不清理'
         );
@@ -483,17 +483,17 @@ final class LoggerTest extends TestCase
         $archive = $this->taskBlock('log-archive');
 
         $this->assertMatchesRegularExpression(
-            "/'interval'\s*=>\s*86400/",
+            "/'interval'\\s*=>\\s*86400/",
             $archive,
             '日志归档的周期应为 24h（86400s）'
         );
         $this->assertMatchesRegularExpression(
-            "/'scope'\s*=>\s*'first'/",
+            "/'scope'\\s*=>\\s*'first'/",
             $archive,
             'log-archive 必须全局唯一：多进程同时读写同一个归档包会互相覆盖'
         );
         $this->assertMatchesRegularExpression(
-            "/'run_at_start'\s*=>\s*true/",
+            "/'run_at_start'\\s*=>\\s*true/",
             $archive,
             'log-archive 周期 86400s：不声明 run_at_start 则永不执行'
         );
@@ -541,7 +541,7 @@ final class LoggerTest extends TestCase
         $code = (string)file_get_contents($this->root('config/app.php'));
 
         $this->assertDoesNotMatchRegularExpression(
-            "/^[ \t]*'rotate'\s*=>/m",
+            "/^[ \t]*'rotate'\\s*=>/m",
             $code,
             'config/app.php 的 rotate 从未被读取（按天分割在 Logger 内硬编码），属死配置'
         );
@@ -555,6 +555,7 @@ final class LoggerTest extends TestCase
      * 解析项目根下的文件路径（不依赖当前工作目录）
      *
      * @param string $relative
+     *
      * @return string
      */
     private function root($relative)
@@ -569,13 +570,14 @@ final class LoggerTest extends TestCase
      * 配置上下文。本处只断言接线关系，不需要求值。
      *
      * @param string $name
+     *
      * @return string
      */
     private function taskBlock($name)
     {
         $code = (string)file_get_contents($this->root('config/business.php'));
         $hit  = preg_match(
-            "/'name'\s*=>\s*'" . preg_quote($name, '/') . "'.*?\],/s",
+            "/'name'\\s*=>\\s*'" . preg_quote($name, '/') . "'.*?\\],/s",
             $code,
             $m
         );
@@ -586,11 +588,12 @@ final class LoggerTest extends TestCase
             '在 config/business.php 中未找到任务 ' . $name . '，任务清单可能已改名'
         );
 
-        return isset($m[0]) ? $m[0] : '';
+        return $m[0] ?? '';
     }
 
     /**
      * @param string $name
+     *
      * @return string
      */
     private function path($name)
@@ -610,6 +613,7 @@ final class LoggerTest extends TestCase
 
     /**
      * @param string $month 形如 2026-09
+     *
      * @return string
      */
     private function archivePath($month)
@@ -621,18 +625,19 @@ final class LoggerTest extends TestCase
      * 归档场景的 Logger 配置（默认开启归档，便于各用例只覆盖关心的字段）
      *
      * @param array $overrides
+     *
      * @return array
      */
-    private function archiveConfig(array $overrides = array())
+    private function archiveConfig(array $overrides = [])
     {
-        return array_merge(array(
+        return array_merge([
             'path'               => $this->logDir,
             'stdout'             => false,
             'keep_days'          => 30,
             'archive_enable'     => true,
             'archive_after_days' => 7,
             'archive_keep_days'  => 180,
-        ), $overrides);
+        ], $overrides);
     }
 
     /**
@@ -641,6 +646,7 @@ final class LoggerTest extends TestCase
      * @param string $name
      * @param string $body
      * @param int    $daysAgo
+     *
      * @return string 文件路径
      */
     private function makeStaleLog($name, $body, $daysAgo)
@@ -649,6 +655,7 @@ final class LoggerTest extends TestCase
         file_put_contents($file, $body);
         touch($file, (int)strtotime('-' . $daysAgo . ' day'));
         clearstatcache(true, $file);
+
         return $file;
     }
 
@@ -656,6 +663,7 @@ final class LoggerTest extends TestCase
      * 取出归档包内解压后的 tar 缓冲区（同时校验它确实是合法 gzip 流）
      *
      * @param string $month
+     *
      * @return string
      */
     private function readPack($month)

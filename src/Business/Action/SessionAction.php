@@ -26,6 +26,7 @@ class SessionAction implements ActionInterface
 {
     /**
      * @param ActionContext $ctx
+     *
      * @return void
      */
     public function handle(ActionContext $ctx)
@@ -37,7 +38,7 @@ class SessionAction implements ActionInterface
         Session::get($clientId, function ($session) use ($ctx, $clientId) {
             $connectAt = isset($session['connect_at']) ? (int)$session['connect_at'] : 0;
 
-            $ctx->reply(array(
+            $ctx->reply([
                 'action'      => 'session',
                 'client_id'   => $clientId,
                 'uid'         => isset($session['uid']) ? (string)$session['uid'] : '',
@@ -47,7 +48,7 @@ class SessionAction implements ActionInterface
                 'online'      => $session ? 1 : 0,
                 'connect_at'  => $connectAt,
                 'online_secs' => $connectAt > 0 ? max(0, time() - $connectAt) : 0,
-            ));
+            ]);
         });
     }
 }

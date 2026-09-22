@@ -55,9 +55,10 @@ class WorkerEvents
      * @param object $worker Workerman\Worker 及其子类实例
      * @param string $name   进程名，用于日志区分来源
      * @param array  $opts   ['buffer' => bool] 是否绑定背压事件，默认 true
+     *
      * @return void
      */
-    public static function bind($worker, $name, array $opts = array())
+    public static function bind($worker, $name, array $opts = [])
     {
         if (!is_object($worker)) {
             return;
@@ -84,18 +85,19 @@ class WorkerEvents
      *
      * @param object $worker
      * @param string $name
+     *
      * @return void
      */
     protected static function bindError($worker, $name)
     {
         $worker->onError = function ($connection, $code, $msg) use ($name) {
             Monitor::incr('conn_error');
-            Logger::error('连接发生错误', array(
+            Logger::error('连接发生错误', [
                 'worker' => $name,
                 'code'   => (int)$code,
                 'msg'    => (string)$msg,
                 'peer'   => self::peer($connection),
-            ));
+            ]);
         };
     }
 
@@ -107,24 +109,25 @@ class WorkerEvents
      *
      * @param object $worker
      * @param string $name
+     *
      * @return void
      */
     protected static function bindBuffer($worker, $name)
     {
         $worker->onBufferFull = function ($connection) use ($name) {
             Monitor::incr('buffer_full');
-            Logger::warn('发送缓冲已满，客户端消费能力不足', array(
+            Logger::warn('发送缓冲已满，客户端消费能力不足', [
                 'worker' => $name,
                 'peer'   => self::peer($connection),
-            ));
+            ]);
         };
 
         $worker->onBufferDrain = function ($connection) use ($name) {
             Monitor::incr('buffer_drain');
-            Logger::debug('发送缓冲已排空', array(
+            Logger::debug('发送缓冲已排空', [
                 'worker' => $name,
                 'peer'   => self::peer($connection),
-            ));
+            ]);
         };
     }
 
@@ -133,15 +136,16 @@ class WorkerEvents
      *
      * @param object $worker
      * @param string $name
+     *
      * @return void
      */
     protected static function bindReload($worker, $name)
     {
         $worker->onWorkerReload = function ($worker) use ($name) {
-            Logger::info('Worker 收到平滑重启信号', array(
+            Logger::info('Worker 收到平滑重启信号', [
                 'worker' => $name,
                 'id'     => isset($worker->id) ? (int)$worker->id : 0,
-            ));
+            ]);
         };
     }
 
@@ -149,6 +153,7 @@ class WorkerEvents
      * 取对端地址（失败时返回空串，本方法不得抛异常）
      *
      * @param mixed $connection
+     *
      * @return string
      */
     protected static function peer($connection)
@@ -156,6 +161,7 @@ class WorkerEvents
         if (!$connection instanceof ConnectionInterface) {
             return '';
         }
+
         try {
             return $connection->getRemoteIp() . ':' . $connection->getRemotePort();
         } catch (\Throwable $e) {

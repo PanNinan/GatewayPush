@@ -36,6 +36,7 @@ final class Banner
      * @param array  $roles          只列这些角色；空数组 = 按配置列出全部相关角色
      * @param bool   $withProbe      是否探测端口监听状态（启动前端口必然空闲，故仅 info 命令启用）
      * @param string $modeLabel      启动模式标签（DAEMON / DEBUG），空串则不显示该行
+     *
      * @return string
      */
     public static function render(array $appConfig, array $gatewayConfig, array $businessConfig, array $roles = [], $withProbe = false, $modeLabel = '')
@@ -53,6 +54,7 @@ final class Banner
         $relative = function ($path) use ($basePath) {
             $path = str_replace('\\', '/', (string)$path);
             $root = rtrim(str_replace('\\', '/', $basePath), '/') . '/';
+
             return strncmp($path, $root, strlen($root)) === 0 ? substr($path, strlen($root)) : $path;
         };
 
@@ -75,9 +77,9 @@ final class Banner
         // 接口验签状态。免签是安全相关状态，必须在启动时就可见 —— 它不像日志级别
         // 那样只影响可观测性，而是直接影响接口的对外开放程度。
         if (!empty($appConfig['api']['enable'])) {
-            $apiSignOn = ! empty($appConfig['api']['sign_enable']) || ! Bootstrap::isLoopbackHost(
-                    (string)$appConfig['api']['listen']
-                );
+            $apiSignOn = !empty($appConfig['api']['sign_enable']) || !Bootstrap::isLoopbackHost(
+                (string)$appConfig['api']['listen']
+            );
             $lines[] = '接口验签  : ' . ($apiSignOn
                 ? '已开启'
                 : '已关闭（本地调试免签，仅回环监听生效）');
@@ -143,11 +145,12 @@ final class Banner
      * InstalledVersions 不可用（手工裁剪 vendor）或包不存在时降级为 '-'。
      *
      * @param string $package 形如 workerman/workerman
+     *
      * @return string
      */
     private static function packageVersion($package)
     {
-        if (!class_exists('Composer\\InstalledVersions')) {
+        if (!class_exists('Composer\InstalledVersions')) {
             return '-';
         }
 

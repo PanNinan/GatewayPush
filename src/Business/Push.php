@@ -49,29 +49,29 @@ use GatewayWorker\Lib\Gateway as GatewayClient;
  */
 class Push
 {
-    /* ---------------------- 目标类型 ---------------------- */
-    const TARGET_UID    = 'uid';
-    const TARGET_DEVICE = 'device';
-    const TARGET_CLIENT = 'client';
+    // ---------------------- 目标类型 ----------------------
+    public const TARGET_UID    = 'uid';
+    public const TARGET_DEVICE = 'device';
+    public const TARGET_CLIENT = 'client';
 
-    /* ---------------------- 离线策略 ---------------------- */
-    const MODE_DROP  = 'drop';
-    const MODE_QUEUE = 'queue';
+    // ---------------------- 离线策略 ----------------------
+    public const MODE_DROP  = 'drop';
+    public const MODE_QUEUE = 'queue';
 
-    /* ---------------------- 通道 ---------------------- */
-    const CHANNEL_WS  = 'ws';
-    const CHANNEL_UDP = 'udp';
+    // ---------------------- 通道 ----------------------
+    public const CHANNEL_WS  = 'ws';
+    public const CHANNEL_UDP = 'udp';
 
-    /* --------------- client_id 前缀（非 Redis 键） --------------- */
+    // --------------- client_id 前缀（非 Redis 键） ---------------
     /** UDP client_id 前缀（与 Gateway\Bootstrap::udpClientId 约定一致） */
-    const UDP_PREFIX = 'udp:';
+    public const UDP_PREFIX = 'udp:';
 
     /**
      * 推送配置（app.push）
      *
      * @var array
      */
-    protected static $config = array(
+    protected static $config = [
         'enable'         => true,
         'offline_mode'   => self::MODE_QUEUE,
         'offline_ttl'    => 86400,
@@ -80,29 +80,29 @@ class Push
         'idempotent'     => true,
         'idempotent_ttl' => 600,
         'payload_max'    => 4096,
-    );
+    ];
 
     /**
      * 出站队列配置（business.push_queue）
      *
      * @var array
      */
-    protected static $queueConfig = array(
+    protected static $queueConfig = [
         'key'     => RedisKeys::QUEUE_PUSH_OUT,
         'batch'   => 200,
         'enable'  => true,
         'max_len' => 10000,
-    );
+    ];
 
     /**
      * UDP 出站队列配置（gateway.udp.out_queue）
      *
      * @var array
      */
-    protected static $udpOutConfig = array(
+    protected static $udpOutConfig = [
         'enable' => true,
         'key'    => RedisKeys::QUEUE_UDP_OUT,
-    );
+    ];
 
     /**
      * 初始化
@@ -110,9 +110,10 @@ class Push
      * @param array $config app.push
      * @param array $queue  business.push_queue
      * @param array $udpOut gateway.udp.out_queue
+     *
      * @return void
      */
-    public static function init(array $config, array $queue = [], array $udpOut = array())
+    public static function init(array $config, array $queue = [], array $udpOut = [])
     {
         self::$config = array_merge(self::$config, $config);
         if ($queue) {
@@ -125,7 +126,7 @@ class Push
         $mode = (string)self::$config['offline_mode'];
         if ($mode !== self::MODE_DROP && $mode !== self::MODE_QUEUE) {
             // 配置非法时回退到保守策略并显式告警，避免静默行为偏离预期
-            Logger::warn('推送离线策略取值非法，已回退为 drop', array('offline_mode' => $mode));
+            Logger::warn('推送离线策略取值非法，已回退为 drop', ['offline_mode' => $mode]);
             self::$config['offline_mode'] = self::MODE_DROP;
         }
     }
@@ -161,30 +162,33 @@ class Push
      * @param string        $target
      * @param array         $payload    业务数据体
      * @param array         $opts       ['msg_id'=>.., 'offline_mode'=>.., 'source'=>..]
-     * @param callable|null $cb         function(bool $ok)
+     * @param null|callable $cb         function(bool $ok)
+     *
      * @return void
      */
     public static function enqueue($targetType, $target, array $payload, array $opts = [], ?callable $cb = null)
     {
         if (!self::enabled()) {
-            Logger::warn('推送功能未启用，任务已丢弃', array('target_type' => $targetType, 'target' => $target));
+            Logger::warn('推送功能未启用，任务已丢弃', ['target_type' => $targetType, 'target' => $target]);
             if ($cb) {
                 $cb(false);
             }
+
             return;
         }
 
         $targetType = self::normalizeTargetType($targetType);
         $target     = (string)$target;
         if ($target === '') {
-            Logger::warn('推送目标为空，任务已丢弃', array('target_type' => $targetType));
+            Logger::warn('推送目标为空，任务已丢弃', ['target_type' => $targetType]);
             if ($cb) {
                 $cb(false);
             }
+
             return;
         }
 
-        $job = array(
+        $job = [
             'target_type'  => $targetType,
             'target'       => $target,
             'payload'      => $payload,
@@ -192,14 +196,15 @@ class Push
             'offline_mode' => isset($opts['offline_mode']) ? (string)$opts['offline_mode'] : '',
             'source'       => isset($opts['source']) ? (string)$opts['source'] : 'unknown',
             'enqueue_at'   => microtime(true),
-        );
+        ];
 
         $raw = json_encode($job, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         if ($raw === false) {
-            Logger::error('推送任务序列化失败', array('target_type' => $targetType, 'target' => $target));
+            Logger::error('推送任务序列化失败', ['target_type' => $targetType, 'target' => $target]);
             if ($cb) {
                 $cb(false);
             }
+
             return;
         }
 
@@ -211,17 +216,17 @@ class Push
         RedisClient::rPush($key, $raw, function ($result) use ($cb, $key, $maxLen, $targetType, $target) {
             $ok = is_int($result);
             if (!$ok) {
-                Logger::error('推送任务入队失败', array(
+                Logger::error('推送任务入队失败', [
                     'queue'       => $key,
                     'target_type' => $targetType,
                     'target'      => $target,
-                ));
+                ]);
             } elseif ($maxLen > 0 && $result > $maxLen) {
-                Logger::warn('推送队列积压超限，消费能力不足', array(
+                Logger::warn('推送队列积压超限，消费能力不足', [
                     'queue'  => $key,
                     'length' => $result,
                     'max'    => $maxLen,
-                ));
+                ]);
             }
             if ($cb) {
                 $cb($ok);
@@ -238,18 +243,19 @@ class Push
      * @param string $target
      * @param array  $payload
      * @param array  $opts
+     *
      * @return void
      */
-    public static function direct($targetType, $target, array $payload, array $opts = array())
+    public static function direct($targetType, $target, array $payload, array $opts = [])
     {
-        self::dispatch(array(
+        self::dispatch([
             'target_type'  => self::normalizeTargetType($targetType),
             'target'       => (string)$target,
             'payload'      => $payload,
             'msg_id'       => isset($opts['msg_id']) ? (string)$opts['msg_id'] : '',
             'offline_mode' => isset($opts['offline_mode']) ? (string)$opts['offline_mode'] : '',
             'source'       => isset($opts['source']) ? (string)$opts['source'] : 'direct',
-        ));
+        ]);
     }
 
     /**
@@ -264,12 +270,14 @@ class Push
      * @param array  $packet   已构造的报文数组
      * @param string $uid      仅用于日志串联
      * @param string $msgId    仅用于日志串联
+     *
      * @return bool
      */
     public static function sendToUdpClient($clientId, array $packet, $uid = '', $msgId = '')
     {
-        if (! str_starts_with((string)$clientId, self::UDP_PREFIX)) {
-            Logger::warn('非 UDP 连接不可经出站队列投递', array('client_id' => $clientId));
+        if (!str_starts_with((string)$clientId, self::UDP_PREFIX)) {
+            Logger::warn('非 UDP 连接不可经出站队列投递', ['client_id' => $clientId]);
+
             return false;
         }
 
@@ -292,7 +300,8 @@ class Push
      * @param string        $topic
      * @param array         $payload
      * @param array         $opts
-     * @param callable|null $cb function(int $targets) 入队目标数
+     * @param null|callable $cb      function(int $targets) 入队目标数
+     *
      * @return void
      */
     public static function enqueueTopic($topic, array $payload, array $opts = [], ?callable $cb = null)
@@ -302,15 +311,17 @@ class Push
             if ($cb) {
                 $cb(0);
             }
+
             return;
         }
 
         Subscribe::subscribers($topic, function ($uids) use ($topic, $payload, $opts, $cb) {
             if (!$uids) {
-                Logger::debug('主题无订阅者，广播跳过', array('topic' => $topic));
+                Logger::debug('主题无订阅者，广播跳过', ['topic' => $topic]);
                 if ($cb) {
                     $cb(0);
                 }
+
                 return;
             }
 
@@ -327,10 +338,10 @@ class Push
             Monitor::incr('push_topic');
             Monitor::incr('push_topic_targets', count($uids));
 
-            Logger::info('主题广播已入队', array(
+            Logger::info('主题广播已入队', [
                 'topic'   => $topic,
                 'targets' => count($uids),
-            ));
+            ]);
 
             if ($cb) {
                 $cb(count($uids));
@@ -360,7 +371,8 @@ class Push
                     $job = json_decode($raw, true);
                     if (!is_array($job)) {
                         Monitor::incr('push_fail');
-                        Logger::warn('推送任务格式非法，已丢弃', array('raw' => substr((string)$raw, 0, 200)));
+                        Logger::warn('推送任务格式非法，已丢弃', ['raw' => substr((string)$raw, 0, 200)]);
+
                         continue;
                     }
                     self::dispatch($job);
@@ -382,6 +394,7 @@ class Push
      * 处理顺序：参数归一化 -> 数据体限额 -> 幂等去重 -> 目标解析 -> 通道投递
      *
      * @param array $job
+     *
      * @return void
      */
     public static function dispatch(array $job)
@@ -390,15 +403,16 @@ class Push
             return;
         }
 
-        $targetType = self::normalizeTargetType(isset($job['target_type']) ? $job['target_type'] : '');
+        $targetType = self::normalizeTargetType($job['target_type'] ?? '');
         $target     = isset($job['target']) ? (string)$job['target'] : '';
         $payload    = isset($job['payload']) && is_array($job['payload']) ? $job['payload'] : [];
         $msgId      = isset($job['msg_id']) ? (string)$job['msg_id'] : '';
-        $mode       = self::resolveMode(isset($job['offline_mode']) ? $job['offline_mode'] : '');
+        $mode       = self::resolveMode($job['offline_mode'] ?? '');
 
         if ($target === '') {
             Monitor::incr('push_fail');
-            Logger::warn('推送任务缺少目标，已丢弃', array('target_type' => $targetType));
+            Logger::warn('推送任务缺少目标，已丢弃', ['target_type' => $targetType]);
+
             return;
         }
 
@@ -407,12 +421,13 @@ class Push
         $maxBody  = (int)self::$config['payload_max'];
         if ($maxBody > 0 && $bodySize > $maxBody) {
             Monitor::incr('push_fail');
-            Logger::warn('推送数据体超限，已拒绝', array(
+            Logger::warn('推送数据体超限，已拒绝', [
                 'target_type' => $targetType,
                 'target'      => $target,
                 'size'        => $bodySize,
                 'max'         => $maxBody,
-            ));
+            ]);
+
             return;
         }
 
@@ -421,14 +436,16 @@ class Push
                 if (!$targets) {
                     if ($skipReason === 'offline') {
                         self::handleOffline($uid, $payload, $msgId, $mode, $job);
+
                         return;
                     }
                     Monitor::incr('push_fail');
-                    Logger::warn('推送目标解析失败', array(
+                    Logger::warn('推送目标解析失败', [
                         'target_type' => $targetType,
                         'target'      => $target,
                         'reason'      => $skipReason,
-                    ));
+                    ]);
+
                     return;
                 }
                 self::deliverAll($targets, $uid, $targetType, $target, $payload, $msgId, $job);
@@ -444,16 +461,135 @@ class Push
                 function ($first) use ($msgId, $execute, $target) {
                     if (!$first) {
                         Monitor::incr('push_dedup');
-                        Logger::debug('推送任务重复，已跳过', array('msg_id' => $msgId, 'target' => $target));
+                        Logger::debug('推送任务重复，已跳过', ['msg_id' => $msgId, 'target' => $target]);
+
                         return;
                     }
                     $execute();
                 }
             );
+
             return;
         }
 
         $execute();
+    }
+
+    /**
+     * 重连补投：把离线消息投递给刚恢复的连接
+     *
+     * 双通道支持：
+     *   WebSocket 直接 Gateway::sendToClient 下发；
+     *   UDP       写入网关出站队列（与在线投递同一通道），由网关进程 sendto。
+     * 因此本方法对两种协议统一适用，调用方无需区分协议。
+     *
+     * 使用 Lua 原子取批，避免「取出」与「清理」之间被新消息插入造成丢失。
+     *
+     * @param string        $uid
+     * @param string        $clientId
+     * @param null|callable $cb       function(int $count) 补投条数
+     *
+     * @return void
+     */
+    public static function replayOffline($uid, $clientId, ?callable $cb = null)
+    {
+        if ($uid === '' || $clientId === '') {
+            if ($cb) {
+                $cb(0);
+            }
+
+            return;
+        }
+        if (self::offlineMode() !== self::MODE_QUEUE) {
+            if ($cb) {
+                $cb(0);
+            }
+
+            return;
+        }
+
+        $isUdp = str_starts_with((string)$clientId, self::UDP_PREFIX);
+        if ($isUdp && empty(self::$udpOutConfig['enable'])) {
+            // UDP 出站通道关闭时无处投递，明确跳过而非静默丢弃
+            Logger::warn('UDP 出站队列未启用，离线消息本轮不补投', [
+                'uid'       => $uid,
+                'client_id' => $clientId,
+            ]);
+            if ($cb) {
+                $cb(0);
+            }
+
+            return;
+        }
+
+        $key   = RedisKeys::pushOffline($uid);
+        $batch = max(1, (int)self::$config['replay_batch']);
+
+        RedisClient::popBatch($key, $batch, function ($items) use ($uid, $clientId, $cb, $batch, $isUdp) {
+            if (!$items) {
+                if ($cb) {
+                    $cb(0);
+                }
+
+                return;
+            }
+
+            $sent = 0;
+            foreach ($items as $raw) {
+                $item = json_decode($raw, true);
+                if (!is_array($item) || !array_key_exists('payload', $item)) {
+                    continue;
+                }
+
+                $frame = self::buildFrame(
+                    is_array($item['payload']) ? $item['payload'] : [],
+                    isset($item['msg_id']) ? (string)$item['msg_id'] : '',
+                    [
+                        'source'     => isset($item['source']) ? (string)$item['source'] : '',
+                        'offline_at' => isset($item['offline_at']) ? (int)$item['offline_at'] : 0,
+                    ],
+                    true
+                );
+
+                $json = Message::encode($frame);
+
+                // UDP：连接由网关进程持有，业务进程无法寻址，走与在线投递一致的出站队列
+                if ($isUdp) {
+                    self::deliverUdp($clientId, $json, $uid, isset($item['msg_id']) ? (string)$item['msg_id'] : '');
+                    $sent++;
+
+                    continue;
+                }
+
+                try {
+                    GatewayClient::sendToClient($clientId, $json);
+                    $sent++;
+                } catch (\Throwable $e) {
+                    Logger::exception($e, 'push.replay:' . $clientId);
+                }
+            }
+
+            Monitor::incr('push_replay', $sent);
+
+            Logger::info('离线消息补投完成', [
+                'uid'       => $uid,
+                'client_id' => $clientId,
+                'channel'   => $isUdp ? self::CHANNEL_UDP : self::CHANNEL_WS,
+                'pulled'    => count($items),
+                'delivered' => $sent,
+            ]);
+
+            if (count($items) >= $batch) {
+                Logger::warn('离线消息积压超过单批上限，剩余待下轮补投', [
+                    'uid'   => $uid,
+                    'batch' => $batch,
+                ]);
+            }
+
+            if ($cb) {
+                $cb($sent);
+            }
+        });
     }
 
     /**
@@ -467,6 +603,7 @@ class Push
      * @param string   $targetType
      * @param string   $target
      * @param callable $cb
+     *
      * @return void
      */
     protected static function resolveTargets($targetType, $target, callable $cb)
@@ -478,32 +615,37 @@ class Push
 
                     if (!self::isOnline($target, $session)) {
                         $cb([], $uid, 'offline');
+
                         return;
                     }
-                    $cb(array(self::target($target)), $uid, '');
+                    $cb([self::target($target)], $uid, '');
                 });
+
                 return;
 
             case self::TARGET_DEVICE:
                 Session::findByDevice($target, function ($clientId) use ($cb, $target) {
                     if (!is_string($clientId) || $clientId === '') {
                         $cb([], '', 'offline');
+
                         return;
                     }
                     Session::get($clientId, function ($session) use ($cb, $clientId, $target) {
                         $uid = isset($session['uid']) ? (string)$session['uid'] : '';
 
                         if (!self::isOnline($clientId, $session)) {
-                            Logger::debug('设备映射指向的连接已离线', array(
+                            Logger::debug('设备映射指向的连接已离线', [
                                 'device_id' => $target,
                                 'client_id' => $clientId,
-                            ));
+                            ]);
                             $cb([], $uid, 'offline');
+
                             return;
                         }
-                        $cb(array(self::target($clientId)), $uid, '');
+                        $cb([self::target($clientId)], $uid, '');
                     });
                 });
+
                 return;
 
             case self::TARGET_UID:
@@ -513,10 +655,12 @@ class Push
                 Session::findByUid($target, function ($clientIds) use ($cb, $target) {
                     if (!is_array($clientIds) || !$clientIds) {
                         if (self::nativeUidOnline($target)) {
-                            $cb(array(self::target($target, self::CHANNEL_WS, 'native')), $target, '');
+                            $cb([self::target($target, self::CHANNEL_WS, 'native')], $target, '');
+
                             return;
                         }
                         $cb([], $target, 'offline');
+
                         return;
                     }
 
@@ -534,6 +678,7 @@ class Push
                                 }
                                 if (!$targets) {
                                     $cb([], $target, 'offline');
+
                                     return;
                                 }
                                 $cb($targets, $target, '');
@@ -541,6 +686,7 @@ class Push
                         });
                     }
                 });
+
                 return;
         }
     }
@@ -555,6 +701,7 @@ class Push
      * @param array  $payload
      * @param string $msgId
      * @param array  $job
+     *
      * @return void
      */
     protected static function deliverAll(array $targets, $uid, $targetType, $target, array $payload, $msgId, array $job)
@@ -569,6 +716,7 @@ class Push
             // UDP 通道：连接由 UDP 网关进程持有，业务进程无法直接寻址
             if ($channel === self::CHANNEL_UDP) {
                 self::deliverUdp($clientId, $json, $uid, $msgId);
+
                 continue;
             }
 
@@ -580,14 +728,14 @@ class Push
                     GatewayClient::sendToClient($clientId, $json);
                 }
                 Monitor::incr('push_out');
-                Logger::info('推送完成', array(
+                Logger::info('推送完成', [
                     'target_type' => $targetType,
                     'target'      => $target,
                     'client_id'   => $clientId,
                     'uid'         => $uid,
                     'msg_id'      => $msgId,
-                    'source'      => isset($job['source']) ? $job['source'] : '',
-                ));
+                    'source'      => $job['source'] ?? '',
+                ]);
             } catch (\Throwable $e) {
                 Monitor::incr('push_fail');
                 Logger::exception($e, 'push.deliver:' . $clientId);
@@ -602,43 +750,47 @@ class Push
      * @param string $json     已序列化的推送报文
      * @param string $uid
      * @param string $msgId
+     *
      * @return void
      */
     protected static function deliverUdp($clientId, $json, $uid, $msgId)
     {
         if (empty(self::$udpOutConfig['enable'])) {
             Monitor::incr('push_fail');
-            Logger::warn('UDP 出站队列未启用，推送已丢弃', array('client_id' => $clientId));
+            Logger::warn('UDP 出站队列未启用，推送已丢弃', ['client_id' => $clientId]);
+
             return;
         }
 
-        $task = array(
+        $task = [
             'client_id' => (string)$clientId,
             'frame'     => (string)$json,
             'uid'       => (string)$uid,
             'msg_id'    => (string)$msgId,
             'queued_at' => microtime(true),
-        );
+        ];
 
         $raw = json_encode($task, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         if ($raw === false) {
             Monitor::incr('push_fail');
-            Logger::error('UDP 出站任务序列化失败', array('client_id' => $clientId));
+            Logger::error('UDP 出站任务序列化失败', ['client_id' => $clientId]);
+
             return;
         }
 
         RedisClient::rPush(self::$udpOutConfig['key'], $raw, function ($result) use ($clientId, $uid, $msgId) {
             if (!is_int($result)) {
                 Monitor::incr('push_fail');
-                Logger::error('UDP 出站任务入队失败', array('client_id' => $clientId));
+                Logger::error('UDP 出站任务入队失败', ['client_id' => $clientId]);
+
                 return;
             }
             Monitor::incr('udp_out_queued');
-            Logger::info('UDP 推送已入出站队列', array(
+            Logger::info('UDP 推送已入出站队列', [
                 'client_id' => $clientId,
                 'uid'       => $uid,
                 'msg_id'    => $msgId,
-            ));
+            ]);
         });
     }
 
@@ -654,6 +806,7 @@ class Push
      * @param string $msgId
      * @param string $mode
      * @param array  $job
+     *
      * @return void
      */
     protected static function handleOffline($uid, array $payload, $msgId, $mode, array $job)
@@ -661,11 +814,12 @@ class Push
         Monitor::incr('push_offline');
 
         if ($mode !== self::MODE_QUEUE || $uid === '') {
-            Logger::info('推送目标离线，按策略丢弃', array(
+            Logger::info('推送目标离线，按策略丢弃', [
                 'uid'    => $uid,
                 'msg_id' => $msgId,
                 'mode'   => $mode,
-            ));
+            ]);
+
             return;
         }
 
@@ -673,22 +827,24 @@ class Push
         $ttl = (int)self::$config['offline_ttl'];
         $max = (int)self::$config['offline_max'];
 
-        $item = array(
+        $item = [
             'payload'    => $payload,
             'msg_id'     => (string)$msgId,
             'source'     => isset($job['source']) ? (string)$job['source'] : '',
             'offline_at' => time(),
-        );
+        ];
 
         $raw = json_encode($item, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         if ($raw === false) {
-            Logger::error('离线消息序列化失败', array('uid' => $uid));
+            Logger::error('离线消息序列化失败', ['uid' => $uid]);
+
             return;
         }
 
         RedisClient::rPush($key, $raw, function ($result) use ($key, $ttl, $max, $uid, $msgId) {
             if (!is_int($result)) {
-                Logger::error('离线消息写入失败', array('uid' => $uid, 'msg_id' => $msgId));
+                Logger::error('离线消息写入失败', ['uid' => $uid, 'msg_id' => $msgId]);
+
                 return;
             }
 
@@ -696,130 +852,19 @@ class Push
 
             // 超限裁剪：仅保留最新的 max 条
             if ($max > 0 && $result > $max) {
-                Logger::warn('离线消息超出上限，丢弃最旧记录', array(
+                Logger::warn('离线消息超出上限，丢弃最旧记录', [
                     'uid'   => $uid,
                     'count' => $result,
                     'max'   => $max,
-                ));
+                ]);
                 RedisClient::lTrimKeepLast($key, $max);
             }
 
-            Logger::info('离线消息已缓存，等待重连补投', array(
+            Logger::info('离线消息已缓存，等待重连补投', [
                 'uid'    => $uid,
                 'msg_id' => $msgId,
                 'count'  => $result,
-            ));
-        });
-    }
-
-    /**
-     * 重连补投：把离线消息投递给刚恢复的连接
-     *
-     * 双通道支持：
-     *   WebSocket 直接 Gateway::sendToClient 下发；
-     *   UDP       写入网关出站队列（与在线投递同一通道），由网关进程 sendto。
-     * 因此本方法对两种协议统一适用，调用方无需区分协议。
-     *
-     * 使用 Lua 原子取批，避免「取出」与「清理」之间被新消息插入造成丢失。
-     *
-     * @param string        $uid
-     * @param string        $clientId
-     * @param callable|null $cb function(int $count) 补投条数
-     * @return void
-     */
-    public static function replayOffline($uid, $clientId, ?callable $cb = null)
-    {
-        if ($uid === '' || $clientId === '') {
-            if ($cb) {
-                $cb(0);
-            }
-            return;
-        }
-        if (self::offlineMode() !== self::MODE_QUEUE) {
-            if ($cb) {
-                $cb(0);
-            }
-            return;
-        }
-
-        $isUdp = str_starts_with((string)$clientId, self::UDP_PREFIX);
-        if ($isUdp && empty(self::$udpOutConfig['enable'])) {
-            // UDP 出站通道关闭时无处投递，明确跳过而非静默丢弃
-            Logger::warn('UDP 出站队列未启用，离线消息本轮不补投', array(
-                'uid'       => $uid,
-                'client_id' => $clientId,
-            ));
-            if ($cb) {
-                $cb(0);
-            }
-            return;
-        }
-
-        $key   = RedisKeys::pushOffline($uid);
-        $batch = max(1, (int)self::$config['replay_batch']);
-
-        RedisClient::popBatch($key, $batch, function ($items) use ($uid, $clientId, $cb, $batch, $isUdp) {
-            if (!$items) {
-                if ($cb) {
-                    $cb(0);
-                }
-                return;
-            }
-
-            $sent = 0;
-            foreach ($items as $raw) {
-                $item = json_decode($raw, true);
-                if (!is_array($item) || !array_key_exists('payload', $item)) {
-                    continue;
-                }
-
-                $frame = self::buildFrame(
-                    is_array($item['payload']) ? $item['payload'] : [],
-                    isset($item['msg_id']) ? (string)$item['msg_id'] : '',
-                    array(
-                        'source'     => isset($item['source']) ? (string)$item['source'] : '',
-                        'offline_at' => isset($item['offline_at']) ? (int)$item['offline_at'] : 0,
-                    ),
-                    true
-                );
-
-                $json = Message::encode($frame);
-
-                // UDP：连接由网关进程持有，业务进程无法寻址，走与在线投递一致的出站队列
-                if ($isUdp) {
-                    self::deliverUdp($clientId, $json, $uid, isset($item['msg_id']) ? (string)$item['msg_id'] : '');
-                    $sent++;
-                    continue;
-                }
-
-                try {
-                    GatewayClient::sendToClient($clientId, $json);
-                    $sent++;
-                } catch (\Throwable $e) {
-                    Logger::exception($e, 'push.replay:' . $clientId);
-                }
-            }
-
-            Monitor::incr('push_replay', $sent);
-
-            Logger::info('离线消息补投完成', array(
-                'uid'       => $uid,
-                'client_id' => $clientId,
-                'channel'   => $isUdp ? self::CHANNEL_UDP : self::CHANNEL_WS,
-                'pulled'    => count($items),
-                'delivered' => $sent,
-            ));
-
-            if (count($items) >= $batch) {
-                Logger::warn('离线消息积压超过单批上限，剩余待下轮补投', array(
-                    'uid'   => $uid,
-                    'batch' => $batch,
-                ));
-            }
-
-            if ($cb) {
-                $cb($sent);
-            }
+            ]);
         });
     }
 
@@ -833,6 +878,7 @@ class Push
      * @param string $clientId
      * @param string $channel  留空时按 client_id 前缀自动判定
      * @param string $via
+     *
      * @return array
      */
     protected static function target($clientId, $channel = '', $via = 'session')
@@ -840,11 +886,12 @@ class Push
         if ($channel === '') {
             $channel = str_starts_with((string)$clientId, self::UDP_PREFIX) ? self::CHANNEL_UDP : self::CHANNEL_WS;
         }
-        return array(
+
+        return [
             'client_id' => (string)$clientId,
             'channel'   => $channel,
             'via'       => (string)$via,
-        );
+        ];
     }
 
     /**
@@ -855,6 +902,7 @@ class Push
      *
      * @param string $clientId
      * @param array  $session
+     *
      * @return bool
      */
     protected static function isOnline($clientId, array $session)
@@ -865,12 +913,14 @@ class Push
         if (empty($session)) {
             return false;
         }
+
         try {
             // GatewayClient::isOnline() 实际返回 int（1 / 0），与本方法声明的
             // bool 不一致。强制转换使返回类型恒为 bool，调用方可安全使用 === 比较。
             return (bool)GatewayClient::isOnline($clientId);
         } catch (\Throwable $e) {
             Logger::exception($e, 'push.is_online:' . $clientId);
+
             return false;
         }
     }
@@ -879,6 +929,7 @@ class Push
      * Gateway 原生 uid 路由是否在线
      *
      * @param string $uid
+     *
      * @return bool
      */
     protected static function nativeUidOnline($uid)
@@ -887,6 +938,7 @@ class Push
             return (bool)GatewayClient::isUidOnline($uid);
         } catch (\Throwable $e) {
             Logger::exception($e, 'push.is_uid_online:' . $uid);
+
             return false;
         }
     }
@@ -898,17 +950,18 @@ class Push
      * @param string $msgId
      * @param array  $job
      * @param bool   $offline 是否为重连补投
+     *
      * @return array
      */
     protected static function buildFrame(array $payload, $msgId, array $job, $offline = false)
     {
-        return Message::packet(Message::CMD_PUSH, $payload, array(
+        return Message::packet(Message::CMD_PUSH, $payload, [
             'seq'       => $msgId !== '' ? $msgId : self::genMsgId(),
             'msg_id'    => (string)$msgId,
             'source'    => isset($job['source']) ? (string)$job['source'] : '',
             'offline'   => $offline ? 1 : 0,
             'pushed_at' => time(),
-        ));
+        ]);
     }
 
     /**
@@ -929,6 +982,7 @@ class Push
      * 解析离线策略
      *
      * @param string $mode 任务级覆盖值，为空或非法时取全局配置
+     *
      * @return string
      */
     protected static function resolveMode($mode)
@@ -937,6 +991,7 @@ class Push
         if ($mode === self::MODE_DROP || $mode === self::MODE_QUEUE) {
             return $mode;
         }
+
         return (string)self::$config['offline_mode'];
     }
 
@@ -944,6 +999,7 @@ class Push
      * 目标类型归一化
      *
      * @param string $type
+     *
      * @return string
      */
     protected static function normalizeTargetType($type)
@@ -952,6 +1008,7 @@ class Push
         if ($type === self::TARGET_UID || $type === self::TARGET_DEVICE || $type === self::TARGET_CLIENT) {
             return $type;
         }
+
         return self::TARGET_UID;
     }
 }

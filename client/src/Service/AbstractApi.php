@@ -42,8 +42,9 @@ abstract class AbstractApi
      *
      * @param string        $action  动作名（须在服务端 config/actions.php 登记）
      * @param array         $params  动作参数
-     * @param callable|null $cb      function (bool $ok, array $data, ?array $error): void
-     * @param float|null    $timeout 覆盖全局超时
+     * @param null|callable $cb      function (bool $ok, array $data, ?array $error): void
+     * @param null|float    $timeout 覆盖全局超时
+     *
      * @return string 本请求 seq
      */
     protected function call($action, array $params, $cb = null, $timeout = null)
@@ -57,6 +58,7 @@ abstract class AbstractApi
 
             if ($ok) {
                 $cb(true, $data, null);
+
                 return;
             }
 
@@ -66,7 +68,7 @@ abstract class AbstractApi
                 ? (string)$data['msg']
                 : ErrorCode::message($code);
 
-            $cb(false, $data, array('code' => $code, 'msg' => $msg));
+            $cb(false, $data, ['code' => $code, 'msg' => $msg]);
         }, $timeout);
     }
 }

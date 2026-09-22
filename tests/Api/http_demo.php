@@ -66,6 +66,7 @@ $cliAddr = '';
 foreach (array_slice($argv, 1) as $arg) {
     if ($arg !== '' && !str_starts_with($arg, '--')) {
         $cliAddr = $arg;
+
         break;
     }
 }
@@ -75,8 +76,8 @@ $listen  = preg_replace('#^[a-z]+://#i', '', $listen);
 $baseUrl = 'http://' . $listen;
 
 $decideSecret = (string)($env['API_SECRET'] ?? '') !== ''
-    ? array((string)$env['API_SECRET'], 'API_SECRET')
-    : array((string)($env['AUTH_SECRET'] ?? ''), 'AUTH_SECRET（API_SECRET 未配置，按服务端口径回退）');
+    ? [(string)$env['API_SECRET'], 'API_SECRET']
+    : [(string)($env['AUTH_SECRET'] ?? ''), 'AUTH_SECRET（API_SECRET 未配置，按服务端口径回退）'];
 $secret = $decideSecret[0];
 
 // 动作类接口的同步等待窗（毫秒）——客户端超时必须大于它，否则会把
@@ -106,9 +107,10 @@ $results = [];
 $check = function (string $name, bool $ok, string $detail = '', bool $skip = false) use (&$results): void {
     // detail 必须一并入档：末尾的失败汇总会读 $item['detail']，
     // 不入档既触发「未定义数组键」告警，又导致失败详情永远打印不出来
-    $results[] = array('name' => $name, 'ok' => $ok, 'detail' => $detail, 'skip' => $skip);
+    $results[] = ['name' => $name, 'ok' => $ok, 'detail' => $detail, 'skip' => $skip];
     if ($skip) {
         printf("  [SKIP] %s%s\n", $name, $detail !== '' ? '  ' . $detail : '');
+
         return;
     }
     printf("  [%s] %s%s\n", $ok ? 'PASS' : 'FAIL', $name, $detail !== '' ? '  ' . $detail : '');
@@ -127,6 +129,7 @@ $probe = httpCall('GET', $baseUrl . '/stats', [], '', $httpTimeout);
 if (!$probe['ok']) {
     fwrite(STDERR, '[FATAL] 接口不可达：' . $probe['error'] . "\n");
     fwrite(STDERR, "       请确认 api 角色已启动，且地址为 {$baseUrl}\n");
+
     exit(1);
 }
 
@@ -142,6 +145,7 @@ printf(
 // 免签模式下密钥不参与校验，为空也能正常演示
 if ($secret === '' && !$freeMode) {
     fwrite(STDERR, "[FATAL] 未从 .env 读到 API_SECRET / AUTH_SECRET，无法构造签名。\n");
+
     exit(1);
 }
 
@@ -154,6 +158,7 @@ $res = httpCall('GET', $baseUrl . '/health', [], '', $httpTimeout);
 if (!$res['ok']) {
     fwrite(STDERR, '[FATAL] 接口不可达：' . $res['error'] . "\n");
     fwrite(STDERR, "       请确认 api 角色已启动，且地址为 {$baseUrl}\n");
+
     exit(1);
 }
 $check(
@@ -183,12 +188,12 @@ echo "\n";
  | 3. 错误签名 —— 必须被拒
  ===================================================================== */
 
-echo "[3] GET /stats —— 错误签名" . ($freeMode ? "（免签模式，本项 SKIP）\n" : "（期望 401）\n");
+echo '[3] GET /stats —— 错误签名' . ($freeMode ? "（免签模式，本项 SKIP）\n" : "（期望 401）\n");
 $ts  = (string)time();
-$bad = array(
+$bad = [
     'X-Timestamp: ' . $ts,
     'X-Sign: ' . hash_hmac('sha256', $ts . '|garbage', $secret),
-);
+];
 $res = httpCall('GET', $baseUrl . '/stats', $bad, '', $httpTimeout);
 $check(
     '错误签名被拒绝',
@@ -205,12 +210,12 @@ echo "\n";
  ===================================================================== */
 
 echo "[4] POST /push —— 异步受理（入队即返回）\n";
-$pushBody = json_encode(array(
+$pushBody = json_encode([
     'target_type'  => 'uid',
     'target'       => $uid,
-    'payload'      => array('action' => 'notify', 'from' => 'http_demo', 'content' => 'hello over http'),
+    'payload'      => ['action' => 'notify', 'from' => 'http_demo', 'content' => 'hello over http'],
     'msg_id'       => 'demo-push-' . time(),
-), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 $res = httpCall('POST', $baseUrl . '/push', signedHeaders($pushBody, $secret, true), $pushBody, $httpTimeout);
 $check(
     'HTTP 200 且任务被受理',
@@ -229,21 +234,24 @@ echo "          或用 php start.php push ... 复现，参见 tests/e2e_check.ph
  ===================================================================== */
 
 echo "[5] POST /action {action:echo} —— 同步等待，params 原样回显\n";
-$echoParams = array('probe' => 'http-demo', 'n' => 42);
-$res = callAction($baseUrl, $secret, array(
+$echoParams = ['probe' => 'http-demo', 'n' => 42];
+$res = callAction($baseUrl, $secret, [
     'action' => 'echo',
     'uid'    => $uid,
     'params' => $echoParams,
-), $httpTimeout);
+], $httpTimeout);
 
 $requestId = (string)($res['json']['data']['request_id'] ?? '');
 $result    = isset($res['json']['data']['result']) && is_array($res['json']['data']['result'])
     ? $res['json']['data']['result'] : [];
 
-$check('HTTP 200 / code 0 / status=done', $res['status'] === 200
+$check(
+    'HTTP 200 / code 0 / status=done',
+    $res['status'] === 200
     && (int)$res['json']['code'] === 0
     && ($res['json']['data']['status'] ?? '') === 'done',
-    "HTTP {$res['status']} / status " . json_encode($res['json']['data']['status'] ?? null));
+    "HTTP {$res['status']} / status " . json_encode($res['json']['data']['status'] ?? null)
+);
 $check('params 原样回显', ($result['params'] ?? null) === $echoParams);
 $check(
     '回执回报 channel=http',
@@ -258,11 +266,11 @@ echo "\n";
  ===================================================================== */
 
 echo "[6] POST /action {action:report} ×2 —— 计数递增（证明落库而非 api 自造回执）\n";
-$reportBody = array(
+$reportBody = [
     'action' => 'report',
     'uid'    => $uid,
-    'params' => array('topic' => $topic, 'count' => 1),
-);
+    'params' => ['topic' => $topic, 'count' => 1],
+];
 $first  = callAction($baseUrl, $secret, $reportBody, $httpTimeout);
 $second = callAction($baseUrl, $secret, $reportBody, $httpTimeout);
 
@@ -282,26 +290,35 @@ echo "\n";
  ===================================================================== */
 
 echo "[7] POST /action {subscribe / topics / unsubscribe} —— 订阅闭环\n";
-$sub = callAction($baseUrl, $secret, array(
-    'action' => 'subscribe', 'uid' => $uid, 'params' => array('topic' => $topic),
-), $httpTimeout);
-$check('subscribe 成功', $sub['status'] === 200 && (int)$sub['json']['code'] === 0,
-    'HTTP ' . $sub['status'] . ' / code ' . json_encode($sub['json']['code'] ?? null));
+$sub = callAction($baseUrl, $secret, [
+    'action' => 'subscribe', 'uid' => $uid, 'params' => ['topic' => $topic],
+], $httpTimeout);
+$check(
+    'subscribe 成功',
+    $sub['status'] === 200 && (int)$sub['json']['code'] === 0,
+    'HTTP ' . $sub['status'] . ' / code ' . json_encode($sub['json']['code'] ?? null)
+);
 
-$list = callAction($baseUrl, $secret, array('action' => 'topics', 'uid' => $uid), $httpTimeout);
+$list = callAction($baseUrl, $secret, ['action' => 'topics', 'uid' => $uid], $httpTimeout);
 $topics = $list['json']['data']['result']['topics'] ?? [];
-$check('topics 查得到刚订阅的主题', is_array($topics) && in_array($topic, $topics, true),
-    'topics=' . json_encode($topics, JSON_UNESCAPED_UNICODE));
+$check(
+    'topics 查得到刚订阅的主题',
+    is_array($topics) && in_array($topic, $topics, true),
+    'topics=' . json_encode($topics, JSON_UNESCAPED_UNICODE)
+);
 
-$unsub = callAction($baseUrl, $secret, array(
-    'action' => 'unsubscribe', 'uid' => $uid, 'params' => array('topic' => $topic),
-), $httpTimeout);
+$unsub = callAction($baseUrl, $secret, [
+    'action' => 'unsubscribe', 'uid' => $uid, 'params' => ['topic' => $topic],
+], $httpTimeout);
 $check('unsubscribe 成功', $unsub['status'] === 200 && (int)$unsub['json']['code'] === 0);
 
-$list2  = callAction($baseUrl, $secret, array('action' => 'topics', 'uid' => $uid), $httpTimeout);
+$list2  = callAction($baseUrl, $secret, ['action' => 'topics', 'uid' => $uid], $httpTimeout);
 $topics2 = $list2['json']['data']['result']['topics'] ?? [];
-$check('取消后主题已移除', is_array($topics2) && !in_array($topic, $topics2, true),
-    'topics=' . json_encode($topics2, JSON_UNESCAPED_UNICODE));
+$check(
+    '取消后主题已移除',
+    is_array($topics2) && !in_array($topic, $topics2, true),
+    'topics=' . json_encode($topics2, JSON_UNESCAPED_UNICODE)
+);
 echo "\n";
 
 /* =====================================================================
@@ -310,11 +327,11 @@ echo "\n";
 
 echo "[8] POST /action {action:notify} —— 动作内触发一次定向推送\n";
 $msgId = 'demo-notify-' . time();
-$res = callAction($baseUrl, $secret, array(
+$res = callAction($baseUrl, $secret, [
     'action' => 'notify',
     'uid'    => $uid,
-    'params' => array('value' => array('hello' => 'world'), 'msg_id' => $msgId),
-), $httpTimeout);
+    'params' => ['value' => ['hello' => 'world'], 'msg_id' => $msgId],
+], $httpTimeout);
 $notifyResult = $res['json']['data']['result'] ?? [];
 $check(
     'HTTP 200 且推送任务已入队',
@@ -328,7 +345,7 @@ echo "      注：目标是调用方自身 uid，实际收到与否取决于该 
  ===================================================================== */
 
 echo "[9] POST /action {action:session} —— 未开放 HTTP 通道（期望 400 / 4006）\n";
-$res = callAction($baseUrl, $secret, array('action' => 'session', 'uid' => $uid), $httpTimeout);
+$res = callAction($baseUrl, $secret, ['action' => 'session', 'uid' => $uid], $httpTimeout);
 $check(
     '未开放的动作被拒绝',
     $res['status'] === 400 && (int)$res['json']['code'] === 4006,
@@ -338,7 +355,7 @@ $check(
 echo "\n";
 
 echo "[10] POST /action {action:no_such_action} —— 未知动作（期望 400 / 4006）\n";
-$res = callAction($baseUrl, $secret, array('action' => 'no_such_action', 'uid' => $uid), $httpTimeout);
+$res = callAction($baseUrl, $secret, ['action' => 'no_such_action', 'uid' => $uid], $httpTimeout);
 $check(
     '未知动作被拒绝',
     $res['status'] === 400 && (int)$res['json']['code'] === 4006,
@@ -347,7 +364,7 @@ $check(
 echo "\n";
 
 echo "[11] POST /action {action:report} 缺 topic —— 动作级参数错误（期望 HTTP 200 / code 4007）\n";
-$res = callAction($baseUrl, $secret, array('action' => 'report', 'uid' => $uid, 'params' => array()), $httpTimeout);
+$res = callAction($baseUrl, $secret, ['action' => 'report', 'uid' => $uid, 'params' => []], $httpTimeout);
 $check(
     '语义分层：传输成功（200）+ 业务失败（4007）',
     $res['status'] === 200 && (int)$res['json']['code'] === 4007
@@ -390,6 +407,7 @@ $skip = 0;
 foreach ($results as $item) {
     if (!empty($item['skip'])) {
         $skip++;
+
         continue;
     }
     if (!$item['ok']) {
@@ -429,6 +447,7 @@ exit($fail === 0 ? 0 : 1);
  * 极简 .env 解析（保持示例自包含，不依赖服务端 Env 类）
  *
  * @param string $path
+ *
  * @return array<string,string>
  */
 function loadEnv(string $path): array
@@ -462,16 +481,17 @@ function loadEnv(string $path): array
  * @param string $rawBody
  * @param string $secret
  * @param bool   $withJsonType 是否附带 Content-Type: application/json
+ *
  * @return array<int,string>
  */
 function signedHeaders(string $rawBody, string $secret, bool $withJsonType = false): array
 {
     $ts = (string)time();
 
-    $headers = array(
+    $headers = [
         'X-Timestamp: ' . $ts,
         'X-Sign: ' . hash_hmac('sha256', $ts . '|' . $rawBody, $secret),
-    );
+    ];
 
     if ($withJsonType) {
         array_unshift($headers, 'Content-Type: application/json');
@@ -483,23 +503,24 @@ function signedHeaders(string $rawBody, string $secret, bool $withJsonType = fal
 /**
  * 发起 HTTP 请求
  *
- * @param string             $method
- * @param string             $url
- * @param array<int,string>  $headers 已格式化的请求头
- * @param string             $body
- * @param int                $timeout 秒
+ * @param string            $method
+ * @param string            $url
+ * @param array<int,string> $headers 已格式化的请求头
+ * @param string            $body
+ * @param int               $timeout 秒
+ *
  * @return array{ok:bool,status:int,body:string,json:array<string,mixed>,error:string}
  */
 function httpCall(string $method, string $url, array $headers, string $body, int $timeout): array
 {
     $ch = curl_init($url);
-    curl_setopt_array($ch, array(
+    curl_setopt_array($ch, [
         CURLOPT_CUSTOMREQUEST  => $method,
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_HTTPHEADER     => $headers,
         CURLOPT_CONNECTTIMEOUT => 3,
         CURLOPT_TIMEOUT        => $timeout,
-    ));
+    ]);
     if ($body !== '') {
         curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
     }
@@ -511,24 +532,24 @@ function httpCall(string $method, string $url, array $headers, string $body, int
     curl_close($ch);
 
     if ($raw === false || $errNo !== 0) {
-        return array(
+        return [
             'ok'     => false,
             'status' => $code,
             'body'   => '',
             'json'   => [],
             'error'  => $err !== '' ? $err : 'curl error #' . $errNo,
-        );
+        ];
     }
 
     $decoded = json_decode((string)$raw, true);
 
-    return array(
+    return [
         'ok'     => true,
         'status' => $code,
         'body'   => (string)$raw,
         'json'   => is_array($decoded) ? $decoded : [],
         'error'  => '',
-    );
+    ];
 }
 
 /**
@@ -538,6 +559,7 @@ function httpCall(string $method, string $url, array $headers, string $body, int
  * @param string              $secret
  * @param array<string,mixed> $job
  * @param int                 $timeout
+ *
  * @return array{ok:bool,status:int,body:string,json:array<string,mixed>,error:string}
  */
 function callAction(string $baseUrl, string $secret, array $job, int $timeout): array
@@ -558,7 +580,7 @@ function callAction(string $baseUrl, string $secret, array $job, int $timeout): 
  */
 function truncate(string $text, int $max): string
 {
-    $text = str_replace(array("\r", "\n"), ' ', $text);
+    $text = str_replace(["\r", "\n"], ' ', $text);
 
     return strlen($text) > $max ? substr($text, 0, $max) . '...(截断)' : $text;
 }
@@ -573,6 +595,7 @@ function truncate(string $text, int $max): string
  * @param string $uid
  * @param string $secret
  * @param int    $actionWaitMs
+ *
  * @return void
  */
 function printCurlAppendix(string $baseUrl, string $uid, string $secret, int $actionWaitMs): void
@@ -581,11 +604,11 @@ function printCurlAppendix(string $baseUrl, string $uid, string $secret, int $ac
     echo str_repeat('-', 70) . "\n";
 
     $ts  = (string)time();
-    $raw = (string)json_encode(array(
+    $raw = (string)json_encode([
         'action' => 'echo',
         'uid'    => $uid,
-        'params' => array('probe' => 'curl'),
-    ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        'params' => ['probe' => 'curl'],
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     $sign = hash_hmac('sha256', $ts . '|' . $raw, $secret);
 
     echo "# 动作调用（同步等待，--max-time 需大于 API_ACTION_WAIT_MS={$actionWaitMs}ms）\n";

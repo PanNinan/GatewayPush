@@ -21,17 +21,18 @@ final class SecretGuard
      * 是否为占位值或明显弱值
      *
      * @param string $secret
+     *
      * @return bool
      */
     public static function isPlaceholder($secret)
     {
         $secret = (string)$secret;
 
-        $placeholders = array(
+        $placeholders = [
             'change_me', 'changeme', 'change_me_gateway_push_auth_secret',
             'secret', 'password', '123456', 'test', 'demo', 'example',
             'your_secret', 'your-secret', 'todo',
-        );
+        ];
 
         if (in_array(strtolower($secret), $placeholders, true)) {
             return true;

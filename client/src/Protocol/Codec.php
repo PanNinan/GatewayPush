@@ -30,6 +30,7 @@ final class Codec
      * 编码为 JSON 字符串
      *
      * @param mixed $packet
+     *
      * @return string
      */
     public static function encode($packet)
@@ -42,7 +43,8 @@ final class Codec
      *
      * @param mixed  $raw
      * @param string $error 输出错误原因
-     * @return array|null 校验失败返回 null
+     *
+     * @return null|array 校验失败返回 null
      */
     public static function decode($raw, &$error = null)
     {
@@ -55,9 +57,10 @@ final class Codec
      * @param string $cmd
      * @param array  $data
      * @param array  $extra 附加/覆盖字段
+     *
      * @return array
      */
-    public static function packet($cmd, array $data = [], array $extra = array())
+    public static function packet($cmd, array $data = [], array $extra = [])
     {
         return Message::packet($cmd, $data, $extra);
     }
@@ -65,11 +68,12 @@ final class Codec
     /**
      * 构造回执报文（`seq` 原样回传）
      *
-     * @param string|int $seq
+     * @param int|string $seq
      * @param array      $data
+     *
      * @return array
      */
-    public static function ack($seq = '', array $data = array())
+    public static function ack($seq = '', array $data = [])
     {
         return Message::ack($seq, $data);
     }
@@ -77,10 +81,11 @@ final class Codec
     /**
      * 构造错误报文
      *
-     * @param int    $code
-     * @param string $msg 为空时取默认文案
-     * @param string|int $seq
-     * @param string $ref 触发错误的来源指令
+     * @param int        $code
+     * @param string     $msg  为空时取默认文案
+     * @param int|string $seq
+     * @param string     $ref  触发错误的来源指令
+     *
      * @return array
      */
     public static function error($code, $msg = '', $seq = '', $ref = '')
@@ -97,20 +102,22 @@ final class Codec
      *
      * @param string $action 动作名（须已在服务端 config/actions.php 登记）
      * @param array  $params 动作参数
+     *
      * @return array
      */
-    public static function dataPacket($action, array $params = array())
+    public static function dataPacket($action, array $params = [])
     {
-        return Message::packet(Message::CMD_DATA, array(
+        return Message::packet(Message::CMD_DATA, [
             'action' => (string)$action,
             'params' => $params,
-        ));
+        ]);
     }
 
     /**
      * 取出报文中承载的动作名（非 data 报文或缺失时返回空串）
      *
      * @param array $packet
+     *
      * @return string
      */
     public static function actionOf(array $packet)
@@ -128,6 +135,7 @@ final class Codec
      * 取出报文中承载的动作参数（缺失时返回空数组）
      *
      * @param array $packet
+     *
      * @return array
      */
     public static function paramsOf(array $packet)
@@ -149,6 +157,7 @@ final class Codec
      *   业务层 —— 动作执行结果，带 `data.action`。
      *
      * @param array $packet
+     *
      * @return bool
      */
     public static function isTransportAck(array $packet)

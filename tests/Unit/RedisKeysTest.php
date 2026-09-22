@@ -55,48 +55,48 @@ class RedisKeysTest extends TestCase
      */
     public function staticKeyProvider(): array
     {
-        return array(
+        return [
             // 会话与索引
-            'SESSION'         => array('SESSION', 'session:'),
-            'HEARTBEAT'       => array('HEARTBEAT', 'heartbeat:'),
-            'UID_CLIENTS'     => array('UID_CLIENTS', 'uid:clients:'),
-            'DEVICE_CLIENT'   => array('DEVICE_CLIENT', 'device:client:'),
-            'ONLINE_CLIENTS'  => array('ONLINE_CLIENTS', 'online:clients'),
-            'ONLINE_PREFIX'   => array('ONLINE_PREFIX', 'online:'),
+            'SESSION'         => ['SESSION', 'session:'],
+            'HEARTBEAT'       => ['HEARTBEAT', 'heartbeat:'],
+            'UID_CLIENTS'     => ['UID_CLIENTS', 'uid:clients:'],
+            'DEVICE_CLIENT'   => ['DEVICE_CLIENT', 'device:client:'],
+            'ONLINE_CLIENTS'  => ['ONLINE_CLIENTS', 'online:clients'],
+            'ONLINE_PREFIX'   => ['ONLINE_PREFIX', 'online:'],
 
             // 鉴权
-            'AUTH_REVOKED'    => array('AUTH_REVOKED', 'auth:revoked:'),
-            'AUTH_BIND'       => array('AUTH_BIND', 'auth:bind:'),
+            'AUTH_REVOKED'    => ['AUTH_REVOKED', 'auth:revoked:'],
+            'AUTH_BIND'       => ['AUTH_BIND', 'auth:bind:'],
 
             // 队列（跨进程共享，键名一致性由常量保证）
-            'QUEUE_UDP_IN'    => array('QUEUE_UDP_IN', 'queue:udp:in'),
-            'QUEUE_ACTION_IN' => array('QUEUE_ACTION_IN', 'queue:action:in'),
-            'QUEUE_UDP_OUT'   => array('QUEUE_UDP_OUT', 'queue:udp:out'),
-            'QUEUE_PUSH_OUT'  => array('QUEUE_PUSH_OUT', 'queue:push:out'),
+            'QUEUE_UDP_IN'    => ['QUEUE_UDP_IN', 'queue:udp:in'],
+            'QUEUE_ACTION_IN' => ['QUEUE_ACTION_IN', 'queue:action:in'],
+            'QUEUE_UDP_OUT'   => ['QUEUE_UDP_OUT', 'queue:udp:out'],
+            'QUEUE_PUSH_OUT'  => ['QUEUE_PUSH_OUT', 'queue:push:out'],
 
             // 推送
-            'PUSH_OFFLINE'    => array('PUSH_OFFLINE', 'push:offline:'),
-            'PUSH_DEDUP'      => array('PUSH_DEDUP', 'push:dedup:'),
+            'PUSH_OFFLINE'    => ['PUSH_OFFLINE', 'push:offline:'],
+            'PUSH_DEDUP'      => ['PUSH_DEDUP', 'push:dedup:'],
 
             // 订阅
-            'SUBSCRIBE_UID'   => array('SUBSCRIBE_UID', 'subscribe:uid:'),
-            'SUBSCRIBE_TOPIC' => array('SUBSCRIBE_TOPIC', 'subscribe:topic:'),
+            'SUBSCRIBE_UID'   => ['SUBSCRIBE_UID', 'subscribe:uid:'],
+            'SUBSCRIBE_TOPIC' => ['SUBSCRIBE_TOPIC', 'subscribe:topic:'],
 
             // 动作
-            'ACTION_RESULT'   => array('ACTION_RESULT', 'action:result:'),
-            'ACTION_REPORT'   => array('ACTION_REPORT', 'action:report:'),
+            'ACTION_RESULT'   => ['ACTION_RESULT', 'action:result:'],
+            'ACTION_REPORT'   => ['ACTION_REPORT', 'action:report:'],
 
             // 指标
-            'METRICS_COUNTER' => array('METRICS_COUNTER', 'metrics:counter:'),
-            'METRICS_GAUGE'   => array('METRICS_GAUGE', 'metrics:gauge'),
+            'METRICS_COUNTER' => ['METRICS_COUNTER', 'metrics:counter:'],
+            'METRICS_GAUGE'   => ['METRICS_GAUGE', 'metrics:gauge'],
 
             // 限流
-            'RATE_LIMIT_BUCKET' => array('RATE_LIMIT_BUCKET', 'rl:'),
-            'RATE_LIMIT_API'    => array('RATE_LIMIT_API', 'api:rate:'),
+            'RATE_LIMIT_BUCKET' => ['RATE_LIMIT_BUCKET', 'rl:'],
+            'RATE_LIMIT_API'    => ['RATE_LIMIT_API', 'api:rate:'],
 
             // 运维
-            'HEALTH_PROBE'    => array('HEALTH_PROBE', 'health:probe'),
-        );
+            'HEALTH_PROBE'    => ['HEALTH_PROBE', 'health:probe'],
+        ];
     }
 
     /* =====================================================================
@@ -127,25 +127,25 @@ class RedisKeysTest extends TestCase
      */
     public function dynamicKeyProvider(): array
     {
-        return array(
-            'session'        => array('session', array('c-1'), 'session:c-1'),
-            'heartbeat'      => array('heartbeat', array('c-1'), 'heartbeat:c-1'),
-            'uidClients'     => array('uidClients', array('u-1'), 'uid:clients:u-1'),
-            'deviceClient'   => array('deviceClient', array('d-1'), 'device:client:d-1'),
-            'online 全量'    => array('online', array(''), 'online:clients'),
-            'online ws'      => array('online', array('ws'), 'online:ws'),
-            'online udp'     => array('online', array('udp'), 'online:udp'),
-            'authRevoked'    => array('authRevoked', array('a1b2c3'), 'auth:revoked:a1b2c3'),
-            'authBind'       => array('authBind', array('u-1'), 'auth:bind:u-1'),
-            'pushOffline'    => array('pushOffline', array('u-1'), 'push:offline:u-1'),
-            'pushDedup'      => array('pushDedup', array('m-1'), 'push:dedup:' . md5('m-1')),
-            'subscribeUid'   => array('subscribeUid', array('u-1'), 'subscribe:uid:u-1'),
-            'subscribeTopic' => array('subscribeTopic', array('news'), 'subscribe:topic:news'),
-            'actionResult'   => array('actionResult', array('r-1'), 'action:result:r-1'),
-            'actionReport'   => array('actionReport', array('sys'), 'action:report:sys'),
-            'rateBucket uid' => array('rateBucket', array('uid', 'u-1'), 'rl:uid:' . md5('u-1')),
-            'rateBucket ip'  => array('rateBucket', array('ip', '1.2.3.4'), 'rl:ip:' . md5('1.2.3.4')),
-        );
+        return [
+            'session'        => ['session', ['c-1'], 'session:c-1'],
+            'heartbeat'      => ['heartbeat', ['c-1'], 'heartbeat:c-1'],
+            'uidClients'     => ['uidClients', ['u-1'], 'uid:clients:u-1'],
+            'deviceClient'   => ['deviceClient', ['d-1'], 'device:client:d-1'],
+            'online 全量'    => ['online', [''], 'online:clients'],
+            'online ws'      => ['online', ['ws'], 'online:ws'],
+            'online udp'     => ['online', ['udp'], 'online:udp'],
+            'authRevoked'    => ['authRevoked', ['a1b2c3'], 'auth:revoked:a1b2c3'],
+            'authBind'       => ['authBind', ['u-1'], 'auth:bind:u-1'],
+            'pushOffline'    => ['pushOffline', ['u-1'], 'push:offline:u-1'],
+            'pushDedup'      => ['pushDedup', ['m-1'], 'push:dedup:' . md5('m-1')],
+            'subscribeUid'   => ['subscribeUid', ['u-1'], 'subscribe:uid:u-1'],
+            'subscribeTopic' => ['subscribeTopic', ['news'], 'subscribe:topic:news'],
+            'actionResult'   => ['actionResult', ['r-1'], 'action:result:r-1'],
+            'actionReport'   => ['actionReport', ['sys'], 'action:report:sys'],
+            'rateBucket uid' => ['rateBucket', ['uid', 'u-1'], 'rl:uid:' . md5('u-1')],
+            'rateBucket ip'  => ['rateBucket', ['ip', '1.2.3.4'], 'rl:ip:' . md5('1.2.3.4')],
+        ];
     }
 
     /* =====================================================================
@@ -160,20 +160,20 @@ class RedisKeysTest extends TestCase
      */
     public function testPrefixAndCompleteKeyConventions(): void
     {
-        $needsSuffix = array(
+        $needsSuffix = [
             'SESSION', 'HEARTBEAT', 'UID_CLIENTS', 'DEVICE_CLIENT', 'ONLINE_PREFIX',
             'AUTH_REVOKED', 'AUTH_BIND', 'PUSH_OFFLINE', 'PUSH_DEDUP',
             'SUBSCRIBE_UID', 'SUBSCRIBE_TOPIC', 'ACTION_RESULT', 'ACTION_REPORT',
             'METRICS_COUNTER', 'RATE_LIMIT_BUCKET', 'RATE_LIMIT_API',
-        );
+        ];
         foreach ($needsSuffix as $const) {
             $this->assertStringEndsWith(':', constant(RedisKeys::class . '::' . $const), $const . ' 是前缀，应以冒号结尾');
         }
 
-        $complete = array(
+        $complete = [
             'ONLINE_CLIENTS', 'METRICS_GAUGE', 'HEALTH_PROBE',
             'QUEUE_UDP_IN', 'QUEUE_ACTION_IN', 'QUEUE_UDP_OUT', 'QUEUE_PUSH_OUT',
-        );
+        ];
         foreach ($complete as $const) {
             $this->assertStringEndsNotWith(':', constant(RedisKeys::class . '::' . $const), $const . ' 是完整键，不应以冒号结尾');
         }
@@ -192,12 +192,12 @@ class RedisKeysTest extends TestCase
      */
     public function testQueueKeysAreDistinct(): void
     {
-        $keys = array(
+        $keys = [
             RedisKeys::QUEUE_UDP_IN,
             RedisKeys::QUEUE_ACTION_IN,
             RedisKeys::QUEUE_UDP_OUT,
             RedisKeys::QUEUE_PUSH_OUT,
-        );
+        ];
 
         $this->assertSame($keys, array_values(array_unique($keys)), '队列键出现重复');
         $this->assertCount(4, array_unique($keys));

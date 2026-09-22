@@ -42,6 +42,7 @@ final class Commands
      * @param array $gatewayConfig  config/gateway.php
      * @param array $businessConfig config/business.php
      * @param array $appConfig      config/app.php
+     *
      * @return string 合法 JSON；极端编码失败时退化为空清单而非非法输出
      */
     public static function roles(array $gatewayConfig, array $businessConfig, array $appConfig)
@@ -53,14 +54,14 @@ final class Commands
             $appConfig,
             DIRECTORY_SEPARATOR === '/'
         ) as $role => $service) {
-            $items[] = array(
+            $items[] = [
                 'role'    => $role,
                 'enabled' => !empty($service['enable']),
                 'env'     => (string)$service['env'],
-            );
+            ];
         }
 
-        $json = json_encode(array('roles' => $items), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $json = json_encode(['roles' => $items], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
         return is_string($json) ? $json : '{"roles":[]}';
     }
@@ -72,6 +73,7 @@ final class Commands
      * 文件已存在：仅补齐仍为空的密钥项，绝不覆盖已有取值
      *
      * @param string $basePath
+     *
      * @return int 退出码
      */
     public static function envInit($basePath)
@@ -81,17 +83,19 @@ final class Commands
 
         if (!is_file($example)) {
             fwrite(STDERR, '[FATAL] 缺少模板文件：' . $example . "\n");
+
             return 1;
         }
 
         $template = @file_get_contents($example);
         if (!is_string($template) || $template === '') {
             fwrite(STDERR, '[FATAL] 模板文件不可读：' . $example . "\n");
+
             return 1;
         }
 
         // 需要自动注入强度的密钥项
-        $secretKeys = array('AUTH_SECRET', 'INTERNAL_SECRET');
+        $secretKeys = ['AUTH_SECRET', 'INTERNAL_SECRET'];
 
         if (!is_file($target)) {
             foreach ($secretKeys as $key) {
@@ -104,12 +108,14 @@ final class Commands
 
             if (@file_put_contents($target, $template) === false) {
                 fwrite(STDERR, '[FATAL] 写入失败：' . $target . "\n");
+
                 return 1;
             }
 
-            echo "已生成配置文件：" . $target . "\n";
-            echo "  随机注入：" . implode(' , ', $secretKeys) . "\n";
+            echo '已生成配置文件：' . $target . "\n";
+            echo '  随机注入：' . implode(' , ', $secretKeys) . "\n";
             echo "\n下一步：php start.php check\n";
+
             return 0;
         }
 
@@ -117,6 +123,7 @@ final class Commands
         $current = @file_get_contents($target);
         if (!is_string($current)) {
             fwrite(STDERR, '[FATAL] 配置文件不可读：' . $target . "\n");
+
             return 1;
         }
 
@@ -130,17 +137,20 @@ final class Commands
         }
 
         if (empty($patched)) {
-            echo "配置文件已存在且密钥项均已配置，未做改动：" . $target . "\n";
+            echo '配置文件已存在且密钥项均已配置，未做改动：' . $target . "\n";
+
             return 0;
         }
 
         if (@file_put_contents($target, $current) === false) {
             fwrite(STDERR, '[FATAL] 写入失败：' . $target . "\n");
+
             return 1;
         }
 
-        echo "已补齐空值密钥：" . implode(' , ', $patched) . "\n";
-        echo "文件：" . $target . "\n";
+        echo '已补齐空值密钥：' . implode(' , ', $patched) . "\n";
+        echo '文件：' . $target . "\n";
+
         return 0;
     }
 
@@ -189,6 +199,7 @@ final class Commands
             $text[] = '  php start.php start --role=dashboard   # 可选的监控面板';
         }
         $text[] = '';
+
         return implode("\n", $text) . "\n";
     }
 }

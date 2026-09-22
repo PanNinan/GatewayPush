@@ -24,10 +24,11 @@ final class CaseRateLimit
     /**
      * 连发条数，需显著超过 conn 维度 burst（默认 40）
      */
-    const SENT = 100;
+    public const SENT = 100;
 
     /**
      * @param Harness $h
+     *
      * @return void
      */
     public static function burst(Harness $h)
@@ -42,11 +43,11 @@ final class CaseRateLimit
 
         $connL->onConnect = function ($con) use ($h, $c) {
             echo "[L] WebSocket 已连接，发送鉴权\n";
-            $con->send($h->encode($h->buildPacket(Message::CMD_AUTH, 'L-auth', array(
+            $con->send($h->encode($h->buildPacket(Message::CMD_AUTH, 'L-auth', [
                 'uid'       => $c['uid'],
                 'device_id' => $c['device_id'],
                 'token'     => $c['token'],
-            ))));
+            ])));
         };
 
         $connL->onMessage = function ($con, $raw) use ($h, $c, &$lAck, &$lLimit, $lSent) {
@@ -60,12 +61,12 @@ final class CaseRateLimit
                 echo "[L] 鉴权成功，连发 {$lSent} 条 data 报文以触发限流\n";
 
                 for ($i = 1; $i <= $lSent; $i++) {
-                    $con->send($h->encode($h->buildPacket(Message::CMD_DATA, 'L-' . $i, array(
+                    $con->send($h->encode($h->buildPacket(Message::CMD_DATA, 'L-' . $i, [
                         'uid'       => $c['uid'],
                         'device_id' => $c['device_id'],
                         'token'     => $c['token'],
-                        'data'      => array('action' => 'echo', 'params' => array('i' => $i)),
-                    ))));
+                        'data'      => ['action' => 'echo', 'params' => ['i' => $i]],
+                    ])));
                 }
 
                 // 限流判定与回执均为异步，留出收集窗口
@@ -83,6 +84,7 @@ final class CaseRateLimit
                     $con->close();
                     $h->finish();
                 }, [], false);
+
                 return;
             }
 
@@ -96,6 +98,7 @@ final class CaseRateLimit
                 && $packet['data']['action'] === 'echo'
             ) {
                 $lAck++;
+
                 return;
             }
 
@@ -104,6 +107,7 @@ final class CaseRateLimit
                 && (int)$packet['data']['code'] === Message::CODE_RATE_LIMIT
             ) {
                 $lLimit++;
+
                 return;
             }
 

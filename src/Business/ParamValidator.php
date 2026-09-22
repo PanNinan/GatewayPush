@@ -41,7 +41,7 @@ class ParamValidator
      *
      * @var array
      */
-    protected static array $types = array('string', 'int', 'float', 'bool', 'array', 'json');
+    protected static array $types = ['string', 'int', 'float', 'bool', 'array', 'json'];
 
     /**
      * 校验并归一化参数
@@ -49,7 +49,8 @@ class ParamValidator
      * @param array  $rules 规则数组
      * @param array  $input 原始入参
      * @param string $error 输出错误原因
-     * @return array|null 失败返回 null
+     *
+     * @return null|array 失败返回 null
      */
     public static function validate(array $rules, array $input, &$error = null)
     {
@@ -58,18 +59,20 @@ class ParamValidator
 
         foreach ($rules as $name => $rule) {
             $name = (string)$name;
-            $rule = is_array($rule) ? $rule : array('type' => (string)$rule);
+            $rule = is_array($rule) ? $rule : ['type' => (string)$rule];
 
             $present = array_key_exists($name, $input) && $input[$name] !== null;
 
             if (!$present) {
                 if (!empty($rule['required'])) {
                     $error = '缺少必要参数：' . $name;
+
                     return null;
                 }
                 if (array_key_exists('default', $rule)) {
                     $out[$name] = $rule['default'];
                 }
+
                 continue;
             }
 
@@ -77,6 +80,7 @@ class ParamValidator
             if (!in_array($type, self::$types, true)) {
                 // 规则写错时不做静默放行，直接暴露出来
                 $error = '参数 ' . $name . ' 的规则类型非法：' . $type;
+
                 return null;
             }
 
@@ -90,12 +94,14 @@ class ParamValidator
             $casted = self::cast($value, $type, $name, $reason);
             if ($casted === null) {
                 $error = $reason;
+
                 return null;
             }
 
             $checked = self::checkRange($casted, $type, $rule, $name, $reason);
             if ($checked === null) {
                 $error = $reason;
+
                 return null;
             }
 
@@ -112,7 +118,8 @@ class ParamValidator
      * @param string $type
      * @param string $name
      * @param string $reason 输出失败原因
-     * @return mixed|null 失败返回 null
+     *
+     * @return null|mixed 失败返回 null
      */
     protected static function cast($value, $type, $name, &$reason)
     {
@@ -122,12 +129,14 @@ class ParamValidator
             case 'string':
                 if (is_array($value)) {
                     $reason = '参数 ' . $name . ' 必须是字符串';
+
                     return null;
                 }
                 if (is_bool($value)) {
                     // JSON 的 true/false 落到字符串时保持可预期
                     return $value ? 'true' : 'false';
                 }
+
                 return (string)$value;
 
             case 'int':
@@ -141,6 +150,7 @@ class ParamValidator
                     return (int)$value;
                 }
                 $reason = '参数 ' . $name . ' 必须是整数';
+
                 return null;
 
             case 'float':
@@ -151,6 +161,7 @@ class ParamValidator
                     return (float)$value;
                 }
                 $reason = '参数 ' . $name . ' 必须是数字';
+
                 return null;
 
             case 'bool':
@@ -164,13 +175,16 @@ class ParamValidator
                     return false;
                 }
                 $reason = '参数 ' . $name . ' 必须是布尔值';
+
                 return null;
 
             case 'array':
                 if (!is_array($value)) {
                     $reason = '参数 ' . $name . ' 必须是对象或数组';
+
                     return null;
                 }
+
                 return $value;
 
             case 'json':
@@ -180,13 +194,16 @@ class ParamValidator
                 }
                 if (!is_string($value)) {
                     $reason = '参数 ' . $name . ' 必须是 JSON 字符串';
+
                     return null;
                 }
                 $decoded = json_decode($value, true);
                 if (json_last_error() !== JSON_ERROR_NONE) {
                     $reason = '参数 ' . $name . ' 不是合法 JSON';
+
                     return null;
                 }
+
                 return $decoded;
         }
     }
@@ -194,12 +211,13 @@ class ParamValidator
     /**
      * 范围与枚举约束
      *
-     * @param mixed  $value 已转换的值
+     * @param mixed  $value  已转换的值
      * @param string $type
      * @param array  $rule
      * @param string $name
      * @param string $reason
-     * @return mixed|null 失败返回 null
+     *
+     * @return null|mixed 失败返回 null
      */
     protected static function checkRange($value, $type, array $rule, $name, &$reason)
     {
@@ -207,6 +225,7 @@ class ParamValidator
 
         if (isset($rule['enum']) && is_array($rule['enum']) && !in_array($value, $rule['enum'], true)) {
             $reason = '参数 ' . $name . ' 取值不在允许范围内';
+
             return null;
         }
 
@@ -215,36 +234,45 @@ class ParamValidator
 
             if (isset($rule['max_len']) && $len > (int)$rule['max_len']) {
                 $reason = '参数 ' . $name . ' 长度超出上限 ' . (int)$rule['max_len'];
+
                 return null;
             }
             if (isset($rule['min_len']) && $len < (int)$rule['min_len']) {
                 $reason = '参数 ' . $name . ' 长度低于下限 ' . (int)$rule['min_len'];
+
                 return null;
             }
             if (isset($rule['pattern']) && !preg_match((string)$rule['pattern'], $value)) {
                 $reason = '参数 ' . $name . ' 格式不合法';
+
                 return null;
             }
+
             return $value;
         }
 
         if ($type === 'int' || $type === 'float') {
             if (isset($rule['min']) && $value < $rule['min']) {
                 $reason = '参数 ' . $name . ' 小于最小值 ' . $rule['min'];
+
                 return null;
             }
             if (isset($rule['max']) && $value > $rule['max']) {
                 $reason = '参数 ' . $name . ' 大于最大值 ' . $rule['max'];
+
                 return null;
             }
+
             return $value;
         }
 
         if ($type === 'array') {
             if (isset($rule['max_len']) && count($value) > (int)$rule['max_len']) {
                 $reason = '参数 ' . $name . ' 元素个数超出上限 ' . (int)$rule['max_len'];
+
                 return null;
             }
+
             return $value;
         }
 

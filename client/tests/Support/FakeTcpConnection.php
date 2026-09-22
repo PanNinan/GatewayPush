@@ -12,16 +12,16 @@ namespace GatewayPush\Client\Tests\Support;
 
 final class FakeTcpConnection
 {
-    /** @var callable|null */
+    /** @var null|callable */
     public $onConnect;
 
-    /** @var callable|null */
+    /** @var null|callable */
     public $onMessage;
 
-    /** @var callable|null */
+    /** @var null|callable */
     public $onClose;
 
-    /** @var callable|null */
+    /** @var null|callable */
     public $onError;
 
     /** @var string[] 已发送的帧 */
@@ -66,7 +66,7 @@ final class FakeTcpConnection
         }
     }
 
-    /* ---- 模拟辅助 ---- */
+    // ---- 模拟辅助 ----
 
     public function emit($frame)
     {

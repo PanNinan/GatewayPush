@@ -24,7 +24,8 @@ trait FakeTimers
         $timers = &$this->timers;
 
         $this->timerAdd = function ($interval, $persistent, $fn) use (&$timers) {
-            $timers[] = array('interval' => $interval, 'persistent' => $persistent, 'fn' => $fn, 'deleted' => false);
+            $timers[] = ['interval' => $interval, 'persistent' => $persistent, 'fn' => $fn, 'deleted' => false];
+
             return count($timers);
         };
         $this->timerDel = function ($id) use (&$timers) {

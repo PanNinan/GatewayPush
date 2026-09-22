@@ -26,6 +26,7 @@ final class CasePushOnline
      * 用例 E：定向推送（在线投递）
      *
      * @param Harness $h
+     *
      * @return void
      */
     public static function wsDirect(Harness $h)
@@ -36,11 +37,11 @@ final class CasePushOnline
 
         $connE->onConnect = function ($con) use ($h, $c) {
             echo "[E] WebSocket 已连接\n";
-            $con->send($h->encode($h->buildPacket(Message::CMD_AUTH, 'e-auth-1', array(
+            $con->send($h->encode($h->buildPacket(Message::CMD_AUTH, 'e-auth-1', [
                 'uid'       => $c['uid'],
                 'device_id' => $c['device_id'],
                 'token'     => $c['token'],
-            ))));
+            ])));
             echo "[E] -> auth\n";
         };
 
@@ -54,11 +55,12 @@ final class CasePushOnline
             // 鉴权通过后立即投递一条推送任务，验证「在线直达」链路
             if ($packet['cmd'] === Message::CMD_ACK && !$eFed) {
                 $eFed = true;
-                Push::enqueue('uid', $c['uid'], array('case' => 'E', 'value' => 7), array(
+                Push::enqueue('uid', $c['uid'], ['case' => 'E', 'value' => 7], [
                     'msg_id' => $c['msg_id'],
                     'source' => 'e2e',
-                ));
+                ]);
                 echo "[E] -> 已提交推送任务（uid 目标，msg_id {$c['msg_id']}）\n";
+
                 return;
             }
 
@@ -72,6 +74,7 @@ final class CasePushOnline
                 }
                 $con->close();
                 $h->finish();
+
                 return;
             }
 
@@ -98,6 +101,7 @@ final class CasePushOnline
      * 用例 G：推送幂等去重
      *
      * @param Harness $h
+     *
      * @return void
      */
     public static function idempotent(Harness $h)
@@ -109,11 +113,11 @@ final class CasePushOnline
 
         $connG->onConnect = function ($con) use ($h, $c) {
             echo "[G] WebSocket 已连接\n";
-            $con->send($h->encode($h->buildPacket(Message::CMD_AUTH, 'g-auth-1', array(
+            $con->send($h->encode($h->buildPacket(Message::CMD_AUTH, 'g-auth-1', [
                 'uid'       => $c['uid'],
                 'device_id' => $c['device_id'],
                 'token'     => $c['token'],
-            ))));
+            ])));
             echo "[G] -> auth\n";
         };
 
@@ -126,8 +130,8 @@ final class CasePushOnline
             if ($packet['cmd'] === Message::CMD_ACK && !$gFed) {
                 $gFed = true;
                 // 同一 msg_id 连续提交两次，期望业务侧仅投递一次
-                Push::enqueue('uid', $c['uid'], array('case' => 'G', 'n' => 1), array('msg_id' => $c['msg_id'], 'source' => 'e2e'));
-                Push::enqueue('uid', $c['uid'], array('case' => 'G', 'n' => 2), array('msg_id' => $c['msg_id'], 'source' => 'e2e'));
+                Push::enqueue('uid', $c['uid'], ['case' => 'G', 'n' => 1], ['msg_id' => $c['msg_id'], 'source' => 'e2e']);
+                Push::enqueue('uid', $c['uid'], ['case' => 'G', 'n' => 2], ['msg_id' => $c['msg_id'], 'source' => 'e2e']);
                 echo "[G] -> 已提交两次相同 msg_id（{$c['msg_id']}）\n";
 
                 Timer::add(2.0, function () use ($h, &$gCount, $con) {
@@ -140,6 +144,7 @@ final class CasePushOnline
                     $con->close();
                     $h->finish();
                 }, [], false);
+
                 return;
             }
 
@@ -167,6 +172,7 @@ final class CasePushOnline
      * 「业务进程 -> 出站队列 -> UDP 网关 sendto」闭环，本用例验证该反向通道。
      *
      * @param Harness $h
+     *
      * @return void
      */
     public static function udpOutbound(Harness $h)
@@ -184,12 +190,12 @@ final class CasePushOnline
                 return;
             }
             $iAttempt++;
-            $payload = $h->encode($h->buildPacket(Message::CMD_DATA, 'i-udp-' . $iAttempt, array(
+            $payload = $h->encode($h->buildPacket(Message::CMD_DATA, 'i-udp-' . $iAttempt, [
                 'uid'       => $c['uid'],
                 'device_id' => $c['device_id'],
                 'token'     => $c['token'],
-                'data'      => array('type' => 'udp-report'),
-            )));
+                'data'      => ['type' => 'udp-report'],
+            ]));
             $udpI->send($payload);
             echo "[I] -> 上报报文（第 {$iAttempt} 次，用于建立 UDP 应用层会话）\n";
 
@@ -230,13 +236,14 @@ final class CasePushOnline
                 echo "[I] <- ack（UDP 应用层会话已建立）\n";
 
                 Timer::add(0.6, function () use ($c) {
-                    Push::enqueue('uid', $c['uid'], array('case' => 'I', 'value' => 'udp-push'), array(
+                    Push::enqueue('uid', $c['uid'], ['case' => 'I', 'value' => 'udp-push'], [
                         'msg_id'       => $c['msg_id'],
                         'offline_mode' => 'drop',
                         'source'       => 'e2e',
-                    ));
+                    ]);
                     echo "[I] -> 推送任务已提交（uid 目标，期望经 UDP 出站通道下发）\n";
                 }, [], false);
+
                 return;
             }
 

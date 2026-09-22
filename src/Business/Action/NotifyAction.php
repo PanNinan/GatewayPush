@@ -31,6 +31,7 @@ class NotifyAction implements ActionInterface
 {
     /**
      * @param ActionContext $ctx
+     *
      * @return void
      */
     public function handle(ActionContext $ctx)
@@ -40,35 +41,37 @@ class NotifyAction implements ActionInterface
         $uid = $ctx->uid();
         if ($uid === '') {
             $ctx->replyError(Message::CODE_UNAUTHORIZED, '缺少用户身份');
+
             return;
         }
 
         $msgId   = (string)$ctx->param('msg_id', '');
         $offline = (string)$ctx->param('offline_mode', '');
 
-        Push::enqueue(Push::TARGET_UID, $uid, array(
+        Push::enqueue(Push::TARGET_UID, $uid, [
             'action' => 'notify',
-            'value'  => $ctx->param('value', array()),
+            'value'  => $ctx->param('value', []),
             'from'   => 'action.notify',
             'at'     => time(),
-        ), array(
+        ], [
             'msg_id'       => $msgId,
             'source'       => 'action.notify',
             'offline_mode' => $offline,
-        ), function ($ok) use ($ctx, $uid, $msgId) {
+        ], function ($ok) use ($ctx, $uid, $msgId) {
             if (!$ok) {
                 Monitor::incr('action_fail');
                 $ctx->replyError(Message::CODE_SERVER_ERROR, '推送任务入队失败');
+
                 return;
             }
 
-            $ctx->reply(array(
+            $ctx->reply([
                 'action' => 'notify',
                 'target' => $uid,
                 'msg_id' => $msgId,
                 'queued' => 1,
                 'at'     => time(),
-            ));
+            ]);
         });
     }
 }

@@ -73,7 +73,7 @@ final class StartupBannerTest extends TestCase
         $code = (string)file_get_contents($this->root('bin/start.ps1'));
 
         $this->assertMatchesRegularExpression(
-            "/start\.php'\) info \(\\\$roles -join ','\)/",
+            "/start\\.php'\\) info \\(\\\$roles -join ','\\)/",
             $code,
             'Windows 各角色的横幅打在各自的新窗口里，主窗口看不到，'
             . '需在启动完成后补打印一份（范围取本次实际启动的角色）'
@@ -91,7 +91,7 @@ final class StartupBannerTest extends TestCase
 
         $ps1 = (string)file_get_contents($this->root('bin/start.ps1'));
         $this->assertMatchesRegularExpression(
-            "/'info'\s+\{ & \\\$script:PhpExe .*start\.php'\) info/",
+            "/'info'\\s+\\{ & \\\$script:PhpExe .*start\\.php'\\) info/",
             $ps1,
             'start.ps1 未透传 info 子命令'
         );
@@ -136,12 +136,12 @@ final class StartupBannerTest extends TestCase
     {
         $output = $this->runInfo('');
 
-        $fields = array('PHP 版本', '启动角色', '环境配置', '时区', '运行目录', '框架版本', '依赖版本', '服务清单');
+        $fields = ['PHP 版本', '启动角色', '环境配置', '时区', '运行目录', '框架版本', '依赖版本', '服务清单'];
         foreach ($fields as $field) {
             $this->assertStringContainsString($field, $output, '横幅缺少字段：' . $field);
         }
 
-        $roles = array('register', 'gateway', 'udp', 'business', 'api', 'dashboard');
+        $roles = ['register', 'gateway', 'udp', 'business', 'api', 'dashboard'];
         foreach ($roles as $role) {
             $this->assertStringContainsString($role, $output, '服务清单缺少角色：' . $role);
         }
@@ -162,7 +162,7 @@ final class StartupBannerTest extends TestCase
         $this->assertStringContainsString('udp', $output);
 
         // 其余角色的进程名不应出现（进程名比角色名更不容易被其它文案撞上）
-        foreach (array('BusinessWorker', 'GW-API', 'GW-DASH', 'Register') as $absent) {
+        foreach (['BusinessWorker', 'GW-API', 'GW-DASH', 'Register'] as $absent) {
             $this->assertStringNotContainsString($absent, $output, '角色过滤失效，仍出现：' . $absent);
         }
     }
@@ -186,6 +186,7 @@ final class StartupBannerTest extends TestCase
      * 不在同进程内 require start.php —— 那会执行完整启动流程并进入事件循环。
      *
      * @param string $roles 逗号分隔的角色列表，空串表示不带参数
+     *
      * @return string
      */
     private function runInfo($roles)
@@ -209,6 +210,7 @@ final class StartupBannerTest extends TestCase
      * 解析项目根下的文件路径（不依赖当前工作目录）
      *
      * @param string $relative
+     *
      * @return string
      */
     private function root($relative)

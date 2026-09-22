@@ -17,7 +17,6 @@ $basePath = defined('BASE_PATH') ? BASE_PATH : dirname(__DIR__);
 $registerListen = Env::str('REGISTER_LISTEN', '127.0.0.1:1238');
 
 return [
-
     /* ---------------------------------------------------------------
      | Register 注册中心（Gateway 与 BusinessWorker 的地址发现服务）
      |

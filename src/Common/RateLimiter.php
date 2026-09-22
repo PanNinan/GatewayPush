@@ -51,38 +51,38 @@ namespace GatewayPush\Common;
 class RateLimiter
 {
     /** 维度：每连接（clientId） */
-    const DIM_CONN = 'conn';
+    public const DIM_CONN = 'conn';
 
     /** 维度：每用户（uid） */
-    const DIM_UID = 'uid';
+    public const DIM_UID = 'uid';
 
     /** 维度：每来源 IP */
-    const DIM_IP = 'ip';
+    public const DIM_IP = 'ip';
 
     /** 维度：心跳指令（ping），配额独立且更严 */
-    const DIM_PING = 'ping';
+    public const DIM_PING = 'ping';
 
     /** 超限日志采样间隔（秒/维度），防止被限流的洪水写爆日志 */
-    const LOG_INTERVAL = 1.0;
+    public const LOG_INTERVAL = 1.0;
 
     /** 内存桶键前缀（仅 L1 使用） */
-    const MEM_PREFIX = 'mem:';
+    public const MEM_PREFIX = 'mem:';
 
     /**
      * 限流配置（app.rate_limit）
      *
      * @var array
      */
-    protected static $config = array(
+    protected static $config = [
         'enable'          => true,
-        'conn'            => array('rate' => 20,  'burst' => 40),
-        'uid'             => array('rate' => 50,  'burst' => 100),
-        'ip'              => array('rate' => 200, 'burst' => 400),
-        'ping'            => array('rate' => 5,   'burst' => 10),
+        'conn'            => ['rate' => 20, 'burst' => 40],
+        'uid'             => ['rate' => 50, 'burst' => 100],
+        'ip'              => ['rate' => 200, 'burst' => 400],
+        'ping'            => ['rate' => 5, 'burst' => 10],
         'close_on_exceed' => false,
         'notify'          => true,
         'mem_max_buckets' => 20000,
-    );
+    ];
 
     /**
      * 进程内内存桶（L1）
@@ -104,9 +104,10 @@ class RateLimiter
      * 初始化
      *
      * @param array $config app.rate_limit
+     *
      * @return void
      */
-    public static function init(array $config = array())
+    public static function init(array $config = [])
     {
         self::$config = array_merge(self::$config, $config);
     }
@@ -147,6 +148,7 @@ class RateLimiter
      * 读取维度配额
      *
      * @param string $dim
+     *
      * @return array ['rate' => int, 'burst' => int]，rate <= 0 表示该维度不限流
      */
     public static function spec($dim)
@@ -163,7 +165,7 @@ class RateLimiter
             $burst = $rate;
         }
 
-        return array('rate' => $rate, 'burst' => $burst);
+        return ['rate' => $rate, 'burst' => $burst];
     }
 
     /* ---------------------------------------------------------------------
@@ -179,6 +181,7 @@ class RateLimiter
      * @param string $dim  维度（本层通常为 DIM_IP）
      * @param string $id   维度主体（IP / clientId / uid）
      * @param int    $cost 本次消耗令牌数
+     *
      * @return bool 是否放行
      */
     public static function checkMemory($dim, $id, $cost = 1)
@@ -198,10 +201,10 @@ class RateLimiter
 
         if (!isset(self::$buckets[$key])) {
             self::evictIfNeeded();
-            self::$buckets[$key] = array(
+            self::$buckets[$key] = [
                 'tokens' => (float)$spec['burst'],
                 'ts'     => $now,
-            );
+            ];
         }
 
         $bucket = &self::$buckets[$key];
@@ -216,42 +219,8 @@ class RateLimiter
         }
 
         $bucket['tokens'] -= $cost;
+
         return true;
-    }
-
-    /**
-     * 内存桶超限淘汰
-     *
-     * 仅在桶数量达到上限时触发；每次淘汰一半，摊薄单次开销（O(n log n) 但摊薄后
-     * 平均每 N/2 次新建桶才执行一次）。
-     *
-     * @return void
-     */
-    protected static function evictIfNeeded()
-    {
-        $max = max(100, (int)self::$config['mem_max_buckets']);
-        if (count(self::$buckets) < $max) {
-            return;
-        }
-
-        uasort(self::$buckets, function ($a, $b) {
-            if ($a['ts'] === $b['ts']) {
-                return 0;
-            }
-            return $a['ts'] < $b['ts'] ? -1 : 1;
-        });
-
-        self::$buckets = array_slice(self::$buckets, (int)($max / 2), null, true);
-
-        // 淘汰告警同样采样：桶满意味着大量不同来源，逐条记录会让日志成为新瓶颈
-        $now = microtime(true);
-        if (!isset(self::$logAt['__evict']) || $now - self::$logAt['__evict'] >= self::LOG_INTERVAL) {
-            self::$logAt['__evict'] = $now;
-            Logger::warn('限流内存桶达到上限，已淘汰最旧的一半', array(
-                'limit' => $max,
-                'kept'  => count(self::$buckets),
-            ));
-        }
     }
 
     /* ---------------------------------------------------------------------
@@ -265,6 +234,7 @@ class RateLimiter
      *
      * @param string $dim
      * @param string $id
+     *
      * @return array 空数组表示该维度未启用限流
      */
     public static function bucket($dim, $id)
@@ -274,11 +244,11 @@ class RateLimiter
             return [];
         }
 
-        return array(
+        return [
             'key'   => RedisKeys::rateBucket($dim, $id),
             'rate'  => $spec['rate'],
             'burst' => $spec['burst'],
-        );
+        ];
     }
 
     /**
@@ -287,6 +257,7 @@ class RateLimiter
      * @param array    $buckets bucket() 返回的桶定义列表（可含空数组，自动忽略）
      * @param int      $cost
      * @param callable $cb      function(bool $allowed)
+     *
      * @return void
      */
     public static function acquire(array $buckets, $cost, callable $cb)
@@ -300,14 +271,16 @@ class RateLimiter
 
         if (!self::enabled() || !$valid) {
             $cb(true);
+
             return;
         }
 
         RedisClient::tokenBuckets($valid, $cost, function ($allowed, $error = '') use ($cb) {
             if ($allowed === null) {
                 // Redis 异常：fail-open 放行，避免限流器故障放大为业务全量中断
-                Logger::error('限流器不可用，按 fail-open 放行', array('error' => $error));
+                Logger::error('限流器不可用，按 fail-open 放行', ['error' => $error]);
                 $cb(true);
+
                 return;
             }
             $cb((bool)$allowed);
@@ -326,9 +299,10 @@ class RateLimiter
      * @param string $dim
      * @param string $id
      * @param array  $extra
+     *
      * @return void
      */
-    public static function logReject($dim, $id, array $extra = array())
+    public static function logReject($dim, $id, array $extra = [])
     {
         $now = microtime(true);
         if (isset(self::$logAt[$dim]) && $now - self::$logAt[$dim] < self::LOG_INTERVAL) {
@@ -336,12 +310,12 @@ class RateLimiter
         }
         self::$logAt[$dim] = $now;
 
-        Logger::warn('报文超限已拒绝（日志按维度采样）', array_merge(array(
+        Logger::warn('报文超限已拒绝（日志按维度采样）', array_merge([
             'dim'   => $dim,
             'rate'  => self::spec($dim)['rate'],
             'burst' => self::spec($dim)['burst'],
             'from'  => substr((string)$id, 0, 64),
-        ), $extra));
+        ], $extra));
     }
 
     /**
@@ -363,5 +337,41 @@ class RateLimiter
     public static function bucketCount()
     {
         return count(self::$buckets);
+    }
+
+    /**
+     * 内存桶超限淘汰
+     *
+     * 仅在桶数量达到上限时触发；每次淘汰一半，摊薄单次开销（O(n log n) 但摊薄后
+     * 平均每 N/2 次新建桶才执行一次）。
+     *
+     * @return void
+     */
+    protected static function evictIfNeeded()
+    {
+        $max = max(100, (int)self::$config['mem_max_buckets']);
+        if (count(self::$buckets) < $max) {
+            return;
+        }
+
+        uasort(self::$buckets, function ($a, $b) {
+            if ($a['ts'] === $b['ts']) {
+                return 0;
+            }
+
+            return $a['ts'] < $b['ts'] ? -1 : 1;
+        });
+
+        self::$buckets = array_slice(self::$buckets, (int)($max / 2), null, true);
+
+        // 淘汰告警同样采样：桶满意味着大量不同来源，逐条记录会让日志成为新瓶颈
+        $now = microtime(true);
+        if (!isset(self::$logAt['__evict']) || $now - self::$logAt['__evict'] >= self::LOG_INTERVAL) {
+            self::$logAt['__evict'] = $now;
+            Logger::warn('限流内存桶达到上限，已淘汰最旧的一半', [
+                'limit' => $max,
+                'kept'  => count(self::$buckets),
+            ]);
+        }
     }
 }

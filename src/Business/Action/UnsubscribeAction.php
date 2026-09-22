@@ -25,6 +25,7 @@ class UnsubscribeAction implements ActionInterface
 {
     /**
      * @param ActionContext $ctx
+     *
      * @return void
      */
     public function handle(ActionContext $ctx)
@@ -36,6 +37,7 @@ class UnsubscribeAction implements ActionInterface
 
         if ($uid === '') {
             $ctx->replyError(Message::CODE_UNAUTHORIZED, '缺少用户身份');
+
             return;
         }
 
@@ -43,17 +45,18 @@ class UnsubscribeAction implements ActionInterface
             if (!$ok) {
                 Monitor::incr('action_fail');
                 $ctx->replyError(Message::CODE_PARAM_MISSING, $msg);
+
                 return;
             }
 
             Subscribe::count($topic, function ($count) use ($ctx, $uid, $topic) {
-                $ctx->reply(array(
+                $ctx->reply([
                     'action'      => 'unsubscribe',
                     'uid'         => $uid,
                     'topic'       => $topic,
                     'subscribers' => $count,
                     'at'          => time(),
-                ));
+                ]);
             });
         });
     }

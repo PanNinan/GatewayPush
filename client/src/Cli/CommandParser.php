@@ -24,6 +24,7 @@ class CommandParser
      * 解析参数（不含程序名）
      *
      * @param array $args 形如 ['echo', '{"a":1}', '--uid=u1']
+     *
      * @return array{command:string, args:array<int,string>, options:array<string,mixed>}
      */
     public static function parse(array $args)
@@ -47,11 +48,13 @@ class CommandParser
                 } else {
                     $posArgs[] = $token;
                 }
+
                 continue;
             }
 
             if ($token === '--') {
                 $literal = true;
+
                 continue;
             }
 
@@ -61,15 +64,17 @@ class CommandParser
                 $eq   = strpos($body, '=');
                 if ($eq !== false) {
                     $options[substr($body, 0, $eq)] = substr($body, $eq + 1);
+
                     continue;
                 }
                 $next = isset($args[$i + 1]) ? (string)$args[$i + 1] : '';
-                if ($next !== '' && ! str_starts_with($next, '-')) {
+                if ($next !== '' && !str_starts_with($next, '-')) {
                     $options[$body] = $next;
                     $i++;
                 } else {
                     $options[$body] = true;
                 }
+
                 continue;
             }
 
@@ -82,6 +87,7 @@ class CommandParser
                 } else {
                     $options[$body] = true;
                 }
+
                 continue;
             }
 
@@ -92,11 +98,11 @@ class CommandParser
             }
         }
 
-        return array(
+        return [
             'command' => $command,
             'args'    => $posArgs,
             'options' => $options,
-        );
+        ];
     }
 
     /**
@@ -105,6 +111,7 @@ class CommandParser
      * @param array  $options
      * @param string $name
      * @param string $default
+     *
      * @return string
      */
     public static function str(array $options, $name, $default = '')
@@ -112,6 +119,7 @@ class CommandParser
         if (!isset($options[$name]) || is_bool($options[$name])) {
             return $default;
         }
+
         return (string)$options[$name];
     }
 
@@ -121,6 +129,7 @@ class CommandParser
      * @param array  $options
      * @param string $name
      * @param float  $default
+     *
      * @return float
      */
     public static function float(array $options, $name, $default = 0.0)
@@ -128,6 +137,7 @@ class CommandParser
         if (!isset($options[$name]) || is_bool($options[$name]) || !is_numeric((string)$options[$name])) {
             return $default;
         }
+
         return (float)$options[$name];
     }
 
@@ -136,6 +146,7 @@ class CommandParser
      *
      * @param array  $options
      * @param string $name
+     *
      * @return bool
      */
     public static function flag(array $options, $name)
