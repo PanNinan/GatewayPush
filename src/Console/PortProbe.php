@@ -13,6 +13,11 @@
 
 namespace GatewayPush\Console;
 
+/**
+ * 端口占用探测
+ *
+ * 独立成类以保证自检报告与启动横幅判定一致；Windows 走 netstat 快照而非 bind 探测。
+ */
 final class PortProbe
 {
     /**

@@ -7,6 +7,9 @@
 
 namespace GatewayPush\Client\Service;
 
+/**
+ * session 动作：查询当前连接的会话摘要
+ */
 final class SessionApi extends AbstractApi
 {
     /**

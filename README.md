@@ -779,11 +779,23 @@ composer check          # php start.php check
 composer env-init       # php start.php env:init
 composer analyse        # phpstan analyse --memory-limit=512M
 composer baseline       # phpstan analyse --memory-limit=512M --generate-baseline
+composer cs             # php-cs-fixer 排版自动修复（唯一允许写文件的风格命令）
+composer cs:check       # php-cs-fixer 排版体检（--dry-run --diff，只报不改）
+composer lint           # phpcs 审计：注释 / 命名 / 业务红线（只读，不写文件）
+composer lint:summary   # phpcs 按嗅探器聚合的汇总视图（看趋势用）
+composer lint:errors    # phpcs 仅错误（--warning-severity=0）
+composer lint:self      # phpcs 自定义嗅探器自检（RedisKeys 漂移检测 + 作用域/豁免矩阵）
 composer test           # phpunit
 composer test:e2e       # php tests/e2e_check.php
 composer test:client-e2e # php client/tests/E2E/ClientE2E.php（客户端 SDK 同口径 15 用例）
 composer demo:http      # php tests/Api/http_demo.php（HTTP 接口调用示例，需 api/business 在跑）
 ```
+
+> **风格工具分工（刻意不重叠）**：**排版**归 `php-cs-fixer`（只有 `composer cs` 会写文件）；
+> **注释 / 命名 / 业务红线审计**归 `phpcs`（`composer lint`，只读）。
+> **不要用 `phpcbf`** —— 它会与 fixer 对同一段代码反向修（如类型 long form ↔ short form 来回震荡）。
+> 两侧刻意关掉的规则都写在配置文件头部：`.php-cs-fixer.dist.php` 的「四个界外」、
+> `phpcs.xml.dist` 文末的「四类刻意排除」，每条都附实测数据与理由。
 
 ---
 
@@ -2062,9 +2074,21 @@ class OrderQueryAction implements ActionInterface
 ```bash
 composer analyse        # PHPStan（level 5；baseline 冻结存量：生产代码 10 条 + 测试 57 条目）
 composer test           # PHPUnit（467 tests / 1317 assertions；含 client/tests/Unit）
+composer lint           # phpcs 审计：注释 / 命名 / 业务红线（只读，不写文件）
+composer lint:self      # phpcs 自定义嗅探器自检（RedisKeys 漂移 + 作用域/豁免矩阵）
+composer cs:check       # php-cs-fixer 排版体检（只报不改；落地用 composer cs）
 composer test:e2e       # 端到端自检（16 个用例）
 composer test:client-e2e # 客户端 SDK 端到端对齐（A~O 共 15 个用例，需五角色 + Redis）
 ```
+
+> **风格工具分工（刻意不重叠）**：**排版**归 `php-cs-fixer`，只有 `composer cs` 会写文件；
+> **注释 / 命名 / 业务红线审计**归 `phpcs`（`composer lint`，只读不写）。
+> 禁用 `phpcbf` —— 它会与 fixer 对同一段代码反向修（类型 long form ↔ short form 来回震荡）。
+> 两侧刻意排除的规则见各自配置文件的头部注释，每条都附实测理由。
+>
+> `phpcs` 侧另有两条**项目自定义嗅探器**（`tools/phpcs/Sniffs/`）：`ForbiddenCallSniff`
+> 拦截 `src/` 与 `client/src/` 内的 `exit`·`die`·`sleep`·`usleep`·`pcntl_fork`；
+> `RedisKeyLiteralSniff` 拦截 Redis 键名硬编码。两者由 `composer lint:self` 自检兜底。
 
 > HTTP 侧的验签与动作接口断言另有两个**独立脚本**（不在 PHPUnit 套件内，需服务已启动）：
 >
@@ -2079,7 +2103,7 @@ composer test:client-e2e # 客户端 SDK 端到端对齐（A~O 共 15 个用例�
 | ---------- | ------------------------------------------------------------------------ |
 | PHPStan 版本 | `^2.0`                                                                   |
 | 内存         | **必须带 `--memory-limit=512M`**（本机 php.ini 仅 128M，否则子进程崩溃）；已写入 composer 脚本 |
-| 分析范围       | `paths` = `src`、`client/src`、`start.php`、`tests`、`client/tests`（共 111 文件）。**`tests` 必须在列**，否则 `phpstan-phpunit` 的断言 / mock 规则不会生效 |
+| 分析范围       | `paths` = `src`、`client/src`、`start.php`、`tests`、`client/tests`（共 112 文件）。**`tests` 必须在列**，否则 `phpstan-phpunit` 的断言 / mock 规则不会生效 |
 | 分析口径       | `phpVersion: 80100` —— 刻意设置用于**拦截 8.2+ 语法误用**，保证 8.1 兼容性                 |
 | 扩展         | `phpstan-strict-rules` + `phpstan-phpunit`，**在 `includes` 里显式声明**（本项目未装 `phpstan/extension-installer`，不写 `includes` 则规则一条都不生效） |
 | strict-rules | `strictRules.allRules: true`，仅刻意关闭 3 条：`disallowedEmpty`、`booleansInConditions`(+`booleansInLoopConditions`)、`dynamicCallOnStaticMethod`（理由见 `phpstan.neon` 内的逐条注释） |

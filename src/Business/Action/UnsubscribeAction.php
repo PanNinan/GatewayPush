@@ -16,6 +16,11 @@ use GatewayPush\Business\Message;
 use GatewayPush\Business\Monitor;
 use GatewayPush\Business\Subscribe;
 
+/**
+ * 业务动作 unsubscribe：取消订阅（幂等）
+ *
+ * 与 SubscribeAction 成对；取消未订阅的主题同样返回成功。
+ */
 class UnsubscribeAction implements ActionInterface
 {
     /**

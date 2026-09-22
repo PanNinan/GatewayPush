@@ -22,6 +22,11 @@ namespace GatewayPush\Client\Event;
 
 use GatewayPush\Client\Session\SessionManager;
 
+/**
+ * 推送接收器：识别 cmd=push 下行，回调业务并自动回执
+ *
+ * 把报文拆为 payload 与 meta 二元组；meta.offline = 1 表示重连补投。
+ */
 final class PushReceiver
 {
     /**

@@ -56,7 +56,16 @@
 
 - **方法名**：小驼峰（`getUserInfo`）
 
-- **变量/参数**：蛇形命名（`$connection_id`）
+- **变量/参数**：小驼峰（`$connectionId`）
+
+  两点边界，避免与工具和其他层冲突：
+
+  - 本约定只约束**自有代码**（本地变量、参数、自有属性）。引用第三方属性时保持其原名，
+    例：`GatewayWorker\Lib\Context::$client_ip` / `$client_port` 是框架公开属性，
+    不得改写成驼峰（phpcs 的 `MemberNotCamelCaps` 无法区分声明与访问，故已排除该码）。
+  - **数组键 / 配置键 / Redis Hash 字段名**仍沿用蛇形（`client_id`、`device_id`、
+    `archive_enable`）—— 它们是协议与数据格式的一部分，改动即破坏存量兼容，
+    与「变量命名」是两件事。phpcs 只检查变量，不检查字符串键。
 
 - **常量**：全大写\+下划线（`MAX_CONN_LIMIT`）
 

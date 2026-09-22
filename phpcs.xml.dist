@@ -1,0 +1,265 @@
+<?xml version="1.0"?>
+<!--
+  =====================================================================
+  phpcs —— 只做「注释 / 命名 / 业务红线」审计
+  =====================================================================
+  与 .php-cs-fixer.dist.php 分工，两者**职责不得重叠**：
+
+    phpcs（本文件）                        审计：注释的完整性与正确性 / 命名 / 业务红线。只读不写。
+    php-cs-fixer（.php-cs-fixer.dist.php） 排版：空白/换行/缩进/括号/引号/phpdoc 排版/语法现代化。
+
+  两个关键决定：
+
+  1) 不挂任何基础标准（不写 <rule ref="PSR12"/>）。
+     PSR12/Squiz/Zend 这些「整包」标准里过半是排版类嗅探器，一挂就会与
+     php-cs-fixer 抢同一批代码，形成「A 报 B 修」的长期噪声。
+     这里改为逐个点名，只在文末列出被排除项及原因。
+
+  2) 注释审计只查「有没有 / 对不对」，**不查英文散文体例**。
+     Squiz 系注释嗅探器是按英文文档习惯设计的：要求摘要首字母大写、句末加句点、
+     每个 @param 都要有英文描述、类型必须写 long form（integer/boolean）。
+     对本项目的中文注释这些全是误报，且 long form 还与 php-cs-fixer 的
+     phpdoc_scalar（integer→int）互相回退。
+
+  用法：
+    审计（错误即失败） composer lint
+    只看摘要           composer lint:summary
+    可选：卡行宽 120  见文末注释块
+  不要用 phpcbf 批量修排版 —— 排版归 php-cs-fixer，混用会产生互相回退的来回改动。
+-->
+<ruleset name="GatewayPush">
+    <description>注释 / 命名 / 业务红线审计（排版由 php-cs-fixer 独占）</description>
+
+    <!-- 警告（复杂度/嵌套/TODO 等）只作提示，不影响退出码，门禁只看 error -->
+    <config name="ignore_warnings_on_exit" value="1"/>
+
+    <!-- ==================== 扫描范围 ==================== -->
+    <file>src</file>
+    <file>client/src</file>
+    <file>client/tests</file>
+    <file>client/bin</file>
+    <file>client/examples</file>
+    <file>config</file>
+    <file>tests</file>
+    <file>start.php</file>
+
+    <!-- tools/ 是 phpcs 自身的嗅探器源码（实现 PHPCS 接口，不受本项目规范约束） -->
+    <exclude-pattern>*/tools/*</exclude-pattern>
+    <exclude-pattern>*/vendor/*</exclude-pattern>
+    <exclude-pattern>*/runtime/*</exclude-pattern>
+    <!-- tests/Manual/_* 是临时验证脚本：下划线前缀＝「不纳入审计」的命名约定，
+         与 tests/Manual/README.md 同级并存。常驻的正规脚本不带下划线（如
+         phpcs_business_rules_check.php），仍受完整审计。 -->
+    <exclude-pattern>*/tests/Manual/_*</exclude-pattern>
+
+    <arg name="extensions" value="php"/>
+    <arg name="basepath" value="."/>
+    <arg name="colors"/>
+
+    <!-- =====================================================================
+         一、注释
+         保留「一致性/正确性」类：docblock 是否齐备、@param 名是否与签名一致、
+         @return 是否与实现一致、异常是否声明。
+         排除「散文体例/排版」类：首字母大写、句末句点、参数描述文字、
+         long form 类型、tag 分组空行与缩进（后者本就归 php-cs-fixer 的
+         phpdoc_align / phpdoc_separation）。
+         测试代码豁免「必须有注释」—— 测试方法名已自解释，强制 docblock 只是噪声。
+         ===================================================================== -->
+    <rule ref="Squiz.Commenting.FileComment">
+        <!-- @package 标签在命名空间时代已废弃 -->
+        <exclude name="Squiz.Commenting.FileComment.MissingPackageTag"/>
+    </rule>
+    <!--
+      start.php 与 tests/bootstrap.php 的文件注释后紧接 require ——
+      FileCommentSniff::process() 内部维护一份 $ignore 列表
+      （class / interface / trait / function / closure / const / include / require /
+        public / private / protected / final / static / abstract / readonly），
+      一旦「注释之后的首个非空白 token」命中该列表，它就判定
+      「这个 docblock 是给后面那个声明用的，不是文件注释」并报 Missing
+      （源码 vendor/.../Squiz/Sniffs/Commenting/FileCommentSniff.php:117）。
+      这两处的 docblock 确实是文件注释（项目入口，注释后就是 autoload 引入），
+      而 require 不可能挪走，故按文件排除该码。
+      两文件仍在扫描范围内，其余全部检查照常生效。
+    -->
+    <rule ref="Squiz.Commenting.FileComment.Missing">
+        <exclude-pattern>*/start.php</exclude-pattern>
+        <exclude-pattern>*/tests/bootstrap.php</exclude-pattern>
+    </rule>
+    <rule ref="Squiz.Commenting.ClassComment">
+        <!-- 与 FunctionComment.WrongStyle 同理：要求 /** 而非 /*，属注释写法而非内容 -->
+        <exclude name="Squiz.Commenting.ClassComment.WrongStyle"/>
+        <exclude-pattern>*/tests/*</exclude-pattern>
+    </rule>
+    <rule ref="Squiz.Commenting.FunctionComment">
+        <!-- 保留：Missing（有没有 docblock）/ EmptyThrows / DuplicateReturn -->
+        <!--
+          MissingReturn / MissingParamTag —— Squiz 不识别 @inheritDoc 语义。
+          实测（PHPCS 4.0.4）：写成 `@inheritDoc` 或 `{@inheritDoc}` 判定完全相同，
+          它只看「docblock 存在且非空」就要求逐个补 @param/@return。
+          本项目有 16 处 @inheritDoc（两个 Transport 实现类继承接口文档），
+          全部被判 MissingReturn/MissingParamTag，占这两项报错的 26/30 条。
+          留着会造成「继承来的文档也要重抄一遍」的持续噪声，故排除。
+          代价：不再强制「每个函数 docblock 必须写 @return/@param」。
+        -->
+        <exclude name="Squiz.Commenting.FunctionComment.MissingReturn"/>
+        <exclude name="Squiz.Commenting.FunctionComment.MissingParamTag"/>
+        <!--
+          IncorrectParamVarName / InvalidReturn 不是「散文体例」而是 Squiz 的 long form 硬要求：
+            它们报的是「Expected "integer" but found "int"」「Expected "boolean" but found "bool"」，
+            即拿 long form 去比对类型，int/bool 一律判不符。
+            phpcbf 会改成 integer/boolean，而 php-cs-fixer 的 phpdoc_scalar
+            立刻改回 int/bool —— 两个工具互为回退，必须排除（代价是失去
+            「@param 名与签名是否一致」这一项检查，Squiz 把两者混在一个码里）。
+        -->
+        <exclude name="Squiz.Commenting.FunctionComment.IncorrectParamVarName"/>
+        <exclude name="Squiz.Commenting.FunctionComment.InvalidReturn"/>
+        <exclude name="Squiz.Commenting.FunctionComment.MissingParamComment"/>
+        <exclude name="Squiz.Commenting.FunctionComment.ParamCommentFullStop"/>
+        <exclude name="Squiz.Commenting.FunctionComment.ParamCommentNotCapital"/>
+        <exclude name="Squiz.Commenting.FunctionComment.ScalarTypeHintMissing"/>
+        <exclude name="Squiz.Commenting.FunctionComment.TypeHintMissing"/>
+        <exclude name="Squiz.Commenting.FunctionComment.SpacingAfterParamName"/>
+        <exclude name="Squiz.Commenting.FunctionComment.SpacingAfterParamType"/>
+        <exclude name="Squiz.Commenting.FunctionComment.ThrowsNoFullStop"/>
+        <exclude name="Squiz.Commenting.FunctionComment.ThrowsNotCapital"/>
+        <exclude name="Squiz.Commenting.FunctionComment.WrongStyle"/>
+        <exclude-pattern>*/tests/*</exclude-pattern>
+    </rule>
+    <rule ref="Squiz.Commenting.FunctionCommentThrowTag"/>
+    <rule ref="Squiz.Commenting.VariableComment">
+        <!-- Squiz 要 long form（integer/boolean），与 fixer 的 phpdoc_scalar（int/bool）冲突 -->
+        <exclude name="Squiz.Commenting.VariableComment.IncorrectVarType"/>
+        <exclude-pattern>*/tests/*</exclude-pattern>
+    </rule>
+    <rule ref="Squiz.Commenting.EmptyCatchComment"/>
+    <rule ref="Generic.Commenting.Todo"/>
+    <rule ref="Generic.Commenting.Fixme"/>
+
+    <!-- =====================================================================
+         二、命名
+         ===================================================================== -->
+    <rule ref="PSR1.Classes.ClassDeclaration"/>
+    <rule ref="PSR1.Methods.CamelCapsMethodName"/>
+    <rule ref="PSR2.Classes.PropertyDeclaration"/>
+    <rule ref="Squiz.Classes.ValidClassName"/>
+    <rule ref="Squiz.NamingConventions.ValidFunctionName">
+        <!-- PHPCS 4.0 硬编码「private 方法必须 _ 前缀」，本项目不用该约定 -->
+        <exclude name="Squiz.NamingConventions.ValidFunctionName.PrivateNoUnderscore"/>
+    </rule>
+    <rule ref="Squiz.NamingConventions.ValidVariableName">
+        <!-- 同上：硬编码「private 属性必须 _ 前缀 / public 属性不得有前缀」 -->
+        <exclude name="Squiz.NamingConventions.ValidVariableName.PrivateNoUnderscore"/>
+        <exclude name="Squiz.NamingConventions.ValidVariableName.PublicHasUnderscore"/>
+        <!--
+          MemberNotCamelCaps —— 该码同时覆盖「成员声明」与「成员访问」，
+          PHPCS 无法区分变量是自家声明还是引用第三方，因此无法按来源豁免。
+          本项目的 4 条报错**全部是访问框架属性**：
+            vendor/workerman/gateway-worker/src/Lib/Context.php:42 的
+            public static $client_ip / $client_port
+          （Business\Bootstrap 的 onConnect 与鉴权落库两处读取）。
+          框架公开属性无权改名，留着就是永久噪声，故排除此码；
+          普通变量仍有 NotCamelCaps 覆盖，自有属性的命名由代码评审把关。
+        -->
+        <exclude name="Squiz.NamingConventions.ValidVariableName.MemberNotCamelCaps"/>
+    </rule>
+    <rule ref="Generic.NamingConventions.UpperCaseConstantName"/>
+    <rule ref="Generic.NamingConventions.ConstructorName"/>
+
+    <!-- =====================================================================
+         三、业务红线（项目自定义嗅探器）
+         作用域与豁免写在嗅探器里（$filePattern / $exempt），不写在这里：
+         按**文件路径**引用嗅探器时，PHPCS 会把规则级 include/exclude-pattern
+         注册到「路径字符串」这个键下（Ruleset::processRuleset 中
+         `$code === $ref` 的分支），检查时却按嗅探器编码取值，
+         于是模式永远不命中、静默失效（实测确认）。
+         详见 tools/phpcs/Sniffs/PHP/ForbiddenCallSniff.php 头注。
+         ===================================================================== -->
+    <rule ref="./tools/phpcs/Sniffs/PHP/ForbiddenCallSniff.php"/>
+    <rule ref="./tools/phpcs/Sniffs/Common/RedisKeyLiteralSniff.php"/>
+
+    <!-- =====================================================================
+         四、结构与质量
+         ===================================================================== -->
+    <rule ref="Squiz.Scope.MethodScope"/>
+    <rule ref="Squiz.Scope.MemberVarScope"/>
+    <rule ref="Squiz.Scope.StaticThisUsage"/>
+    <rule ref="Squiz.PHP.Eval"/>
+    <rule ref="Squiz.PHP.GlobalKeyword"/>
+    <rule ref="Squiz.PHP.InnerFunctions"/>
+    <rule ref="Squiz.PHP.NonExecutableCode"/>
+    <rule ref="Squiz.PHP.DisallowSizeFunctionsInLoops"/>
+    <rule ref="Generic.CodeAnalysis.AssignmentInCondition"/>
+    <rule ref="Generic.CodeAnalysis.EmptyStatement"/>
+    <rule ref="Generic.CodeAnalysis.JumbledIncrementer"/>
+    <rule ref="Generic.CodeAnalysis.RequireExplicitBooleanOperatorPrecedence"/>
+    <rule ref="Generic.CodeAnalysis.UnusedFunctionParameter"/>
+    <rule ref="Generic.PHP.DisallowShortOpenTag"/>
+    <rule ref="Generic.PHP.DeprecatedFunctions"/>
+    <!-- 复杂度/嵌套：有价值的信号，但阈值属团队决策，先作警告不卡门禁 -->
+    <rule ref="Generic.Metrics.CyclomaticComplexity">
+        <type>warning</type>
+    </rule>
+    <rule ref="Generic.Metrics.NestingLevel">
+        <type>warning</type>
+    </rule>
+
+    <!--
+      =====================================================================
+      刻意排除 · 与 php-cs-fixer 重叠（这些归 fixer 管）
+      =====================================================================
+      PSR12.Properties.ConstantVisibility        → modifier_keywords / PER-CS 补 public
+      Squiz.Operators.ValidLogicalOperators      → logical_operators
+      Generic.Arrays.DisallowLongArraySyntax     → array_syntax
+      Generic.PHP.LowerCaseConstant              → constant_case
+      Generic.PHP.LowerCaseKeyword               → lowercase keywords
+      Squiz.Commenting.DocCommentAlignment       → phpdoc_align
+      Squiz.Commenting.LongConditionClosingComment / ClosingDeclarationComment / PostStatementComment
+      Squiz 与 Generic 的 WhiteSpace.*           → 各类空白与缩进排版
+
+      长写类型：Squiz 处处用 long form（integer/boolean/str）比对类型，
+      而 fixer 的 phpdoc_scalar 统一改成 short form（int/bool/string），
+      两边互为回退。涉及：
+        Squiz.Commenting.VariableComment.IncorrectVarType
+        Squiz.Commenting.FunctionComment.IncorrectParamVarName / InvalidReturn
+
+      =====================================================================
+      刻意排除 · 英文散文体例（对中文注释全是误报）
+      =====================================================================
+      Generic.Commenting.DocComment       约 1750 条：tag 值缩进 804、tag 分组空行 422、
+                                          短描述缺失 135、`/**` 后/`*/` 前换行 262 …
+                                          其中「分组空行」正是 fixer 的 phpdoc_separation
+      Squiz.Commenting.InlineComment      约 694 条：注释句末必须有句点、首字母必须大写；
+                                          且 DocBlock 一码与行内 @var（PHPStan 依赖）冲突
+      Squiz.Commenting.BlockComment       约 292 条：`/* xxx */` 必须换行，纯排版
+      Squiz.PHP.CommentedOutCode          28 条：中文注释里只要出现括号、双冒号、箭头运算符
+                                          就被判为「注释掉的代码」。实测抽查三处
+                                          （Env.php:105「仅读，不写回 getenv()」、
+                                          CommandParser.php:29「双横线之后进入字面量模式」、
+                                          SignerTest.php:130「漂移守卫」）
+                                          全部是文档性说明，无一为真的死代码
+
+      =====================================================================
+      刻意排除 · 观点过强或与既定风格冲突
+      =====================================================================
+      Squiz.Operators.ComparisonOperatorUsage  1044 条：「禁止 ! 运算符，请用 === FALSE」
+                                              「禁止隐式真值判断，请用 === TRUE」
+      Squiz.PHP.DisallowComparisonAssignment    263 条：禁止把比较结果赋给变量
+                                              （本项目 `$ok = $a === $b;` 是常规写法）
+      Squiz.Operators.IncrementDecrementUsage     4 条：要求 ++$i —— 与 fixer 侧
+                                              刻意保留的 `$i++`（36:1）冲突
+
+      =====================================================================
+      刻意排除 · fixer 无对应规则但属排版（默认关闭，要卡就取消注释）
+      =====================================================================
+      Generic.Files.LineEndings   行尾由 git 统一（本机 client/ 检出为 CRLF），
+                                  fixer 侧也已关掉 line_ending，两边都不插手
+      Generic.Files.LineLength    行宽上限 fixer 修不了，只能审计
+
+      <rule ref="Generic.Files.LineLength">
+          <properties>
+              <property name="lineLimit" value="120"/>
+              <property name="absoluteLineLimit" value="0"/>
+          </properties>
+      </rule>
+    -->
+</ruleset>

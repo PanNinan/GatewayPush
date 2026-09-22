@@ -22,6 +22,11 @@ use GatewayPush\Business\Message;
 use GatewayPush\Business\Monitor;
 use GatewayPush\Business\Push;
 
+/**
+ * 业务动作 notify：请求服务端向本人推送
+ *
+ * 目标恒为调用方自身 uid；经 Push::enqueue 复用离线缓存与幂等去重。
+ */
 class NotifyAction implements ActionInterface
 {
     /**

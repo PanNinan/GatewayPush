@@ -19,6 +19,11 @@ use GatewayPush\Business\Message;
 use GatewayPush\Business\Monitor;
 use GatewayPush\Business\Subscribe;
 
+/**
+ * 业务动作 subscribe：订阅主题
+ *
+ * 状态管理型；与 unsubscribe / topics 共用 Subscribe 服务，投递入口在 Push::enqueueTopic()。
+ */
 class SubscribeAction implements ActionInterface
 {
     /**

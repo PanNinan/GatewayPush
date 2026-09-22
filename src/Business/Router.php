@@ -33,6 +33,11 @@
 
 namespace GatewayPush\Business;
 
+/**
+ * 指令路由注册表（cmd → data.action 两级）
+ *
+ * 只提供注册与查询，零 IO、零日志；分发与错误处理仍由 Bootstrap 负责。
+ */
 class Router
 {
     /**

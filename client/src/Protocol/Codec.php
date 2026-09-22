@@ -19,6 +19,11 @@ namespace GatewayPush\Client\Protocol;
 
 use GatewayPush\Business\Message;
 
+/**
+ * 报文编解码（服务端 Message 的薄适配）
+ *
+ * 直接转发到服务端同一个类，保证编解码口径逐字节一致，不重写 JSON 逻辑。
+ */
 final class Codec
 {
     /**

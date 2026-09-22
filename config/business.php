@@ -35,7 +35,7 @@ return [
      | 与 config/gateway.php 的 register.listen 同源：默认复用 REGISTER_LISTEN，
      | 集群拆分部署时可用 REGISTER_ADDRESS 单独指向远程注册中心。
      --------------------------------------------------------------- */
-    'register_address' => Env::str('REGISTER_ADDRESS', '') !== ''
+    'register_address' => Env::str('REGISTER_ADDRESS') !== ''
         ? Env::str('REGISTER_ADDRESS')
         : Env::str('REGISTER_LISTEN', '127.0.0.1:1238'),
 

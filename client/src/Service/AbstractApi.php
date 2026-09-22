@@ -17,6 +17,11 @@ namespace GatewayPush\Client\Service;
 use GatewayPush\Client\Error\ErrorCode;
 use GatewayPush\Client\Session\SessionManager;
 
+/**
+ * 业务动作 API 基类
+ *
+ * 统一包装 SessionManager::request() 的结算回调；子类只声明动作名与参数。
+ */
 abstract class AbstractApi
 {
     /**

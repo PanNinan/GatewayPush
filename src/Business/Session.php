@@ -24,6 +24,11 @@ use GatewayPush\Common\RedisClient;
 use GatewayPush\Common\RedisKeys;
 use GatewayWorker\Lib\Gateway as GatewayClient;
 
+/**
+ * Redis 会话管理：绑定、心跳、断线重连恢复、过期清理
+ *
+ * 会话状态全在 Redis，节点无本地状态；断连 markOffline() 保留供重连，回收才 unbind()。
+ */
 class Session
 {
     /** 支持的协议标识 */

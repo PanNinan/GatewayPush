@@ -12,6 +12,11 @@
 
 namespace GatewayPush\Client\Service;
 
+/**
+ * report 动作：数据上报（按主题累加计数）
+ *
+ * UDP 侧服务端刻意静默不回执，回调只能等本地超时（ok=false, code=10001）。
+ */
 final class ReportApi extends AbstractApi
 {
     /**

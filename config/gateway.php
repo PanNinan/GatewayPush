@@ -42,9 +42,9 @@ return [
 
         // SSL（生产环境 WSS 必需）
         'ssl' => [
-            'enable'      => Env::bool('SSL_ENABLE', false),
-            'local_cert'  => Env::str('SSL_CERT', ''),
-            'local_pk'    => Env::str('SSL_PK', ''),
+            'enable'      => Env::bool('SSL_ENABLE'),
+            'local_cert'  => Env::str('SSL_CERT'),
+            'local_pk'    => Env::str('SSL_PK'),
             'verify_peer' => false,   // 自签 / 单域名证书场景下的固定策略
         ],
     ],

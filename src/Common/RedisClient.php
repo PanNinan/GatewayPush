@@ -18,6 +18,11 @@ namespace GatewayPush\Common;
 use RuntimeException;
 use Workerman\Redis\Client;
 
+/**
+ * 异步 Redis 客户端封装（基于 workerman/redis）
+ *
+ * 连接池轮询分配、键名统一拼接全局前缀、命令一律带回调；无需 phpredis 扩展。
+ */
 class RedisClient
 {
     /**
@@ -156,6 +161,7 @@ class RedisClient
      * 取出一个可用连接（轮询）
      *
      * @return Client
+     * @throws RuntimeException 未调用 init()，或缺少 workerman/redis 依赖时抛出
      */
     public static function connection()
     {
@@ -377,21 +383,51 @@ class RedisClient
         return self::connection()->mGet($fullKeys, self::wrap('MGET', $cb, count($fullKeys) . ' keys'));
     }
 
+    /**
+     * 判断 key 是否存在
+     *
+     * @param string        $key
+     * @param callable|null $cb
+     * @return mixed
+     */
     public static function exists($key, ?callable $cb = null)
     {
         return self::connection()->exists(self::key($key), self::wrap('EXISTS', $cb, $key));
     }
 
+    /**
+     * 设置 key 的过期时间（秒）
+     *
+     * @param string        $key
+     * @param int           $ttl
+     * @param callable|null $cb
+     * @return mixed
+     */
     public static function expire($key, $ttl, ?callable $cb = null)
     {
         return self::connection()->expire(self::key($key), (int)$ttl, self::wrap('EXPIRE', $cb, $key));
     }
 
+    /**
+     * 读取 key 的剩余生存时间（秒；-1 = 永久，-2 = 不存在）
+     *
+     * @param string        $key
+     * @param callable|null $cb
+     * @return mixed
+     */
     public static function ttl($key, ?callable $cb = null)
     {
         return self::connection()->ttl(self::key($key), self::wrap('TTL', $cb, $key));
     }
 
+    /**
+     * 自增（缺省步长为 1，底层为 INCRBY）
+     *
+     * @param string        $key
+     * @param int           $step
+     * @param callable|null $cb
+     * @return mixed
+     */
     public static function incr($key, $step = 1, ?callable $cb = null)
     {
         return self::connection()->incr(self::key($key), (int)$step, self::wrap('INCRBY', $cb, $key));
@@ -423,26 +459,68 @@ class RedisClient
      | Hash
      --------------------------------------------------------------------- */
 
+    /**
+     * 写入单个 Hash 字段
+     *
+     * @param string        $key
+     * @param string        $field
+     * @param mixed         $value
+     * @param callable|null $cb
+     * @return mixed
+     */
     public static function hSet($key, $field, $value, ?callable $cb = null)
     {
         return self::connection()->hSet(self::key($key), $field, $value, self::wrap('HSET', $cb, $key));
     }
 
+    /**
+     * 批量写入 Hash 字段
+     *
+     * 用 HMSET 而非多字段 HSET —— 后者需 Redis 4.0+，本封装兼顾 Redis 3.x。
+     *
+     * @param string        $key
+     * @param array         $hash
+     * @param callable|null $cb
+     * @return mixed
+     */
     public static function hMSet($key, array $hash, ?callable $cb = null)
     {
         return self::connection()->hMSet(self::key($key), $hash, self::wrap('HMSET', $cb, $key));
     }
 
+    /**
+     * 读取单个 Hash 字段
+     *
+     * @param string        $key
+     * @param string        $field
+     * @param callable|null $cb
+     * @return mixed
+     */
     public static function hGet($key, $field, ?callable $cb = null)
     {
         return self::connection()->hGet(self::key($key), $field, self::wrap('HGET', $cb, $key));
     }
 
+    /**
+     * 读取 Hash 的全部字段
+     *
+     * @param string        $key
+     * @param callable|null $cb
+     * @return mixed
+     */
     public static function hGetAll($key, ?callable $cb = null)
     {
         return self::connection()->hGetAll(self::key($key), self::wrap('HGETALL', $cb, $key));
     }
 
+    /**
+     * 删除一个或多个 Hash 字段
+     *
+     * @param string        $key
+     * @param string|array  $fields
+     * @param callable|null $cb
+     * @return mixed
+     */
     public static function hDel($key, $fields, ?callable $cb = null)
     {
         $args   = array(self::key($key));
@@ -453,6 +531,15 @@ class RedisClient
         return self::connection()->hDel(...$args);
     }
 
+    /**
+     * Hash 字段自增
+     *
+     * @param string        $key
+     * @param string        $field
+     * @param int           $step
+     * @param callable|null $cb
+     * @return mixed
+     */
     public static function hIncrBy($key, $field, $step = 1, ?callable $cb = null)
     {
         return self::connection()->hIncrBy(self::key($key), $field, (int)$step, self::wrap('HINCRBY', $cb, $key));
@@ -462,16 +549,40 @@ class RedisClient
      | List（UDP 队列使用）
      --------------------------------------------------------------------- */
 
+    /**
+     * 从右侧推入列表元素
+     *
+     * @param string        $key
+     * @param mixed         $value
+     * @param callable|null $cb
+     * @return mixed
+     */
     public static function rPush($key, $value, ?callable $cb = null)
     {
         return self::connection()->rPush(self::key($key), $value, self::wrap('RPUSH', $cb, $key));
     }
 
+    /**
+     * 读取列表长度
+     *
+     * @param string        $key
+     * @param callable|null $cb
+     * @return mixed
+     */
     public static function lLen($key, ?callable $cb = null)
     {
         return self::connection()->lLen(self::key($key), self::wrap('LLEN', $cb, $key));
     }
 
+    /**
+     * 读取列表区间（含首尾，支持负索引）
+     *
+     * @param string        $key
+     * @param int           $start
+     * @param int           $stop
+     * @param callable|null $cb
+     * @return mixed
+     */
     public static function lRange($key, $start, $stop, ?callable $cb = null)
     {
         return self::connection()->lRange(
@@ -482,6 +593,15 @@ class RedisClient
         );
     }
 
+    /**
+     * 裁剪列表，仅保留指定区间
+     *
+     * @param string        $key
+     * @param int           $start
+     * @param int           $stop
+     * @param callable|null $cb
+     * @return mixed
+     */
     public static function lTrim($key, $start, $stop, ?callable $cb = null)
     {
         return self::connection()->lTrim(
@@ -518,6 +638,14 @@ class RedisClient
      | Set（在线集合使用）
      --------------------------------------------------------------------- */
 
+    /**
+     * 添加集合成员
+     *
+     * @param string        $key
+     * @param string|array  $members
+     * @param callable|null $cb
+     * @return mixed
+     */
     public static function sAdd($key, $members, ?callable $cb = null)
     {
         $args = array(self::key($key));
@@ -528,6 +656,14 @@ class RedisClient
         return self::connection()->sAdd(...$args);
     }
 
+    /**
+     * 移除集合成员
+     *
+     * @param string        $key
+     * @param string|array  $members
+     * @param callable|null $cb
+     * @return mixed
+     */
     public static function sRem($key, $members, ?callable $cb = null)
     {
         $args = array(self::key($key));
@@ -538,16 +674,38 @@ class RedisClient
         return self::connection()->sRem(...$args);
     }
 
+    /**
+     * 读取集合全部成员
+     *
+     * @param string        $key
+     * @param callable|null $cb
+     * @return mixed
+     */
     public static function sMembers($key, ?callable $cb = null)
     {
         return self::connection()->sMembers(self::key($key), self::wrap('SMEMBERS', $cb, $key));
     }
 
+    /**
+     * 获取集合成员数
+     *
+     * @param string        $key
+     * @param callable|null $cb
+     * @return mixed
+     */
     public static function sCard($key, ?callable $cb = null)
     {
         return self::connection()->sCard(self::key($key), self::wrap('SCARD', $cb, $key));
     }
 
+    /**
+     * 判断是否为集合成员
+     *
+     * @param string        $key
+     * @param string        $member
+     * @param callable|null $cb
+     * @return mixed
+     */
     public static function sIsMember($key, $member, ?callable $cb = null)
     {
         return self::connection()->sIsMember(self::key($key), $member, self::wrap('SISMEMBER', $cb, $key));

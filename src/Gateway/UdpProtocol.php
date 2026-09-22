@@ -20,6 +20,11 @@ use GatewayPush\Business\Message;
 use GatewayPush\Common\Logger;
 use Workerman\Connection\ConnectionInterface;
 
+/**
+ * UDP 应用层协议：拆包、编解码与合法性校验
+ *
+ * decode() 内部不可抛异常 —— workerman 会捕获协议异常并 stopAll()，导致网关进程退出。
+ */
 class UdpProtocol
 {
     /**

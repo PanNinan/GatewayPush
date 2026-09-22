@@ -19,6 +19,11 @@ namespace GatewayPush\Console;
 use GatewayPush\Common\Env;
 use GatewayPush\Common\RoleCatalog;
 
+/**
+ * 只读与配置类子命令：roles / env:init / usage
+ *
+ * 不进入 workerman 主流程；不调用 exit，退出码经返回值交给入口 start.php。
+ */
 final class Commands
 {
     /**

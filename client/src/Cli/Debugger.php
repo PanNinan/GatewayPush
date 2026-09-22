@@ -30,6 +30,11 @@ use GatewayPush\Client\Transport\WsTransport;
 use Workerman\Timer;
 use Workerman\Worker;
 
+/**
+ * CLI 调试器引擎（client/bin/gwclient.php 的能力实现）
+ *
+ * 支持一次性命令、REPL 交互与 listen 挂机三种模式；复用 Protocol / Transport / Session / Service。
+ */
 class Debugger
 {
     const VERSION = '1.0.0';

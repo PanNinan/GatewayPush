@@ -17,6 +17,11 @@ use GatewayPush\Business\ActionInterface;
 use GatewayPush\Business\Monitor;
 use GatewayPush\Business\Session;
 
+/**
+ * 业务动作 session：查询调用方自身的会话摘要
+ *
+ * 读取型；不接受 client_id / uid 入参，从接口形态上根除越权探测。
+ */
 class SessionAction implements ActionInterface
 {
     /**

@@ -29,6 +29,11 @@
 
 namespace GatewayPush\Business;
 
+/**
+ * 业务动作入参校验器
+ *
+ * 零依赖的规则数组实现；未声明的入参一律丢弃（白名单语义），通过后返回归一化参数。
+ */
 class ParamValidator
 {
     /**

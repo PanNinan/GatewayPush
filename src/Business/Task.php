@@ -29,6 +29,11 @@ namespace GatewayPush\Business;
 use GatewayPush\Common\Logger;
 use Workerman\Timer;
 
+/**
+ * 定时任务统一注册入口
+ *
+ * 经此注册以统一防重入、异常隔离与超时告警；scope 决定注册在单进程还是全部进程。
+ */
 class Task
 {
     /**
@@ -128,7 +133,7 @@ class Task
             return false;
         }
 
-        $persistent = isset($job['persistent']) ? (bool)$job['persistent'] : true;
+        $persistent = ! isset($job['persistent']) || $job['persistent'];
         $timeout    = isset($job['timeout']) ? (int)$job['timeout'] : 0;
 
         self::$jobs[$name] = array(

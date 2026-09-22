@@ -56,7 +56,7 @@ $queue   = [];
  * @param int   $default
  * @return int
  */
-function ce2e_code($packet, $default = 0)
+function ce2eCode($packet, $default = 0)
 {
     if (!is_array($packet) || $packet === array()) {
         return 10001;
@@ -262,7 +262,7 @@ $worker->onWorkerStart = function () use (
                 return;
             }
             $settled = true;
-            $code    = ce2e_code($packet);
+            $code    = ce2eCode($packet);
             $record('B', '未鉴权越权拦截 4003', $code === 4003, 'code=' . $code);
             $transport->close();
             $next();
@@ -342,7 +342,7 @@ $worker->onWorkerStart = function () use (
 
         $transport->onMessage(function ($frame) use ($finish) {
             $packet = Codec::decode($frame);
-            $code   = ce2e_code($packet);
+            $code   = ce2eCode($packet);
             $finish($code === 4001, 'code=' . $code);
         });
 
@@ -489,7 +489,7 @@ $worker->onWorkerStart = function () use (
         $session?->request('echo', array('j' => 1), function ($ok) use ($session, $record, $next) {
             $session?->request('session', [], function ($ok2) use ($session, $record, $next, $ok) {
                 $session?->request('__unknown_action__', [], function ($ok3, $packet) use ($record, $next, $ok, $ok2) {
-                    $code = ce2e_code($packet);
+                    $code = ce2eCode($packet);
                     $pass = $ok && $ok2 && !$ok3 && $code === 4006;
                     $record('J', '路由表 echo/session + 未知动作 4006', $pass, 'unknown code=' . $code);
                     $next();
@@ -555,7 +555,7 @@ $worker->onWorkerStart = function () use (
 
             for ($i = 0; $i < 100; $i++) {
                 $session->request('echo', array('burst' => $i), function ($ok, $packet) use (&$codes, $maybe) {
-                    $codes[] = ce2e_code($packet);
+                    $codes[] = ce2eCode($packet);
                     $maybe();
                 });
             }
@@ -569,7 +569,7 @@ $worker->onWorkerStart = function () use (
     /* [M] 业务动作契约：参数错误 4007 */
     $queue[] = function ($next) use (&$ws, $record) {
         $ws->request('report', array('count' => 1), function ($ok, $packet) use ($record, $next) {
-            $code = ce2e_code($packet);
+            $code = ce2eCode($packet);
             $record('M', '动作契约：缺参数 4007', !$ok && $code === 4007, 'code=' . $code);
             $next();
         });
@@ -580,7 +580,7 @@ $worker->onWorkerStart = function () use (
         $session = $udp;
         $session->request('echo', array('n' => 1), function ($ok) use ($session, $record, $next) {
             $session->request('report', array('topic' => 'ce2e-topic', 'count' => 1), function ($ok2, $packet) use ($record, $next, $ok) {
-                $code = ce2e_code($packet);
+                $code = ce2eCode($packet);
                 $pass = $ok && !$ok2 && $code === 10001; // 10001 = 本地超时（UDP 侧按声明静默）
                 $record('N', 'UDP echo 回执 + report 静默', $pass, 'echo=' . var_export($ok, true) . ' report code=' . $code);
                 $next();

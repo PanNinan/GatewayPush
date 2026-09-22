@@ -21,6 +21,12 @@ use GatewayPush\Client\Error\ClientException;
 use Workerman\Connection\AsyncTcpConnection;
 use Workerman\Timer;
 
+/**
+ * HTTP 传输：管理端接口的单次请求封装
+ *
+ * 底层用 AsyncTcpConnection('tcp://...') 自行构造原始报文（workerman 的 Http 协议
+ * encode 是服务端响应语义）；每个请求独占一个连接，完成或超时即销毁。
+ */
 final class HttpTransport
 {
     /**

@@ -31,6 +31,11 @@ use Dotenv\Dotenv;
 use Dotenv\Repository\Adapter\PutenvAdapter;
 use Dotenv\Repository\RepositoryBuilder;
 
+/**
+ * 环境变量加载与类型化读取
+ *
+ * 多级 .env 叠加，真实环境变量最高优先；读取一律走类型化方法，不直接访问 $_ENV。
+ */
 class Env
 {
     /** 缺省环境标识 */
@@ -53,19 +58,39 @@ class Env
         '.env.{env}.local',
     );
 
-    /** 是否已完成加载 */
+    /**
+     * 是否已完成加载
+     *
+     * @var bool
+     */
     protected static $loaded = false;
 
-    /** 实际读取到的文件（按优先级从高到低） */
+    /**
+     * 实际读取到的文件（按优先级从高到低）
+     *
+     * @var array
+     */
     protected static $files = [];
 
-    /** 当前环境标识 */
+    /**
+     * 当前环境标识
+     *
+     * @var string
+     */
     protected static $envName = self::DEFAULT_ENV;
 
-    /** 加载根目录 */
+    /**
+     * 加载根目录
+     *
+     * @var string
+     */
     protected static $basePath = '';
 
-    /** 加载阶段异常信息 */
+    /**
+     * 加载阶段异常信息
+     *
+     * @var string
+     */
     protected static $error = '';
 
     /* =================================================================

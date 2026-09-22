@@ -47,6 +47,11 @@ use GatewayPush\Common\Logger;
 use GatewayPush\Common\RedisClient;
 use GatewayPush\Common\RedisKeys;
 
+/**
+ * HTTP 通道的动作结果回程桥
+ *
+ * 业务进程把动作回执写入 action:result:{request_id}（SET NX EX 首次胜出），api 进程轮询取回。
+ */
 class ActionReply
 {
     /**

@@ -18,6 +18,11 @@ namespace GatewayPush\Client\Transport;
 use GatewayPush\Client\Error\ClientException;
 use Workerman\Connection\AsyncTcpConnection;
 
+/**
+ * WebSocket 传输（AsyncTcpConnection 的薄封装）
+ *
+ * 归一化四类回调为 TransportInterface；连接关闭后不可复用，重连须新建实例。
+ */
 final class WsTransport implements TransportInterface
 {
     /**
@@ -132,6 +137,8 @@ final class WsTransport implements TransportInterface
 
     /**
      * @inheritDoc
+     *
+     * @throws ClientException 连接未建立时抛出
      */
     public function send($frame)
     {

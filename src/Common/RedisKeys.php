@@ -87,6 +87,11 @@
 
 namespace GatewayPush\Common;
 
+/**
+ * Redis 键空间统一声明（全部逻辑键名的唯一权威来源）
+ *
+ * 此处声明的是不含前缀的逻辑键名；改键名即破坏存量兼容，须配 RENAME 迁移并全角色重启。
+ */
 final class RedisKeys
 {
     /* ---------------------------------------------------------------------
@@ -209,7 +214,7 @@ final class RedisKeys
      */
     public static function session($clientId)
     {
-        return self::SESSION . (string)$clientId;
+        return self::SESSION . $clientId;
     }
 
     /**
@@ -220,7 +225,7 @@ final class RedisKeys
      */
     public static function heartbeat($clientId)
     {
-        return self::HEARTBEAT . (string)$clientId;
+        return self::HEARTBEAT . $clientId;
     }
 
     /**
@@ -231,7 +236,7 @@ final class RedisKeys
      */
     public static function uidClients($uid)
     {
-        return self::UID_CLIENTS . (string)$uid;
+        return self::UID_CLIENTS . $uid;
     }
 
     /**
@@ -242,7 +247,7 @@ final class RedisKeys
      */
     public static function deviceClient($deviceId)
     {
-        return self::DEVICE_CLIENT . (string)$deviceId;
+        return self::DEVICE_CLIENT . $deviceId;
     }
 
     /**
@@ -272,7 +277,7 @@ final class RedisKeys
      */
     public static function authRevoked($fingerprint)
     {
-        return self::AUTH_REVOKED . (string)$fingerprint;
+        return self::AUTH_REVOKED . $fingerprint;
     }
 
     /**
@@ -283,7 +288,7 @@ final class RedisKeys
      */
     public static function authBind($uid)
     {
-        return self::AUTH_BIND . (string)$uid;
+        return self::AUTH_BIND . $uid;
     }
 
     /**
@@ -294,7 +299,7 @@ final class RedisKeys
      */
     public static function pushOffline($uid)
     {
-        return self::PUSH_OFFLINE . (string)$uid;
+        return self::PUSH_OFFLINE . $uid;
     }
 
     /**
@@ -316,7 +321,7 @@ final class RedisKeys
      */
     public static function subscribeUid($uid)
     {
-        return self::SUBSCRIBE_UID . (string)$uid;
+        return self::SUBSCRIBE_UID . $uid;
     }
 
     /**
@@ -327,7 +332,7 @@ final class RedisKeys
      */
     public static function subscribeTopic($topic)
     {
-        return self::SUBSCRIBE_TOPIC . (string)$topic;
+        return self::SUBSCRIBE_TOPIC . $topic;
     }
 
     /**
@@ -338,7 +343,7 @@ final class RedisKeys
      */
     public static function actionResult($requestId)
     {
-        return self::ACTION_RESULT . (string)$requestId;
+        return self::ACTION_RESULT . $requestId;
     }
 
     /**
@@ -349,7 +354,7 @@ final class RedisKeys
      */
     public static function actionReport($topic)
     {
-        return self::ACTION_REPORT . (string)$topic;
+        return self::ACTION_REPORT . $topic;
     }
 
     /**
@@ -376,7 +381,7 @@ final class RedisKeys
      */
     public static function rateBucket($dim, $id)
     {
-        return self::RATE_LIMIT_BUCKET . (string)$dim . ':' . md5((string)$id);
+        return self::RATE_LIMIT_BUCKET . $dim . ':' . md5((string)$id);
     }
 
     /**

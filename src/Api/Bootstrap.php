@@ -70,6 +70,11 @@ use Workerman\Protocols\Http\Response;
 use Workerman\Timer;
 use Workerman\Worker;
 
+/**
+ * HTTP 接口进程（role=api）：验签 → 参数校验 → 任务入队
+ *
+ * 不持有 Gateway 连接、不感知会话状态，只依赖 Redis；动作类接口同步等待结果。
+ */
 class Bootstrap
 {
     /** 业务返回码 */
@@ -298,7 +303,7 @@ class Bootstrap
      * @param mixed $connection
      * @param Request $request
      * @return void
-     * @throws \JsonException
+     * @throws \JsonException 请求体不是合法 JSON 时抛出
      */
     protected static function handlePush($connection, Request $request)
     {

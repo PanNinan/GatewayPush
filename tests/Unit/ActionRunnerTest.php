@@ -25,7 +25,6 @@
 namespace GatewayPush\Tests\Unit;
 
 use GatewayPush\Business\ActionContext;
-use GatewayPush\Business\ActionInterface;
 use GatewayPush\Business\ActionRunner;
 use GatewayPush\Common\Logger;
 use PHPUnit\Framework\TestCase;
@@ -425,20 +424,4 @@ class ActionRunnerTest extends TestCase
 
         $this->assertSame(array('ttl' => 86400), ActionRunner::declaration('report')['options']);
     }
-}
-
-/* -------------------------------------------------------------------------
- | 测试夹具：仅在装载过滤逻辑中被引用，无任何行为
- ------------------------------------------------------------------------- */
-
-class StubAction implements ActionInterface
-{
-    public function handle(ActionContext $ctx)
-    {
-        // 接口声明为 void：不得 return null（PHPStan: return.void）
-    }
-}
-
-class NotAnAction
-{
 }

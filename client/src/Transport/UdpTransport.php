@@ -31,6 +31,12 @@ use GatewayPush\Client\Error\ErrorCode;
 use Workerman\Connection\AsyncUdpConnection;
 use Workerman\Timer;
 
+/**
+ * UDP 传输（AsyncUdpConnection 的封装）
+ *
+ * 承载两条 UDP 特有策略：延迟首包（避开建连瞬间丢包）与应用层重传
+ * （收到任何下行即视为此前最近一条未确认报文已送达）。
+ */
 final class UdpTransport implements TransportInterface
 {
     /** 预热窗口时长（秒）：窗口内 send() 入队，窗口结束统一补发 */
@@ -222,6 +228,8 @@ final class UdpTransport implements TransportInterface
 
     /**
      * @inheritDoc
+     *
+     * @throws ClientException 连接未建立时抛出
      */
     public function send($frame)
     {
@@ -388,6 +396,11 @@ final class UdpTransport implements TransportInterface
         }
     }
 
+    /**
+     * 启动预热窗口计时器（窗口结束后补发首包）
+     *
+     * @return void
+     */
     private function scheduleWarmup()
     {
         if ($this->warmupTimerId !== null) {
@@ -398,6 +411,11 @@ final class UdpTransport implements TransportInterface
         });
     }
 
+    /**
+     * 确保重传计时器处于运行态（惰性启动：仅在途表非空时注册）
+     *
+     * @return void
+     */
     private function ensureRetransmit()
     {
         if (count($this->inflight) === 0 || $this->retransmitTimerId !== null) {
@@ -444,6 +462,11 @@ final class UdpTransport implements TransportInterface
         $this->ensureRetransmit();
     }
 
+    /**
+     * 停止重传计时器
+     *
+     * @return void
+     */
     private function stopRetransmit()
     {
         if ($this->retransmitTimerId !== null) {
@@ -452,6 +475,11 @@ final class UdpTransport implements TransportInterface
         }
     }
 
+    /**
+     * 停止本类注册的全部计时器（预热窗口 + 重传）
+     *
+     * @return void
+     */
     private function stopTimers()
     {
         $this->stopRetransmit();
@@ -461,11 +489,25 @@ final class UdpTransport implements TransportInterface
         }
     }
 
+    /**
+     * 注册计时器（经注入的 add 函数，单测可替换为假实现）
+     *
+     * @param float    $interval
+     * @param bool     $persistent
+     * @param callable $fn
+     * @return int 计时器 ID
+     */
     private function addTimer($interval, $persistent, $fn)
     {
         return (int)($this->timerAdd)((float)$interval, $persistent, $fn);
     }
 
+    /**
+     * 删除计时器（ID 为 0 / null 时静默跳过）
+     *
+     * @param int|null $timerId
+     * @return void
+     */
     private function delTimer($timerId)
     {
         if ($timerId) {

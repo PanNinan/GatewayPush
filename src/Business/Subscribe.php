@@ -29,6 +29,11 @@ use GatewayPush\Common\Logger;
 use GatewayPush\Common\RedisClient;
 use GatewayPush\Common\RedisKeys;
 
+/**
+ * 订阅关系管理（主题 ↔ 用户 双向索引）
+ *
+ * add / remove 双向同步维护；本类只维护关系，投递见 Push::enqueueTopic()。
+ */
 class Subscribe
 {
     /**

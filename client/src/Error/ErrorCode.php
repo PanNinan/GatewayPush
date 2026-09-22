@@ -18,6 +18,11 @@ namespace GatewayPush\Client\Error;
 
 use GatewayPush\Business\Message;
 
+/**
+ * 客户端错误码
+ *
+ * 报文码（WS / UDP）与 HTTP 接口业务码是两套独立空间，不可混用；另含本地码 10001+。
+ */
 final class ErrorCode
 {
     /* ---------------------------------------------------------------------

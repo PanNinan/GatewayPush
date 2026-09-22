@@ -23,6 +23,11 @@ namespace GatewayPush\Client\Service;
 use GatewayPush\Client\Error\ErrorCode;
 use GatewayPush\Client\Transport\HttpTransport;
 
+/**
+ * HTTP 管理端 API：POST /push、GET /stats、GET /health
+ *
+ * 签名基串为 "{X-Timestamp}|{原始请求体}"；api.secret 留空时回退复用 auth.secret。
+ */
 final class AdminApi
 {
     /**

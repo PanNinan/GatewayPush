@@ -41,6 +41,12 @@ use GatewayPush\Common\RedisClient;
 use GatewayPush\Common\RedisKeys;
 use GatewayWorker\Lib\Gateway as GatewayClient;
 
+/**
+ * 单对一定向推送服务（所有推送的唯一出口）
+ *
+ * 按 target_type 定位目标、按 client_id 判定通道、按 offline_mode 决定离线策略；
+ * 指标统计、幂等去重、离线缓存三条横切逻辑只在此处实现。
+ */
 class Push
 {
     /* ---------------------- 目标类型 ---------------------- */

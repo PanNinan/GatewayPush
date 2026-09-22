@@ -13,6 +13,11 @@
 
 namespace GatewayPush\Client\Cli;
 
+/**
+ * CLI 参数解析（调试器入口的参数规范化）
+ *
+ * 纯函数、无 IO；`--` 之后的 token 一律视为位置参数。
+ */
 class CommandParser
 {
     /**

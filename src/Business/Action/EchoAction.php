@@ -17,6 +17,11 @@ use GatewayPush\Business\ActionContext;
 use GatewayPush\Business\ActionInterface;
 use GatewayPush\Business\Monitor;
 
+/**
+ * 业务动作 echo：原样回显调用方参数
+ *
+ * 纯回执型，不触碰任何业务状态；用于联通性自检与压力测试。
+ */
 class EchoAction implements ActionInterface
 {
     /**

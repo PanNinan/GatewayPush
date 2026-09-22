@@ -27,6 +27,11 @@ use GatewayPush\Common\Logger;
 use GatewayPush\Common\RedisClient;
 use GatewayPush\Common\RedisKeys;
 
+/**
+ * 服务监控指标采集
+ *
+ * 业务侧只做进程内累加（零 IO），由定时任务批量刷入 metrics:counter / metrics:gauge。
+ */
 class Monitor
 {
     /** 累加型指标保留天数 */

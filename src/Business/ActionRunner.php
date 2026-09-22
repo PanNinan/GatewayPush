@@ -47,6 +47,12 @@ namespace GatewayPush\Business;
 use GatewayPush\Common\Logger;
 use Workerman\Timer;
 
+/**
+ * 业务动作执行器（WS / UDP / HTTP 三通道共用）
+ *
+ * 把「取动作名 → 鉴权 → 校验参数 → 查处理器 → 执行 → 回执」抽成单一路径；
+ * 通道由 clientId 前缀推断，行为差异只体现在回执的下发方式上。
+ */
 class ActionRunner
 {
     /**

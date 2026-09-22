@@ -16,6 +16,11 @@ use GatewayPush\Business\Message;
 use GatewayPush\Business\Monitor;
 use GatewayPush\Business\Subscribe;
 
+/**
+ * 业务动作 topics：查询本人订阅的主题列表
+ *
+ * 读取型；只查当前 uid，不接受 uid 入参。
+ */
 class TopicsAction implements ActionInterface
 {
     /**

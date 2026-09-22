@@ -23,6 +23,11 @@ use GatewayPush\Common\RedisClient;
 use Workerman\Timer;
 use Workerman\Worker;
 
+/**
+ * push 子命令：提交一条定向推送任务（调试 / 运维用）
+ *
+ * 只入队不投递，故可在服务未启动时执行；需 workerman 事件循环，单独成类。
+ */
 final class PushCommand
 {
     /**

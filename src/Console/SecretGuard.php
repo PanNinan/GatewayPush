@@ -10,6 +10,11 @@
 
 namespace GatewayPush\Console;
 
+/**
+ * 密钥强度守卫
+ *
+ * 识别仍为占位值或明显弱值的密钥；启动自检对这类值以 FAIL 拦截而非 WARN 提示。
+ */
 final class SecretGuard
 {
     /**

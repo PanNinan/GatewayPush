@@ -24,6 +24,11 @@ use GatewayWorker\Lib\Context;
 use GatewayWorker\Lib\Gateway as GatewayClient;
 use Workerman\Timer;
 
+/**
+ * BusinessWorker 业务进程启动入口与事件处理器
+ *
+ * init() 创建实例并绑定注册中心；各事件方法由框架按 eventHandler 反射调用。
+ */
 class Bootstrap
 {
     /**

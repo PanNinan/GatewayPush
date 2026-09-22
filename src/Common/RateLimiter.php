@@ -43,6 +43,11 @@
 
 namespace GatewayPush\Common;
 
+/**
+ * 报文级限流（两层实现不可互换）
+ *
+ * L1 内存桶用于 UDP 验签前（零 IO、每来源 IP）；L2 Redis 令牌桶用于业务侧（每连接 + 每 uid）。
+ */
 class RateLimiter
 {
     /** 维度：每连接（clientId） */

@@ -20,6 +20,11 @@ namespace GatewayPush\Console;
 use GatewayPush\Api\Bootstrap;
 use GatewayPush\Common\Env;
 
+/**
+ * 运行环境自检（任何 workerman 命令之前强制执行）
+ *
+ * 输出人读报告 + 布尔结论，自身不做 IO 输出；用于把配置漂移拦在启动前。
+ */
 final class EnvChecker
 {
     /**
@@ -32,6 +37,7 @@ final class EnvChecker
      * @param array $businessConfig config/business.php
      * @param array $actionConfig   config/actions.php
      * @return array ['ok' => bool, 'text' => string]
+     * @throws \RuntimeException 运行时目录无法创建时抛出
      */
     public static function check(array $appConfig, array $gatewayConfig, array $businessConfig, array $actionConfig = array())
     {

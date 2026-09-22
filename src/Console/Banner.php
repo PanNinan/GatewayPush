@@ -20,6 +20,11 @@ use GatewayPush\Api\Bootstrap;
 use GatewayPush\Common\Env;
 use GatewayPush\Common\RoleCatalog;
 
+/**
+ * 启动信息横幅
+ *
+ * 必须在 Worker::runAll() 之前打印，否则守护模式下终端不可见；本类只拼装文本。
+ */
 final class Banner
 {
     /**

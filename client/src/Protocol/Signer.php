@@ -23,6 +23,11 @@ namespace GatewayPush\Client\Protocol;
 use GatewayPush\Business\Message;
 use JsonException;
 
+/**
+ * 报文签名（服务端 Message 的薄适配）
+ *
+ * uid 不参与签名；WS 通道不校验签名，客户端一律计算并携带。
+ */
 final class Signer
 {
     /**
@@ -42,7 +47,7 @@ final class Signer
      *
      * @param mixed $data
      * @return string
-     * @throws JsonException
+     * @throws JsonException 数据无法编码为 JSON 时抛出
      */
     public static function canonicalize($data)
     {
@@ -57,7 +62,7 @@ final class Signer
      *
      * @param array $packet
      * @return string
-     * @throws JsonException
+     * @throws JsonException data 无法编码为 JSON 时抛出
      */
     public static function baseString(array $packet)
     {

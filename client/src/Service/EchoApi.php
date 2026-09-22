@@ -9,6 +9,9 @@
 
 namespace GatewayPush\Client\Service;
 
+/**
+ * echo 动作：原样回显，联通性验证与压测
+ */
 final class EchoApi extends AbstractApi
 {
     /**

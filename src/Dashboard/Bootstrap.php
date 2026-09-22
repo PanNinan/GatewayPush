@@ -39,6 +39,11 @@ use Workerman\Protocols\Http\Request;
 use Workerman\Protocols\Http\Response;
 use Workerman\Worker;
 
+/**
+ * 监控面板进程（role=dashboard）：渲染 Redis 中已有的指标
+ *
+ * 纯只读，不写任何键、不参与业务链路；页面零外链、可离线打开。
+ */
 class Bootstrap
 {
     /** 业务返回码（与 Api 进程保持同一取值空间，便于统一排查） */

@@ -27,6 +27,11 @@ use GatewayPush\Common\RedisClient;
 use GatewayPush\Common\RedisKeys;
 use Random\RandomException;
 
+/**
+ * Token 鉴权：签名与时效校验、撤销名单、设备绑定
+ *
+ * 校验分两段：verifyLocal() 同步纯计算，isRevoked() / checkDeviceBind() 异步查 Redis。
+ */
 class Auth
 {
     /**
@@ -114,7 +119,7 @@ class Auth
      * @param array $claims 至少包含 uid，可选 device_id
      * @param int $ttl 有效期（秒），0 取配置默认值
      * @return string
-     * @throws RandomException
+     * @throws RandomException nonce 生成失败时抛出
      */
     public static function issue(array $claims, $ttl = 0)
     {
@@ -241,7 +246,6 @@ class Auth
      * @param string   $uid
      * @param string   $deviceId
      * @param callable $cb function(bool $pass, string $msg)
-     * @return void
      * @return void
      */
     public static function checkDeviceBind($uid, $deviceId, callable $cb)

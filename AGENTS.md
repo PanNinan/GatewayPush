@@ -59,18 +59,22 @@ runtime/                  运行时产物：logs/ pid/ phpstan/（已 gitignore�
 ## 4. 质量门禁（改完必跑）
 
 ```bash
-composer analyse      # PHPStan L5，111 文件（含 tests）；两份 baseline 冻结存量 → 必须 0 errors
+composer analyse      # PHPStan L5，112 文件（含 tests）；两份 baseline 冻结存量 → 必须 0 errors
 composer test         # PHPUnit：467 tests / 1317 assertions
+composer lint         # phpcs 审计（注释/命名/业务红线）；只读，仅 error 影响退出码
+composer lint:self    # 两个自定义 phpcs 嗅探器自检（漂移检测 + 作用域/豁免矩阵）
+composer cs:check     # php-cs-fixer 排版体检（dry-run，只报不改；落地用 composer cs）
 composer test:e2e     # 端到端 16 用例（A~P），需 4~5 个角色在线
 ```
 
-以下三个**不在 PHPUnit 套件内**（套件只扫 `tests/Unit` 与 `client/tests/Unit`），需单独执行，
+以下四个**不在 PHPUnit 套件内**（套件只扫 `tests/Unit` 与 `client/tests/Unit`），需单独执行，
 退出码 `0` = 全绿：
 
 ```bash
 node tests/Frontend/dashboard_autorefresh_check.js   # 面板自动刷新语义（注入假 DOM，无需服务端）
 node tests/Api/api_sign_check.js                     # HTTP 验签 8 形态（需 api + business 在线）
 php  tests/Api/http_demo.php                         # HTTP 接口示例 13 场景（需 api + business 在线）
+php  tests/Manual/phpcs_business_rules_check.php     # phpcs 自定义嗅探器自检（= composer lint:self）
 ```
 
 - **改完代码先清 PHPStan 结果缓存再跑全量 `analyse`** —— 结果缓存会掩盖既有错误。清缓存用
@@ -85,7 +89,27 @@ php  tests/Api/http_demo.php                         # HTTP 接口示例 13 场�
 - level 刻意停在 5：升到 6 会额外报 ~350 条「数组缺 value 类型」，真修要动约 60 个文件的签名，
   塞 baseline 则等于放弃零容忍。
 - `phpstan-strict-rules` / `phpstan-phpunit` 是**显式 `includes`** 的（未装 `extension-installer`）；
-  只装 composer 包不写 `includes`，规则一条都不会生效。
+  只装 composer 包不写 `includes`，规则一条都不会生效。同理 `phpstan.neon` 的 `scanFiles`
+  必须列 `tools/phpcs/Sniffs/*.php` —— phpcs 的 composer.json **没有 autoload 段**，
+  不声明它们，`tests/Manual/phpcs_business_rules_check.php` 一实例化就报 `class.notFound`。
+
+### 4.1 风格工具分工（越界即长期噪声）
+
+| 工具 | 职责 | 会写文件吗 | 配置文件 |
+|---|---|---|---|
+| **php-cs-fixer** | **排版**：空白 / 换行 / 缩进 / 括号 / 引号 / 可见性声明 / phpdoc 标签顺序与对齐 / 语法现代化 | ✅ 仅 `composer cs` | `.php-cs-fixer.dist.php` |
+| **phpcs** | **审计**：注释的完整性与正确性 / 命名 / 业务红线（`exit`·`sleep`·`pcntl_fork`·Redis 键字面量） | ❌ 只读不写 | `phpcs.xml.dist` |
+
+- **排版只允许 `composer cs` 落地，禁止用 `phpcbf`**：两个工具会对同一段代码反向修
+  （Squiz 要求 long form `integer`，fixer 的 `phpdoc_scalar` 立刻改回 `int`，来回震荡）。
+- 两边都刻意关掉了一批规则，**改规则前先读文件头的「界外」清单**：
+  `.php-cs-fixer.dist.php` 有四个界外（注释内容 / 运行语义 / 项目压倒性约定 / 结构改动），
+  `phpcs.xml.dist` 文末有四类「刻意排除」。这些排除项都带实测数据，不要凭直觉删。
+- `tools/phpcs/Sniffs/` 是本项目自定义嗅探器。`RedisKeyLiteralSniff::$prefixes` 是
+  `RedisKeys` 常量的**手写副本**，**新增 Redis 键后必须同步**，否则红线静默失效 ——
+  `composer lint:self` 用反射做漂移检测专门兜这一点。
+- 角色/端口/键名这类硬编码守卫也已嗅探器化：`ForbiddenCallSniff` 覆盖 `exit`·`die`·`sleep`·
+  `usleep`·`pcntl_fork`（作用域 `src/`、`client/src/`，豁免 `client/src/Cli/Debugger.php`）。
 
 ## 5. 高频红线（违反即事故）
 

@@ -11,6 +11,11 @@
 
 namespace GatewayPush\Client\Session;
 
+/**
+ * 单次请求上下文（pending 请求表的条目）
+ *
+ * 回调合并为单出口 onReply(bool $ok, array $packet)，超时也是「一次结算」。
+ */
 final class PendingRequest
 {
     /**

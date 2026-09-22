@@ -25,6 +25,11 @@ use GatewayPush\Common\Logger;
 use GatewayPush\Common\RedisClient;
 use GatewayPush\Common\RedisKeys;
 
+/**
+ * 业务动作 report：按主题累加计数
+ *
+ * 写入型；示范「同一处理器在 WS 回执、在 UDP 静默」的通道差异化策略。
+ */
 class ReportAction implements ActionInterface
 {
     /**

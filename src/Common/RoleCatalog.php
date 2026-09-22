@@ -20,6 +20,11 @@
 
 namespace GatewayPush\Common;
 
+/**
+ * 角色清单（角色 ↔ 服务 / 启用开关）
+ *
+ * 为启动横幅、roles 命令与管理脚本提供同一份清单，避免角色名与开关名多处各写一遍。
+ */
 final class RoleCatalog
 {
     /**

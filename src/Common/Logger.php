@@ -27,6 +27,11 @@ namespace GatewayPush\Common;
 
 use Throwable;
 
+/**
+ * 日志与全局异常捕获
+ *
+ * 按「角色 + 日期」分文件，error 级双写汇总文件；含清理与归档两级保留策略。
+ */
 class Logger
 {
     /** 日志级别常量 */
@@ -97,6 +102,7 @@ class Logger
      *
      * @param array $config
      * @return void
+     * @throws \RuntimeException 日志目录无法创建时抛出
      */
     public static function init(array $config = array())
     {
@@ -180,21 +186,49 @@ class Logger
      | 快捷方法
      --------------------------------------------------------------------- */
 
+    /**
+     * 记录 debug 级日志
+     *
+     * @param mixed $message
+     * @param array $context
+     * @return void
+     */
     public static function debug($message, array $context = array())
     {
         self::log(self::DEBUG, $message, $context);
     }
 
+    /**
+     * 记录 info 级日志
+     *
+     * @param mixed $message
+     * @param array $context
+     * @return void
+     */
     public static function info($message, array $context = array())
     {
         self::log(self::INFO, $message, $context);
     }
 
+    /**
+     * 记录 warn 级日志
+     *
+     * @param mixed $message
+     * @param array $context
+     * @return void
+     */
     public static function warn($message, array $context = array())
     {
         self::log(self::WARN, $message, $context);
     }
 
+    /**
+     * 记录 error 级日志（额外双写到跨角色汇总通道）
+     *
+     * @param mixed $message
+     * @param array $context
+     * @return void
+     */
     public static function error($message, array $context = array())
     {
         self::log(self::ERROR, $message, $context);

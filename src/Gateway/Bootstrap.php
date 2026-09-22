@@ -28,6 +28,11 @@ use Workerman\Connection\ConnectionInterface;
 use Workerman\Timer;
 use Workerman\Worker;
 
+/**
+ * Gateway 网关层启动入口（Register / WebSocket / UDP 三种角色）
+ *
+ * 只做网络调度，不承载业务逻辑；启动角色由常量 APP_ROLE 控制。
+ */
 class Bootstrap
 {
     /**

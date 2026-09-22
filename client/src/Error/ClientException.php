@@ -14,6 +14,11 @@
 
 namespace GatewayPush\Client\Error;
 
+/**
+ * 客户端统一异常
+ *
+ * 覆盖服务端 error 报文与本地传输 / 配置 / 状态失败两类，靠 getCode() 区分。
+ */
 class ClientException extends \RuntimeException
 {
     /**

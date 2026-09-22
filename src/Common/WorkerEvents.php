@@ -35,6 +35,11 @@ namespace GatewayPush\Common;
 use GatewayPush\Business\Monitor;
 use Workerman\Connection\ConnectionInterface;
 
+/**
+ * Worker 事件统一绑定（幂等）
+ *
+ * 补齐连接级错误与发送背压观测；workerman 5.x 已移除 onWorkerError，故不绑定该事件。
+ */
 class WorkerEvents
 {
     /**

@@ -23,6 +23,11 @@ use GatewayPush\Business\Auth;
 use GatewayPush\Client\Error\ClientException;
 use GatewayPush\Client\Error\ErrorCode;
 
+/**
+ * Token 签发与本地校验（服务端 Auth 的薄适配）
+ *
+ * 用于联调自测与建连前预校验；Auth 是静态类，故每次调用前重写配置以免实例间串味。
+ */
 final class TokenIssuer
 {
     /** 与服务端 `app.auth.token_ttl` 默认值一致 */
@@ -56,6 +61,7 @@ final class TokenIssuer
      * @param string $secret            与服务端 `app.auth.secret` 一致的密钥
      * @param int    $defaultTtl        默认有效期（秒），<=0 取 7200
      * @param int    $clockSkew         允许的签发时间偏差（秒），<0 取 300
+     * @throws ClientException 密钥为空，或有效期 / 偏差为负时抛出
      */
     public function __construct($secret, $defaultTtl = 0, $clockSkew = self::DEFAULT_CLOCK_SKEW)
     {

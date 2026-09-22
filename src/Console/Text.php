@@ -12,6 +12,11 @@
 
 namespace GatewayPush\Console;
 
+/**
+ * 等宽终端文本排版
+ *
+ * 中文占 2 列、ASCII 占 1 列，按显示宽度对齐；与 bin/start.ps1 的 Format-Pad 口径一致。
+ */
 final class Text
 {
     /**

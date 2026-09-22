@@ -29,6 +29,11 @@ namespace GatewayPush\Business;
 
 use JsonException;
 
+/**
+ * 统一报文编解码与合法性校验（WS / UDP 共用）
+ *
+ * verify() 为纯本地计算、无 IO 依赖；签名算法与字段定义见文件头注释。
+ */
 class Message
 {
     /* ---------------------- 指令 ---------------------- */
@@ -230,7 +235,7 @@ class Message
      *
      * @param mixed $data
      * @return string
-     * @throws JsonException
+     * @throws JsonException 含无法编码的值（如资源类型）时抛出
      */
     public static function canonicalize($data)
     {

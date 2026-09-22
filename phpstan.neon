@@ -45,6 +45,21 @@ parameters:
     # 分析器缓存置于 runtime（已在 .gitignore 中排除）
     tmpDir: runtime/phpstan
 
+    # -----------------------------------------------------------------
+    # 自定义 phpcs 嗅探器（tools/phpcs/Sniffs/）的符号发现
+    #
+    # 这两个类由 phpcs 自带的 autoload.php 加载 —— squizlabs/php_codesniffer
+    # 的 composer.json **没有 autoload 段**，类不在 composer autoloader 里，
+    # 于是 tests/Manual/phpcs_business_rules_check.php 一实例化它们，
+    # PHPStan 就报 class.notFound（4 条）。
+    #
+    # 用 scanFiles 而非 paths：只做「符号发现」，不分析文件内容 ——
+    # 若放进 paths，嗅探器内部对 PHP_CodeSniffer\* 的引用会变成新告警。
+    # -----------------------------------------------------------------
+    scanFiles:
+        - tools/phpcs/Sniffs/PHP/ForbiddenCallSniff.php
+        - tools/phpcs/Sniffs/Common/RedisKeyLiteralSniff.php
+
     # 项目下限为 PHP 8.1（由 workerman 5.x 的 require 决定），
     # 不按分析机的 8.2 推断语言特性。
     # 副作用：8.2+ 才引入的类型（如 Random\RandomException）会被判为未知类型，

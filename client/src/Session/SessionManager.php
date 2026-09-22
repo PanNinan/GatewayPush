@@ -31,6 +31,12 @@ use GatewayPush\Client\Transport\TransportInterface;
 use GatewayPush\Client\Transport\WsTransport;
 use Workerman\Timer;
 
+/**
+ * 会话管理器（客户端侧会话层核心）
+ *
+ * 鉴权状态机、seq 生成、pending 请求表、心跳与重连、下行分发；
+ * 须运行在持续驱动事件循环的环境，单测经注入假计时器脱离该依赖。
+ */
 class SessionManager
 {
     const STATE_DISCONNECTED   = 'disconnected';
@@ -688,11 +694,22 @@ class SessionManager
      | 内部辅助
      --------------------------------------------------------------------- */
 
+    /**
+     * 生成下一个请求序号（十进制字符串，单调递增）
+     *
+     * @return string
+     */
     private function newSeq()
     {
         return (string)(++$this->seqCounter);
     }
 
+    /**
+     * 断言会话已就绪（业务请求的前置条件）
+     *
+     * @return void
+     * @throws ClientException 尚未完成鉴权时抛出
+     */
     private function assertReady()
     {
         if ($this->state !== self::STATE_READY) {
@@ -700,6 +717,12 @@ class SessionManager
         }
     }
 
+    /**
+     * 发送上行报文（统一补齐 Token 与签名）
+     *
+     * @param array $packet 八字段报文；缺失的 token / sign 在此补齐
+     * @return void
+     */
     private function sendPacket(array $packet)
     {
         // UDP 通道（硬约束⑲）：服务端身份只取自 Token 载荷，报文不带 Token 会被
@@ -719,6 +742,12 @@ class SessionManager
         $this->transport->send(Codec::encode($packet));
     }
 
+    /**
+     * 切换会话状态（附带心跳的启停与状态变更回调）
+     *
+     * @param string $new 目标状态
+     * @return void
+     */
     private function setState($new)
     {
         $old         = $this->state;
@@ -758,6 +787,11 @@ class SessionManager
         });
     }
 
+    /**
+     * 停止主动心跳
+     *
+     * @return void
+     */
     private function clearHeartbeat()
     {
         if ($this->heartbeatTimerId !== null) {
@@ -766,11 +800,25 @@ class SessionManager
         }
     }
 
+    /**
+     * 注册计时器（经注入的 add 函数，单测可替换为假实现）
+     *
+     * @param float    $interval
+     * @param bool     $persistent
+     * @param callable $fn
+     * @return int 计时器 ID
+     */
     private function addTimer($interval, $persistent, $fn)
     {
         return (int)($this->timerAdd)((float)$interval, $persistent, $fn);
     }
 
+    /**
+     * 删除计时器（ID 为 0 / null 时静默跳过）
+     *
+     * @param int|null $timerId
+     * @return void
+     */
     private function delTimer($timerId)
     {
         if ($timerId) {
@@ -778,6 +826,12 @@ class SessionManager
         }
     }
 
+    /**
+     * 向上抛出错误（转发给 onError 回调）
+     *
+     * @param ClientException $e
+     * @return void
+     */
     private function fireError(ClientException $e)
     {
         if ($this->onErrorCb !== null) {

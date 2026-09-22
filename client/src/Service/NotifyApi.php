@@ -10,6 +10,9 @@
 
 namespace GatewayPush\Client\Service;
 
+/**
+ * notify 动作：请求服务端向本人推送（验证推送闭环）
+ */
 final class NotifyApi extends AbstractApi
 {
     /**

@@ -11,6 +11,11 @@
 
 namespace GatewayPush\Client\Service;
 
+/**
+ * 订阅关系动作：subscribe / unsubscribe / topics
+ *
+ * 服务端刻意不开放客户端 publish，客户端侧同样不提供。
+ */
 final class SubscribeApi extends AbstractApi
 {
     /**
