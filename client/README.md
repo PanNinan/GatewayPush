@@ -1,6 +1,6 @@
-# GatewayWorker 客户端 SDK 与调试器
+# GatewayPush 客户端 SDK 与调试器
 
-> 设计方案见仓库根目录 `GatewayWorker 客户端SDK与调试器设计方案.md`。
+> 设计方案见 `docs/GatewayPush 客户端SDK与调试器设计方案.md`。
 > 当前进度：**P0 ~ P6 全部完成**（2026-09-21）。P3 UDP 传输、P4 HTTP 管理端、P5 重连与离线补投验收、
 > P6 CLI 调试器与客户端侧 e2e 均已交付，门禁 `composer test` + `composer analyse` 全绿。
 

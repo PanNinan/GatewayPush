@@ -78,6 +78,15 @@ $harness->printHeader();
 CaseHttpApi::run($harness);
 CaseHttpAction::run($harness);
 
+// workerman 默认把框架日志落在「入口脚本所在目录」（$argv[0] 同级），会让
+// tests/ 里凭空多出一个 tests/workerman.log。显式收敛到 runtime/logs，
+// 与服务端 start.php 的 Worker::$logFile 同一处，运行时产物不散落在源码树里。
+$logDir = BASE_PATH . '/runtime/logs';
+if (!is_dir($logDir) && !@mkdir($logDir, 0755, true) && !is_dir($logDir)) {
+    fwrite(STDERR, "[WARN] 日志目录创建失败：{$logDir}\n");
+}
+Worker::$logFile = $logDir . '/e2e_check.log';
+
 $worker = new Worker();
 
 $worker->onWorkerStart = function () use ($harness) {

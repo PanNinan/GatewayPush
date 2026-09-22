@@ -39,9 +39,12 @@ final class StartupBannerTest extends TestCase
         // 只检查条件之后的一段窗口，而非全文搜索：info 命令也有自己的横幅调用
         // （同样位于 runAll() 之前），全文搜索会被它满足 —— 那样即便把 start 分支
         // 里的调用整段删掉，本用例也照样通过。该假阴性由阴性验证实测抓出过。
+        //
+        // 横幅的文本拼装自 v2 起下沉到 Console\Banner，但**打印点与打印条件仍留在
+        // 入口 start.php** —— 本用例锁的正是后者（时机），故锚点指向 start.php。
         $window = substr($beforeRunAll, (int)$condAt, 600);
         $this->assertMatchesRegularExpression(
-            '/^[ \t]*echo [^\n]*startupBanner\(/m',
+            '/^[ \t]*echo [^\n]*Banner::render\(/m',
             $window,
             'start / restart 分支内必须在 Worker::runAll() 之前打印横幅：'
             . 'daemonize() 由 runAll() 内部执行，在其之后 STDOUT 已被重定向，'
@@ -100,7 +103,9 @@ final class StartupBannerTest extends TestCase
 
     public function testPortProbeUsesNetstatOnWindowsBeforeBindFallback(): void
     {
-        $code = (string)file_get_contents($this->root('start.php'));
+        // 探测实现位于 Console\PortProbe（自 v2 起从 start.php 迁出）：
+        // 自检报告与服务清单共用同一份判定，故锚点跟着实现走。
+        $code = (string)file_get_contents($this->root('src/Console/PortProbe.php'));
 
         $this->assertMatchesRegularExpression(
             '/DIRECTORY_SEPARATOR !== .\/. && function_exists\(.exec.\)/',
@@ -114,8 +119,8 @@ final class StartupBannerTest extends TestCase
         // 只用函数名会命中注释，断言随之失去意义
         $bindAt    = strpos($code, '@stream_socket_server(');
 
-        $this->assertNotFalse($netstatAt, 'probePort 未调用 usedPortsByNetstat');
-        $this->assertNotFalse($bindAt, 'probePort 的 bind 探测分支丢失');
+        $this->assertNotFalse($netstatAt, 'PortProbe::isUsed 未调用 usedPortsByNetstat');
+        $this->assertNotFalse($bindAt, 'PortProbe::isUsed 的 bind 探测分支丢失');
         $this->assertLessThan(
             $bindAt,
             $netstatAt,

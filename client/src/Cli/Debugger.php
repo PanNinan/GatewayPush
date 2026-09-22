@@ -112,6 +112,15 @@ class Debugger
             $this->config['device_id'] = 'gwcli-' . substr(md5((string)$this->config['uid']), 0, 8);
         }
 
+        // workerman 默认把框架日志落在「入口脚本所在目录」（$argv[0] 同级），会在
+        // client/bin/ 里凭空多出一个 workerman.log。显式收敛到仓库 runtime/logs，
+        // 与服务端 start.php 同一处，运行时产物不散落在源码树里。
+        $logDir = dirname(__DIR__, 3) . '/runtime/logs';
+        if (!is_dir($logDir) && !@mkdir($logDir, 0755, true) && !is_dir($logDir)) {
+            fwrite(STDERR, "[WARN] 日志目录创建失败：{$logDir}\n");
+        }
+        Worker::$logFile = $logDir . '/gwclient.log';
+
         $worker              = new Worker();
         $worker->onWorkerStart = function () use ($parsed) {
             $this->boot($parsed);
@@ -784,7 +793,7 @@ class Debugger
     private function printHelp()
     {
         echo <<<TXT
-gwclient —— GatewayWorker 客户端调试器 v{$this->version()}
+gwclient —— GatewayPush 客户端调试器 v{$this->version()}
 
 用法：
   php client/bin/gwclient.php <command> [args] [options]

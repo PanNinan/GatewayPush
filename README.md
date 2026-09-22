@@ -1,4 +1,4 @@
-# GatewayWorker 实时数据推送服务
+# GatewayPush 实时数据推送服务
 
 基于 [workerman](https://github.com/walkor/workerman) + [GatewayWorker](https://github.com/walkor/GatewayWorker) 的  
 **WebSocket + UDP 双协议**实时数据推送服务。面向「单对一定向推送」场景（一个用户/设备对应一条有效连接），  
@@ -128,11 +128,12 @@ WebSocket 长连接（实时双向）  UDP 轻量上报（低开销、可丢包�
 ## 3. 目录结构
 
 ```
-GatewayWorker/
+GatewayPush/
 ├── bin/                              服务管理脚本（跨平台，处理终端编码）
 │   ├── start.sh                      Linux / macOS
 │   ├── start.bat                     Windows 入口（纯 ASCII，仅转发到 ps1）
-│   └── start.ps1                     Windows 实现（UTF-8 带 BOM）
+│   ├── start.ps1                     Windows 实现（UTF-8 带 BOM）
+│   └── dev/boot_all.sh               仅本机开发：逐角色拉起全部角色并常驻（非生产入口）
 ├── config/
 │   ├── app.php                       全局：运行约束 / 日志 / Redis / 鉴权 / 会话 / 推送 / API / 面板 / 限流 / 订阅 / 监控
 │   ├── gateway.php                   网关层：Register / WebSocket / UDP / 心跳
@@ -140,9 +141,10 @@ GatewayWorker/
 │   └── actions.php                   业务动作声明清单（声明式，改这里不改框架）
 ├── resources/
 │   └── dashboard/index.html          监控面板页面（自包含，零外链）
-├── runtime/                          运行时目录（.gitignore 排除）
+├── runtime/                          运行时目录（.gitignore 排除，只放产物不放人工资产）
 │   ├── logs/                         {role}_YYYY-MM-DD.log / error_YYYY-MM-DD.log / workerman.log / stdout.log
-│   └── pid/                          workerman_{role}.pid（Linux）/ win_{role}.pid（Windows 承载窗口）
+│   ├── pid/                          workerman_{role}.pid（Linux）/ win_{role}.pid（Windows 承载窗口）
+│   └── phpstan/                      PHPStan 分析缓存（tmpDir）
 ├── src/
 │   ├── Api/Bootstrap.php             HTTP 接口进程（/health /stats /push /action /action/{id}）
 │   ├── Business/
@@ -175,6 +177,14 @@ GatewayWorker/
 │   │   ├── RedisClient.php           异步 Redis 客户端（连接池 + Lua 脚本）
 │   │   ├── RedisKeys.php             Redis 键空间唯一声明处（全部逻辑键名）
 │   │   └── WorkerEvents.php          Worker 事件统一绑定（含背压观测）
+│   ├── Console/                      CLI 入口支撑（被 start.php 调用；内部不出现 exit）
+│   │   ├── EnvChecker.php            运行环境自检（报告文本 + 布尔结论）
+│   │   ├── Banner.php                启动信息横幅（服务清单 + 端口探测）
+│   │   ├── PortProbe.php             端口占用探测（Windows 走 netstat 快照）
+│   │   ├── Commands.php              roles / env:init / usage 三个子命令
+│   │   ├── PushCommand.php           push 子命令（临时起单 Worker 驱动异步入队）
+│   │   ├── SecretGuard.php           密钥占位值 / 弱值判定
+│   │   └── Text.php                  等宽终端显示宽度与补位
 │   ├── Dashboard/Bootstrap.php       监控面板进程
 │   └── Gateway/
 │       ├── Bootstrap.php             网关层入口 + UDP 报文处理 + 出站队列消费
@@ -193,18 +203,26 @@ GatewayWorker/
 │   └── README.md                      客户端使用说明与里程碑
 ├── tests/
 │   ├── E2E/                          端到端用例（Harness + 10 个 Case 模块）
-│   ├── Unit/                         单元测试（9 个纯函数/零 IO 组件）
+│   ├── Unit/                         单元测试（13 个纯函数/零 IO 组件）
 │   ├── Api/                          HTTP 侧独立脚本：http_demo.php（调用示例）/ api_sign_check.js（验签断言）
+│   ├── Frontend/                     面板侧独立脚本：dashboard_autorefresh_check.js（注入假 DOM）
+│   ├── Manual/                       手工验收脚本（P3/P4/P5 里程碑，需服务在线，见其 README）
 │   ├── bootstrap.php
 │   └── e2e_check.php                 e2e 入口
 ├── postman/
-│   └── GatewayWorker.postman_collection.json   可直接导入的 HTTP 接口集合（9 个请求，内置自动签名）
-├── start.php                         统一启动入口：命令解析 + 角色装配 + 环境自检
+│   └── GatewayPush.postman_collection.json   可直接导入的 HTTP 接口集合（9 个请求，内置自动签名）
+├── AGENTS.md                         AI 协作入口（红线 / 门禁 / 目录速查，供任意 AI 工具对齐）
+├── start.php                         统一启动入口：命令分发 + 环境自检 + 启动（实现见 src/Console/）
 ├── composer.json                    依赖与脚本
 ├── phpstan.neon / phpstan-baseline.neon
 ├── phpunit.xml
 ├── .env.example                     配置模板（含全部变量的说明）
-└── Workman V2 GatewayWorker 实时数据推送服务技术方案文档.md
+└── docs/                             设计与接口文档
+    ├── images/dashboard/             监控面板截图（调试期留存）
+    ├── GatewayPush 对外接口文档.md      面向调用方的字段级接口契约
+    ├── GatewayPush 客户端SDK与调试器设计方案.md
+    ├── Workerman V2 GatewayPush 实时数据推送服务技术方案文档.md
+    └── Workerman 框架 AI 编码规范.md
 ```
 
 ---
@@ -234,8 +252,8 @@ GatewayWorker/
 ### 5.1 安装依赖
 
 ```bash
-git clone <repo> GatewayWorker
-cd GatewayWorker
+git clone <repo> GatewayPush
+cd GatewayPush
 composer install
 ```
 
@@ -261,7 +279,7 @@ UDP 队列 key 一致性、`.env` 加载链、密钥强度（含占位值检测�
 典型输出：
 
 ```
-GatewayWorker 推送服务 - 运行环境自检
+GatewayPush 推送服务 - 运行环境自检
 ======================================================================
 PHP 版本  : 8.2.9 (cli)
 操作系统  : WINNT [单进程模式]
@@ -322,7 +340,7 @@ php start.php start --role=dashboard
 「跑的是哪份配置、哪个版本的框架、哪些组件」：
 
 ```text
-GatewayWorker 实时数据推送服务 - 启动信息
+GatewayPush 实时数据推送服务 - 启动信息
 ======================================================================
 PHP 版本  : 8.2.9 (cli) / Linux [多进程模式]
 启动角色  : all
@@ -1617,7 +1635,7 @@ curl -s -X POST http://127.0.0.1:8290/action \
 > ```
 >
 > 可直接导入 Postman 的集合同样覆盖 `/action` 全系列：  
-> `postman/GatewayWorker.postman_collection.json`（9 个请求，含集合级自动签名脚本）。
+> `postman/GatewayPush.postman_collection.json`（9 个请求，含集合级自动签名脚本）。
 
 #### 接口清单
 
@@ -2367,10 +2385,19 @@ grep "已清理已退出进程" runtime/logs/*.log
 
 ---
 
-## 附：技术方案文档
+## 附：相关文档
 
-更完整的设计决策、取舍理由与演进路线见工作区根目录的  
-`Workman V2 GatewayWorker 实时数据推送服务技术方案文档.md`。
+| 文档 | 面向 | 内容 |
+| --- | --- | --- |
+| **`docs/GatewayPush 对外接口文档.md`** | **调用方 / 接入方** | **字段级接口契约**：接入点、三套凭证、逐接口请求/响应字段、业务动作参数 schema、错误码、限额汇总。接入方只需读这一份 |
+| `docs/Workerman V2 GatewayPush 实时数据推送服务技术方案文档.md` | 设计者 | 设计决策、取舍理由与演进路线 |
+| `docs/GatewayPush 客户端SDK与调试器设计方案.md` | 客户端开发者 | 五层架构与 P0~P6 里程碑 |
+| `docs/Workerman 框架 AI 编码规范.md` | 开发者 / AI 协作 | Workerman 底层约束 + PSR-12 + 常驻内存避坑，可作 AI System Prompt |
+| `client/README.md` | PHP 客户端使用者 | SDK 用法与状态 |
+
+> 本文件（README）是**使用者手册**：部署、配置、原理、运维。
+> 接口字段的权威定义在代码；字段级契约的集中视图在 `docs/GatewayPush 对外接口文档.md`。
+> 三者不一致时以代码为准，并须同时修正另外两处。
 
 ## License
 

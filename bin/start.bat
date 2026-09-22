@@ -1,6 +1,6 @@
 @echo off
 rem ==========================================================================
-rem  GatewayWorker realtime push service - Windows launcher
+rem  GatewayPush realtime push service - Windows launcher
 rem
 rem  This file is intentionally ASCII-ONLY. Do not add Chinese text here.
 rem
