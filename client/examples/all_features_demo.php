@@ -19,7 +19,7 @@
  * 说明：
  *   本示例运行在 workerman 事件循环内（SessionManager / AdminApi 均依赖事件循环）。
  *   整条链路为异步串联：WS 就绪 → 7 动作 → 推送自动回执 → UDP 通道 → HTTP 管理端 → 退出。
- *   P5「重连+离线补投」需中途停网关（见 runtime/_p5_run.sh），此处仅开启能力并标注观察方式。
+ *   P5「重连+离线补投」需中途停网关（见 tests/Manual/_p5_run.sh），此处仅开启能力并标注观察方式。
  * ====================================================================
  */
 
@@ -329,5 +329,14 @@ $worker->onWorkerStart = function () {
         });
     });
 };
+
+// workerman 默认把框架日志落在「入口脚本所在目录」（$argv[0] 同级），会在
+// client/examples/ 里凭空多出一个 workerman.log。显式收敛到仓库 runtime/logs，
+// 与服务端 start.php 同一处，运行时产物不散落在源码树里。
+$logDir = dirname(__DIR__, 2) . '/runtime/logs';
+if (!is_dir($logDir) && !@mkdir($logDir, 0755, true) && !is_dir($logDir)) {
+    fwrite(STDERR, "[WARN] 日志目录创建失败：{$logDir}\n");
+}
+Worker::$logFile = $logDir . '/all_features_demo.log';
 
 Worker::runAll();

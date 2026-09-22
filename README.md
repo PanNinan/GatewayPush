@@ -132,7 +132,8 @@ GatewayPush/
 ├── bin/                              服务管理脚本（跨平台，处理终端编码）
 │   ├── start.sh                      Linux / macOS
 │   ├── start.bat                     Windows 入口（纯 ASCII，仅转发到 ps1）
-│   └── start.ps1                     Windows 实现（UTF-8 带 BOM）
+│   ├── start.ps1                     Windows 实现（UTF-8 带 BOM）
+│   └── dev/boot_all.sh               仅本机开发：逐角色拉起全部角色并常驻（非生产入口）
 ├── config/
 │   ├── app.php                       全局：运行约束 / 日志 / Redis / 鉴权 / 会话 / 推送 / API / 面板 / 限流 / 订阅 / 监控
 │   ├── gateway.php                   网关层：Register / WebSocket / UDP / 心跳
@@ -140,9 +141,10 @@ GatewayPush/
 │   └── actions.php                   业务动作声明清单（声明式，改这里不改框架）
 ├── resources/
 │   └── dashboard/index.html          监控面板页面（自包含，零外链）
-├── runtime/                          运行时目录（.gitignore 排除）
+├── runtime/                          运行时目录（.gitignore 排除，只放产物不放人工资产）
 │   ├── logs/                         {role}_YYYY-MM-DD.log / error_YYYY-MM-DD.log / workerman.log / stdout.log
-│   └── pid/                          workerman_{role}.pid（Linux）/ win_{role}.pid（Windows 承载窗口）
+│   ├── pid/                          workerman_{role}.pid（Linux）/ win_{role}.pid（Windows 承载窗口）
+│   └── phpstan/                      PHPStan 分析缓存（tmpDir）
 ├── src/
 │   ├── Api/Bootstrap.php             HTTP 接口进程（/health /stats /push /action /action/{id}）
 │   ├── Business/
@@ -175,6 +177,14 @@ GatewayPush/
 │   │   ├── RedisClient.php           异步 Redis 客户端（连接池 + Lua 脚本）
 │   │   ├── RedisKeys.php             Redis 键空间唯一声明处（全部逻辑键名）
 │   │   └── WorkerEvents.php          Worker 事件统一绑定（含背压观测）
+│   ├── Console/                      CLI 入口支撑（被 start.php 调用；内部不出现 exit）
+│   │   ├── EnvChecker.php            运行环境自检（报告文本 + 布尔结论）
+│   │   ├── Banner.php                启动信息横幅（服务清单 + 端口探测）
+│   │   ├── PortProbe.php             端口占用探测（Windows 走 netstat 快照）
+│   │   ├── Commands.php              roles / env:init / usage 三个子命令
+│   │   ├── PushCommand.php           push 子命令（临时起单 Worker 驱动异步入队）
+│   │   ├── SecretGuard.php           密钥占位值 / 弱值判定
+│   │   └── Text.php                  等宽终端显示宽度与补位
 │   ├── Dashboard/Bootstrap.php       监控面板进程
 │   └── Gateway/
 │       ├── Bootstrap.php             网关层入口 + UDP 报文处理 + 出站队列消费
@@ -193,18 +203,22 @@ GatewayPush/
 │   └── README.md                      客户端使用说明与里程碑
 ├── tests/
 │   ├── E2E/                          端到端用例（Harness + 10 个 Case 模块）
-│   ├── Unit/                         单元测试（9 个纯函数/零 IO 组件）
+│   ├── Unit/                         单元测试（13 个纯函数/零 IO 组件）
 │   ├── Api/                          HTTP 侧独立脚本：http_demo.php（调用示例）/ api_sign_check.js（验签断言）
+│   ├── Frontend/                     面板侧独立脚本：dashboard_autorefresh_check.js（注入假 DOM）
+│   ├── Manual/                       手工验收脚本（P3/P4/P5 里程碑，需服务在线，见其 README）
 │   ├── bootstrap.php
 │   └── e2e_check.php                 e2e 入口
 ├── postman/
 │   └── GatewayPush.postman_collection.json   可直接导入的 HTTP 接口集合（9 个请求，内置自动签名）
-├── start.php                         统一启动入口：命令解析 + 角色装配 + 环境自检
+├── AGENTS.md                         AI 协作入口（红线 / 门禁 / 目录速查，供任意 AI 工具对齐）
+├── start.php                         统一启动入口：命令分发 + 环境自检 + 启动（实现见 src/Console/）
 ├── composer.json                    依赖与脚本
 ├── phpstan.neon / phpstan-baseline.neon
 ├── phpunit.xml
 ├── .env.example                     配置模板（含全部变量的说明）
 └── docs/                             设计与接口文档
+    ├── images/dashboard/             监控面板截图（调试期留存）
     ├── GatewayPush 对外接口文档.md      面向调用方的字段级接口契约
     ├── GatewayPush 客户端SDK与调试器设计方案.md
     ├── Workerman V2 GatewayPush 实时数据推送服务技术方案文档.md
