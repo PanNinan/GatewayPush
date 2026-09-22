@@ -3,7 +3,7 @@
  * 假计时器支撑 —— SessionManager 计时器经构造参数注入，本 trait 提供
  * 可手动触发的假计时器实现（模拟 workerman：一次性定时器触发后自动移除）
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Tests\Support;

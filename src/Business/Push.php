@@ -31,7 +31,7 @@
  * Redis 键：本类涉及的 push:offline: / push:dedup: / queue:push:out / queue:udp:out
  * 统一声明于 RedisKeys，此处不再定义字面量。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Business;

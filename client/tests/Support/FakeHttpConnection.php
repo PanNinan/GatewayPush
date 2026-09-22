@@ -4,7 +4,7 @@
  *
  * 对齐真实实现的关键语义：connect() 同步触发 onConnect；destroy() 不触发 onClose。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Tests\Support;

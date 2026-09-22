@@ -5,7 +5,7 @@
     "license": "MIT",
     "keywords": ["workerman", "gatewayworker", "websocket", "udp", "push"],
     "require": {
-        "php": ">=8.1",
+        "php": ">=8.2",
         "ext-json": "*",
         "ext-openssl": "*",
         "ext-sockets": "*",

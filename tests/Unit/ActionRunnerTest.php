@@ -19,7 +19,7 @@
  *   - reply 归一化必须覆盖三个通道且缺省回落 sync。既有的双通道声明
  *     （不含 http 键）依赖该回落语义才能零改动兼容 HTTP。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Tests\Unit;

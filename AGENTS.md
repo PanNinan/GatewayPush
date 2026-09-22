@@ -50,7 +50,7 @@ tests/
   Api/ Frontend/          独立校验脚本（不在 PHPUnit 套件内，需单独跑）
   Manual/                 手工验收脚本（P3/P4/P5 里程碑，需服务在线）
 docs/ postman/ resources/ 文档 / 接口集合 / 面板静态资源
-.github/workflows/ci.yml  CI：static(单一 PHP) / test(8.1~8.5 矩阵) / e2e(Redis+全角色)
+.github/workflows/ci.yml  CI：static(单一 PHP) / test(8.2~8.5 矩阵) / e2e(Redis+全角色)
 runtime/                  运行时产物：logs/ pid/ phpstan/（已 gitignore，勿放人工资产）
 ```
 
@@ -83,13 +83,21 @@ php  tests/Manual/phpcs_business_rules_check.php     # phpcs 自定义嗅探器�
   `php vendor/bin/phpstan clear-result-cache --memory-limit=512M`；
   **不要用 `rm -rf runtime/phpstan`**（本机安全策略对批量删除会直接拦截）。
 - 新增告警必须修，**不得追加进任何 baseline**。两份 baseline 的分工：
-  `phpstan-baseline.neon`（生产代码，9 条）/ `phpstan-tests-baseline.neon`（测试存量，324 条目/339 条）。
+  `phpstan-baseline.neon`（生产代码，8 条）/ `phpstan-tests-baseline.neon`（测试存量，324 条目/339 条）。
 - **重构修掉真实告警后，必须同步删掉 baseline 里对应的失效条目**。失效条目不删，PHPStan 会以
   `ignore.unmatched (non-ignorable)` 报错，门禁同样变红 —— 已发生过一次（2026-09-22，7 条）。
 - **⚠ `level` 与 baseline 必须同源**：baseline 用哪个 level 生成，`phpstan.neon` 的
   `parameters.level` 就得是哪个值。不一致会触发成百上千条 `ignore.unmatched (non-ignorable)`，
   门禁直接红——已发生过一次（baseline 以 level 6 生成，而配置仍为 level 5 → 351 errors）。
   **不要用 `composer baseline` 重新生成生产代码基线**：它会连同新引入的告警一起冻结。
+- **⚠ `phpVersion` 同样会牵动 baseline**：它决定 PHPStan 按哪个 PHP 版本推断语言特性，
+  改动会让「依赖高版本类型」的冻结条目失配。2026-09-22 把下限抬到 8.2（`phpVersion: 80200`）时，
+  `@throws Random\RandomException`（`src/Business/Auth.php`）由「非法类型」变为合法类型，
+  对应 ignore 必须删除 —— 生产侧 baseline 9 → 8 条。
+- **改 PHP 下限不是「改一个数字」**：连带有 9 处要同步（`composer.json` / `composer.lock` /
+  `phpstan.neon` / `config/app.php` 的 `php_min` / 两个启动脚本的回落值 / 全量源文件头注释 /
+  `Logger.php` / CI 矩阵 / 文档），完整清单与「必须复跑的三件事」见
+  `docs/代码质量工具链说明.md` §11.8。
 - **当前 level = 6**（2026-09-22 由 5 提升）。提级前量化：level 6 全量 538 errors / 66 文件，
   **100% 是 `missingType.*`，零语义告警**；生产侧 265 条已补 phpdoc 清零，测试侧 273 条冻结进
   `phpstan-tests-baseline.neon`。**level 6 不新增逻辑类检查**，别指望它多抓 bug。
@@ -109,7 +117,7 @@ php  tests/Manual/phpcs_business_rules_check.php     # phpcs 自定义嗅探器�
 
 - **CI 在 `.github/workflows/ci.yml`**，三个作业按**外部依赖**划分（不按快慢）：
   `static`（单一 PHP 8.2：`composer validate --strict` → `analyse` → `lint` → `lint:self` → `cs:check`）/
-  `test`（PHP **8.1~8.5 矩阵**，8.5 为实验性 `continue-on-error`）/
+  `test`（PHP **8.2~8.5 矩阵**，8.5 为实验性 `continue-on-error`）/
   `e2e`（Redis 7 service + 全 6 角色：`e2e_check` → `test:client-e2e` → `api_sign_check.js` → `demo:http`）。
   **CI 直接调上面同一套 composer script，不另写一套命令**；触发器同时挂 `main` 与 `master`
   （默认分支是 `main`，但活跃推送在 `master`，只挂一个会永不触发）。

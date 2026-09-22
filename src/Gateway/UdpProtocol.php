@@ -11,7 +11,7 @@
  * workerman 的 Worker::acceptUdpConnection() 会捕获协议异常并调用 Worker::stopAll()，
  * 导致整个 UDP 网关进程退出，因此所有异常必须在协议层内消化。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Gateway;

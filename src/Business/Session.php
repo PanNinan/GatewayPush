@@ -14,7 +14,7 @@
  *
  * 所有操作均为异步回调，不阻塞事件循环。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Business;

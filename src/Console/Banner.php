@@ -11,7 +11,7 @@
  *
  * 本类只负责拼装文本，打印与退出码由入口 start.php 决定。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Console;

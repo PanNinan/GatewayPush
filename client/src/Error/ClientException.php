@@ -8,7 +8,7 @@
  *
  * 携带触发异常的原始报文（若来自服务端），便于调用方与日志排查。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Error;

@@ -65,11 +65,12 @@ parameters:
         - tools/phpcs/Sniffs/PHP/ForbiddenCallSniff.php
         - tools/phpcs/Sniffs/Common/RedisKeyLiteralSniff.php
 
-    # 项目下限为 PHP 8.1（由 workerman 5.x 的 require 决定），
-    # 不按分析机的 8.2 推断语言特性。
-    # 副作用：8.2+ 才引入的类型（如 Random\RandomException）会被判为未知类型，
-    # 这是预期行为 —— 提示不要把高版本文档/语法当作可依赖前提。
-    phpVersion: 80100
+    # 项目下限为 PHP 8.2（由 dev 工具链的传递依赖决定：php-cs-fixer 依赖的
+    # symfony/* 7.x 要求 >= 8.2；运行时依赖 workerman 5.x 只要求 >= 8.1）。
+    # 显式锚定在**下限**而非跟随分析机版本：本机恰为 8.2.9 时二者一致，
+    # 但若将来在 8.3+ 上分析，8.3+ 才引入的类型仍会被判为未知类型 ——
+    # 这是预期行为，提示不要把高版本文档/语法当作可依赖前提。
+    phpVersion: 80200
 
     # workerman 大量使用动态属性（$worker->onMessage = ...），
     # 不把 phpdoc 类型当作绝对事实，避免制造无意义的告警

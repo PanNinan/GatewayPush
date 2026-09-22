@@ -25,7 +25,7 @@
  *    内完成回执，否则由 ActionRunner 统一兜底（记指标 + 告警 + 错误回执）。
  * 3. 抛出异常由 ActionRunner 捕获并回 5000，处理器不必自行 try/catch。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Business;

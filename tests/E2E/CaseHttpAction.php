@@ -25,7 +25,7 @@
  * 该用例与用例 H 一样在事件循环启动前**同步**执行（Harness::httpRequest 为
  * 阻塞实现），因此不参与超时保护。前置条件：api 与 business 两个角色都在运行。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Tests\E2E;

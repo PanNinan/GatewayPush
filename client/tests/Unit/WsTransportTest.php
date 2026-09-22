@@ -7,7 +7,7 @@
  * checkConnection 失败分支），WsTransport 须补发 close 信号，
  * 否则 SessionManager 会卡死在 connecting 态、重连链路中断。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Tests\Unit;

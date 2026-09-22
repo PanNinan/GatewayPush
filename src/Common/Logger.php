@@ -20,7 +20,7 @@
  *                               archive/{YYYY-MM}.tar.gz，压缩留存
  *   > archive_keep_days         删除归档包
  *
- * 兼容 PHP 8.1 ~ 8.5（不使用 8.2+ 独有语法）
+ * 兼容 PHP 8.2 ~ 8.5（不使用 8.3+ 独有语法）
  */
 
 namespace GatewayPush\Common;

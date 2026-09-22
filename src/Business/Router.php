@@ -28,7 +28,7 @@
  *   - 回执通过 Bootstrap::respond() / Bootstrap::respondError() 下发；
  *   - 允许异步（Redis 回调后再回执），Bootstrap 不对此设同步约束。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Business;

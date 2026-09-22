@@ -5,7 +5,7 @@
  * 关键语义对齐真实实现：建连失败只触发 onError、不触发 onClose；
  * destroy() 同步触发 onClose。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Tests\Support;

@@ -2,7 +2,7 @@
 /**
  * Service 层单测 —— 6 个动作 API 的报文构造与回调包装
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Tests\Unit;

@@ -6,7 +6,7 @@
  * Content-Length 精确读取、分片到达、无 Content-Length 的 close 兜底、
  * 超时、底层错误、一次性连接销毁。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Tests\Unit;

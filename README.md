@@ -213,7 +213,7 @@ GatewayPush/
 ├── postman/
 │   └── GatewayPush.postman_collection.json   可直接导入的 HTTP 接口集合（9 个请求，内置自动签名）
 ├── .github/
-│   └── workflows/ci.yml              CI：静态门禁 + PHP 8.1~8.5 单元测试矩阵 + Redis 端到端（见 §13.7）
+│   └── workflows/ci.yml              CI：静态门禁 + PHP 8.2~8.5 单元测试矩阵 + Redis 端到端（见 §13.7）
 ├── AGENTS.md                         AI 协作入口（红线 / 门禁 / 目录速查，供任意 AI 工具对齐）
 ├── start.php                         统一启动入口：命令分发 + 环境自检 + 启动（实现见 src/Console/）
 ├── composer.json                    依赖与脚本
@@ -236,7 +236,7 @@ GatewayPush/
 
 | 项          | 要求                                                     | 说明                                                                                                                 |
 | ---------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| PHP        | **>= 8.1**（已验证上限 8.5）                                  | 下限由 `workerman/workerman` 5.x 的 `require` 决定，非项目代码约束；代码本身不使用 8.2+ 独有语法，`phpstan.neon` 的 `phpVersion: 80100` 用于拦截误用 |
+| PHP        | **>= 8.2**（已验证上限 8.5）                                  | 下限由 **dev 工具链**的传递依赖决定（php-cs-fixer → `symfony/*` 7.x 要求 >= 8.2），非项目代码约束；代码本身不使用 8.3+ 独有语法，`phpstan.neon` 的 `phpVersion: 80200` 用于拦截误用 |
 | 必需扩展       | `json`、`openssl`、`sockets`                             | `openssl` 用于 HMAC，`sockets` 供 workerman 使用                                                                         |
 | Linux 必需扩展 | `pcntl`、`posix`                                        | 多进程模型依赖；Windows 无此二扩展，自动降级为单进程                                                                                     |
 | 建议扩展       | `event`、`redis`、`mbstring`                             | 缺失仅告警：`event` 提升事件循环性能，`redis` 供扩展加速，`mbstring` 使参数长度按**字符**计数                                                     |
@@ -244,11 +244,14 @@ GatewayPush/
 | Composer   | 任意近期版本                                                 | 用于安装依赖                                                                                                             |
 
 
-> **PHP 版本兼容矩阵尚未完整验证**：声明范围为 8.1 ~ 8.5，但 PHPStan / PHPUnit / e2e  
-> 目前仅在 PHP 8.2.9 上验证通过。**PHP 8.0 无法运行本项目** —— `workerman/workerman`  
-> 5.x 全线要求 `>=8.1`，Composer 会在 `vendor/composer/platform_check.php` 直接抛  
-> `RuntimeException` 拦截，连 `start.php` 都进不去。若你的部署环境使用 8.1 或 8.3+，  
-> 建议按 [13.3 跨版本验证](#133-跨版本验证) 自行跑一轮。
+> **下限已于 2026-09-22 由 8.1 提到 8.2。** 触发原因是 **dev 工具链**，不是代码：
+> `friendsofphp/php-cs-fixer` 传递依赖的 `symfony/*` 7.x 要求 `>=8.2`，而 lock 是在 8.2 上解析的，
+> 于是 CI 原先的 8.1 腿连 `composer install` 都过不去。运行时依赖（`workerman/workerman` 5.x 等）
+> 其实只要求 `>=8.1`。
+>
+> **PHP 8.1 及以下无法运行本项目**：Composer 会在 `vendor/composer/platform_check.php`
+> 直接抛 `RuntimeException` 拦截，连 `start.php` 都进不去。
+> 8.2 ~ 8.5 由 CI 的 `test` 作业真实覆盖（见 §13.7），8.5 暂挂 `continue-on-error`。
 
 ---
 
@@ -290,7 +293,7 @@ PHP 版本  : 8.2.9 (cli)
 操作系统  : WINNT [单进程模式]
 启动角色  : all
 ----------------------------------------------------------------------
-[OK  ] PHP 版本 >= 8.1.0
+[OK  ] PHP 版本 >= 8.2.0
 [OK  ] 必需扩展 json
 ...
 [OK  ] 注册中心地址一致（gateway: 127.0.0.1:1238 / business: 127.0.0.1:1238）
@@ -726,12 +729,12 @@ taskkill /F /PID <pid>        :: 兜底手段
 ### 6.7 PHP 解释器解析与版本校验（两平台）
 
 两个管理脚本都会在**真正调用 `start.php` 之前**先确定 PHP 解释器并校验版本。这不是可选的防御性代码，  
-而是必需的一步：项目的 PHP 下限由**依赖**决定（`workerman/workerman` 5.x 全线 `>= 8.1`），  
+而是必需的一步：项目的 PHP 下限由**依赖**决定（当前为 8.2，来自 dev 工具链传递依赖的 `symfony/*` 7.x），  
 Composer 生成的 `vendor/composer/platform_check.php` 会在 `autoload` 阶段直接抛 `RuntimeException`。  
 如果不提前拦截，用户看到的是一段 Composer 堆栈，而不是「版本过低」这句人话。
 
-**下限的真源**：`config/app.php` 的 `php_min`（当前 `8.1.0`）。两个脚本都从该文件读取，  
-不另立一份；解析失败时回落到 `8.1.0`。
+**下限的真源**：`config/app.php` 的 `php_min`（当前 `8.2.0`）。两个脚本都从该文件读取，  
+不另立一份；解析失败时回落到 `8.2.0`。
 
 |               | Linux（`bin/start.sh`）                | Windows（`bin/start.ps1`）                                                                                                 |
 | ------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
@@ -757,7 +760,7 @@ Composer 生成的 `vendor/composer/platform_check.php` 会在 `autoload` 阶段
 
 > **IDE 会污染 PATH**：PhpStorm 会把「项目默认解释器」注入集成终端的 PATH。  
 > 若该解释器低于下限，脚本现在会自动跳过它并选用合格候选；但用 IDE 的 PHP 解释器设置  
-> 跑本项目仍会失败 —— 请把 CLI Interpreter 指向 `>= 8.1` 的解释器。
+> 跑本项目仍会失败 —— 请把 CLI Interpreter 指向 `>= 8.2` 的解释器。
 
 显式指定解释器：
 
@@ -2074,7 +2077,7 @@ class OrderQueryAction implements ActionInterface
 ### 13.1 命令
 
 ```bash
-composer analyse        # PHPStan（level 6；baseline 冻结存量：生产代码 9 条 + 测试 324 条目/339 条）
+composer analyse        # PHPStan（level 6；baseline 冻结存量：生产代码 8 条 + 测试 324 条目/339 条）
 composer test           # PHPUnit（467 tests / 1317 assertions；含 client/tests/Unit）
 composer lint           # phpcs 审计：注释 / 命名 / 业务红线（只读，不写文件）
 composer lint:self      # phpcs 自定义嗅探器自检（RedisKeys 漂移 + 作用域/豁免矩阵）
@@ -2106,10 +2109,10 @@ composer test:client-e2e # 客户端 SDK 端到端对齐（A~O 共 15 个用例�
 | PHPStan 版本 | `^2.0`                                                                   |
 | 内存         | **必须带 `--memory-limit=512M`**（本机 php.ini 仅 128M，否则子进程崩溃）；已写入 composer 脚本 |
 | 分析范围       | `paths` = `src`、`client/src`、`start.php`、`tests`、`client/tests`（共 114 文件）。**`tests` 必须在列**，否则 `phpstan-phpunit` 的断言 / mock 规则不会生效 |
-| 分析口径       | `phpVersion: 80100` —— 刻意设置用于**拦截 8.2+ 语法误用**，保证 8.1 兼容性                 |
+| 分析口径       | `phpVersion: 80200` —— 刻意锚定在**项目下限**，用于**拦截 8.3+ 语法误用**，保证 8.2 兼容性                 |
 | 扩展         | `phpstan-strict-rules` + `phpstan-phpunit`，**在 `includes` 里显式声明**（本项目未装 `phpstan/extension-installer`，不写 `includes` 则规则一条都不生效） |
 | strict-rules | `strictRules.allRules: true`，仅刻意关闭 4 条：`disallowedEmpty`、`booleansInConditions`(+`booleansInLoopConditions`)、`dynamicCallOnStaticMethod`（理由见 `phpstan.neon` 内的逐条注释） |
-| 收敛策略       | **两份 baseline**：`phpstan-baseline.neon`（生产代码，9 条）/ `phpstan-tests-baseline.neon`（测试存量，324 条目 / 339 条）。两份都**只减不增**；**不为让工具通过而改业务代码** |
+| 收敛策略       | **两份 baseline**：`phpstan-baseline.neon`（生产代码，8 条）/ `phpstan-tests-baseline.neon`（测试存量，324 条目 / 339 条）。两份都**只减不增**；**不为让工具通过而改业务代码** |
 
 > **⚠ `level` 与 baseline 必须同源**：baseline 是用哪个 level 生成的，`parameters.level` 就得是哪个值。
 > 二者不一致时，PHPStan 会对每条不再命中的条目报 `ignore.unmatched (non-ignorable)` ——
@@ -2123,7 +2126,8 @@ composer test:client-e2e # 客户端 SDK 端到端对齐（A~O 共 15 个用例�
 >
 > 处置方式按目录分层：
 > - **生产侧（`src` / `client/src` / `start.php`）265 条已全部补齐 phpdoc 标注** → 0 errors，
->   生产 baseline 维持 9 条不动；
+>   生产 baseline 由 9 条降至 **8 条**（删掉的是 `@throws Random\RandomException`
+>   那条 —— `phpVersion` 抬到 80200 后它变成合法类型，冻结条目反而失配）；
 > - **测试侧（`tests` / `client/tests`）273 条冻结进 `phpstan-tests-baseline.neon`** ——
 >   测试替身补 `: void` 之类收益低且有 TypeError 风险，沿用「测试噪音单独一份」的既有设计。
 >
@@ -2138,7 +2142,7 @@ composer test:client-e2e # 客户端 SDK 端到端对齐（A~O 共 15 个用例�
 ### 13.3 跨版本验证
 
 ```bash
-# 用不同 PHP 版本各跑一轮（最低 8.1；8.0 无法运行，原因见第 4 节）
+# 用不同 PHP 版本各跑一轮（最低 8.2；8.1 及以下无法运行，原因见第 4 节）
 /usr/local/php81/bin/php vendor/bin/phpunit
 /usr/local/php83/bin/php vendor/bin/phpstan analyse --memory-limit=512M
 /usr/local/php85/bin/php tests/e2e_check.php e2e-ver-85
@@ -2264,7 +2268,7 @@ diff <(grep -E '^\[(PASS|FAIL|SKIP)\]' _old_out.txt) \
 | 作业 | PHP | 外部依赖 | 内容 |
 | --- | --- | --- | --- |
 | `static` | 8.2（单版本） | 无 | `composer validate --strict` → `analyse` → `lint` → `lint:self` → `cs:check` |
-| `test` | **8.1 ~ 8.5 矩阵** | 无 | `composer test` |
+| `test` | **8.2 ~ 8.5 矩阵** | 无 | `composer test` |
 | `e2e` | 8.2 | **Redis 7 service + 全部 6 个角色** | `tests/e2e_check.php`（用例 A~P）→ `test:client-e2e` → `api_sign_check.js` → `demo:http` |
 
 按**外部依赖**而非耗时划分：`static` 固定单版本是因为静态工具的输出与运行它们的 PHP 版本无关；

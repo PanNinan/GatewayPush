@@ -261,10 +261,10 @@ function Get-RoleStates {
 # ---------------------------------------------------------------------------
 # 4. 前置检查
 # ---------------------------------------------------------------------------
-# 下限版本 ID（如 80100 = 8.1.0），以 config/app.php 的 php_min 为唯一真源。
-# 解析失败时回落到 8.1.0 —— 宁可报错也不要因为读不到配置而放行旧解释器。
+# 下限版本 ID（如 80200 = 8.2.0），以 config/app.php 的 php_min 为唯一真源。
+# 解析失败时回落到 8.2.0 —— 宁可报错也不要因为读不到配置而放行旧解释器。
 function Get-PhpMinVersionId {
-    $fallback = 80100
+    $fallback = 80200
     $cfg = Join-Path $Root 'config\app.php'
     if (-not (Test-Path -LiteralPath $cfg)) { return $fallback }
     try {

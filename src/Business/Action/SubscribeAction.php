@@ -8,7 +8,7 @@
  * 订阅后的投递入口是 Push::enqueueTopic()，二者共同构成
  * 「订阅 -> 广播推送」的完整闭环（本动作只负责前半段）。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Business\Action;

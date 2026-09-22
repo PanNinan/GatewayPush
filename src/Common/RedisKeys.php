@@ -82,7 +82,7 @@
  *   3. 全部键的**最终字符串**在此集中，README 第 10 章的键空间表面向使用者，
  *      两者需保持一致。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Common;

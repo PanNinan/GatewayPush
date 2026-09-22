@@ -19,7 +19,7 @@
  * config/actions.php 的声明决定 —— 同一个处理器在 WS 上可回执、在 UDP 上
  * 静默，不需要写任何 if 分支。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Business;

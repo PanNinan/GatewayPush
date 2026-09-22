@@ -11,7 +11,7 @@
  * 默认参数取自项目配置（config/app.php、config/gateway.php），可用选项覆盖。
  * Windows 控制台建议先执行 `chcp 65001` 以免中文输出乱码。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 $basePath = dirname(__DIR__, 2);

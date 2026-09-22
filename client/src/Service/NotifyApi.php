@@ -5,7 +5,7 @@
  * 目标恒为调用方自身 uid（服务端不接受任意 uid 入参）。
  * 推送闭环的另一端是 Event\PushReceiver：notify 成功后会收到 cmd=push 下行。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Service;

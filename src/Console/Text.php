@@ -7,7 +7,7 @@
  *
  * bin/start.ps1 的 Format-Pad 处理的是同一个问题，两处口径需保持一致。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Console;

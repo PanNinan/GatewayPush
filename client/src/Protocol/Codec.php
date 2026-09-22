@@ -12,7 +12,7 @@
  * `data` 业务信封（服务端约定，缺 action → 4007，未注册 → 4006）：
  *   {"cmd":"data","data":{"action":"<名>","params":{...}}}
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Protocol;

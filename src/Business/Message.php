@@ -22,7 +22,7 @@
  *   sign = hex(hmac_sha256(base, secret))
  * 其中 canonicalize(data) 为「递归按键名升序 + 紧凑 JSON」，键顺序无关。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Business;

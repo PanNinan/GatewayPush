@@ -9,7 +9,7 @@
  *                  服务端 error 报文 → code/msg 取自报文（4000~5000）
  *                  本地超时           → code = CLIENT_TIMEOUT (10001)
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Service;

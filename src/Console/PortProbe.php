@@ -8,7 +8,7 @@
  *
  * Windows 上不能用 bind 探测，详见 isUsed() 内注释。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Console;

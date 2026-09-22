@@ -11,7 +11,7 @@
  *   - 业务信封 `data.action` / `data.params` 的解析容错；
  *   - **UDP 双层回执**的判别（传输层 ack 无 `action`，业务层有）。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Tests\Unit;

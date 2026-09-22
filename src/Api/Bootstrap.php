@@ -51,7 +51,7 @@
  * 本地调试可经 `API_SIGN_ENABLE=false` 免签，但**仅在 listen 绑定回环地址时生效**
  * （见 signEnabled()）；绑非回环地址时该开关被忽略，强制验签。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Api;

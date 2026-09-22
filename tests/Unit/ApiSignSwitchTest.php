@@ -14,7 +14,7 @@
  *
  * 两个方法都是纯函数 / 只读静态配置，零 IO，符合本套件口径。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Tests\Unit;

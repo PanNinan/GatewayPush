@@ -9,7 +9,7 @@
  *   4. **静态状态隔离** —— 同进程内多个不同密钥的 issuer 必须互不串味，
  *      这是复用服务端静态类 `Auth` 后最真实的风险点。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Tests\Unit;

@@ -48,7 +48,7 @@
  * 否则回退 AUTH_SECRET。两者都从项目根 .env 读取，**全程不打印明文**，
  * 只输出来源与长度。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 declare(strict_types=1);

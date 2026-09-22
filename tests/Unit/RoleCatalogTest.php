@@ -13,7 +13,7 @@
  * 另有一条防漂移断言：RoleCatalog 记录的 *_ENABLE 键名与 config 的 Env::bool()
  * 实参必须双向一致 —— 键名只在提示语里出现，写错不会有任何报错。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Tests\Unit;

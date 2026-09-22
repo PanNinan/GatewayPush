@@ -12,7 +12,7 @@
  * 落地形态：按 topic 累加计数并记录最近一次上报归属，便于业务侧核对
  * 「上报是否到达」，也是接入真实业务（落库 / 转队列）的替换点。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Business\Action;

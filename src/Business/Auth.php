@@ -17,7 +17,7 @@
  *   isRevoked()        异步，查询 Redis 撤销名单
  *   checkDeviceBind()  异步，校验 uid <-> device_id 绑定关系
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Business;

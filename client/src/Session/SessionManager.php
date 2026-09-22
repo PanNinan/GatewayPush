@@ -16,7 +16,7 @@
  * 事件驱动模型：与 SDK 整体一致，须运行在 workerman 环境（Worker::runAll 之后）
  * 或任何持续驱动事件循环的进程里；单测通过注入假计时器 + 假传输层脱离该依赖。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Session;

@@ -40,7 +40,7 @@
  *   options     动作私有配置，处理器经 ActionContext::option() 读取
  *
  * ---------------------------------------------------------------------
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 use GatewayPush\Business\Action\EchoAction;

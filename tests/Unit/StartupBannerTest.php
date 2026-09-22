@@ -11,7 +11,7 @@
  * 端口探测同理：Windows 的 socket 默认允许重复 bind，一旦退回 bind 判定，
  * 端口占用与监听状态会全部失真（且不会有任何报错）。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Tests\Unit;

@@ -11,7 +11,7 @@
  *   onClose   function (): void                          连接断开（含本地主动 close）
  *   onError   function (int $code, string $message): void  底层错误（随后通常伴随 onClose）
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Transport;

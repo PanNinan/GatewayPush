@@ -11,7 +11,7 @@
  *
  * 另定义客户端本地码（10001+），用于表达「根本没走到服务端」的失败。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Error;

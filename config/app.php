@@ -12,7 +12,8 @@
  *
  *   变量清单与说明见 .env.example，加载逻辑见 src/Common/Env.php
  *
- * 兼容：PHP 8.1 ~ 8.5（下限由 workerman 5.x 的 require 决定，非本文件约束）
+ * 兼容：PHP 8.2 ~ 8.5（下限由 dev 工具链的传递依赖决定 —— php-cs-fixer 依赖的
+ *   symfony/* 7.x 要求 >= 8.2；项目代码本身未使用 8.3+ 独有语法）
  */
 
 use GatewayPush\Common\Env;
@@ -40,7 +41,7 @@ return [
      | optional_ext       建议安装，缺失仅告警
      --------------------------------------------------------------- */
     'runtime' => [
-        'php_min'           => '8.1.0',
+        'php_min'           => '8.2.0',
         'php_max_warn'      => '8.5.99',   // 超出该版本仅告警，不阻断启动
         'require_ext'       => ['json', 'openssl', 'sockets'],
         'require_ext_linux' => ['pcntl', 'posix'],

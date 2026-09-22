@@ -8,7 +8,7 @@
  *
  * WsTransport 的真实链路行为由 P1 实测脚本（对运行中服务）验证，不在单测范围。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Tests\Unit;

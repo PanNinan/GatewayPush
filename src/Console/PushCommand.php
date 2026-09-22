@@ -13,7 +13,7 @@
  * src/ 下是允许的 —— 「src/ 内零 exit/die/sleep」约束针对的是常驻进程代码，
  * 而本类只在 CLI 命令路径被调用，不会出现在任何 worker 的 onWorkerStart 里。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Console;

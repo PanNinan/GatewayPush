@@ -7,7 +7,7 @@
  *   UDP —— **静默不回执**，cb 只能等本地超时（ok=false, code=10001）。
  * 客户端不做通道判断，UDP 侧语义由调用方自行知晓。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Client\Service;

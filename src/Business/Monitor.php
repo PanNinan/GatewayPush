@@ -18,7 +18,7 @@
  *   metrics:counter:{YYYYMMDD}   Hash  当日累加型指标，保留 7 天
  *   metrics:gauge               Hash  当前瞬时指标，TTL 由配置决定
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Business;

@@ -15,7 +15,7 @@
  * 键名与 config 的 Env::bool() 调用必须一致，由 RoleCatalogTest 做结构性校验 ——
  * 这类「两处各写一遍」的字符串一旦漂移不会有任何报错，只会静默失效。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Common;

@@ -26,7 +26,7 @@
  *
  * 两个接口均免鉴权，安全边界由监听地址承担（默认仅 127.0.0.1）。
  *
- * 兼容 PHP 8.1 ~ 8.5
+ * 兼容 PHP 8.2 ~ 8.5
  */
 
 namespace GatewayPush\Dashboard;
