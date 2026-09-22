@@ -45,7 +45,7 @@
  *
  * 兼容 PHP 8.1 ~ 8.5
  */
-
+error_reporting(E_ALL & ~E_DEPRECATED);
 const BASE_PATH = __DIR__;
 define('START_AT', microtime(true));
 
