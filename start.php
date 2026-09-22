@@ -157,10 +157,10 @@ if ($command === 'token') {
 
     $token = Auth::issue(array('uid' => $uid, 'device_id' => $deviceId), $ttl);
 
-    echo "uid       : {$uid}\n";
-    echo "device_id : {$deviceId}\n";
+    echo "uid       : $uid\n";
+    echo "device_id : $deviceId\n";
     echo 'ttl       : ' . ($ttl > 0 ? $ttl : (int)$appConfig['auth']['token_ttl']) . "s\n";
-    echo "token     : {$token}\n";
+    echo "token     : $token\n";
     exit(0);
 }
 

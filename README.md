@@ -143,6 +143,7 @@ GatewayPush/
 │   └── dashboard/index.html          监控面板页面（自包含，零外链）
 ├── runtime/                          运行时目录（.gitignore 排除，只放产物不放人工资产）
 │   ├── logs/                         {role}_YYYY-MM-DD.log / error_YYYY-MM-DD.log / workerman.log / stdout.log
+│   │   └── archive/                  {YYYY-MM}.tar.gz（开启 LOG_ARCHIVE_ENABLE 后由 log-archive 产生）
 │   ├── pid/                          workerman_{role}.pid（Linux）/ win_{role}.pid（Windows 承载窗口）
 │   └── phpstan/                      PHPStan 分析缓存（tmpDir）
 ├── src/
@@ -824,8 +825,13 @@ composer demo:http      # php tests/Api/http_demo.php（HTTP 接口调用示例�
 | --------------- | ------- | ----------------------------------------------------------------- |
 | `LOG_LEVEL`     | `debug` | `debug` / `info` / `warn` / `error`                               |
 | `LOG_STDOUT`    | `true`  | 是否同时输出到控制台，生产建议 `false`                                           |
-| `LOG_KEEP_DAYS` | `30`    | 日志保留天数，超期由定时任务清理                                                  |
+| `LOG_KEEP_DAYS` | `30`    | 日志保留天数，超期由 `log-cleanup` 任务清理（进程启动后 1s 补跑一次，此后每 24h 一次） |
 | `LOG_MAX_MB`    | `10`    | `workerman.log` 单文件上限（MB）。**超出后原地截断、仅保留后半（前半丢弃），非归档轮转**；`0` = 不轮转 |
+| `LOG_ARCHIVE_ENABLE`     | `false` | 是否启用日志归档：超期明文压进 `archive/{YYYY-MM}.tar.gz` 后删除明文（见下）              |
+| `LOG_ARCHIVE_AFTER_DAYS` | `7`     | 明文转为归档的天数。**必须小于 `LOG_KEEP_DAYS`**，否则明文先被清理任务删掉、归档拿不到内容       |
+| `LOG_ARCHIVE_DIR`        | 空       | 归档目录，留空 = `runtime/logs/archive`                                    |
+| `LOG_ARCHIVE_KEEP_DAYS`  | `180`   | 归档包保留天数，超期删除                                                |
+| `LOG_ARCHIVE_LEVEL`      | `6`     | gzip 压缩级别 `1`~`9`，越界自动回落 `6`                                   |
 
 日志文件命名：`runtime/logs/{role}_{YYYY-MM-DD}.log` —— 按 **角色** 与日期分割。  
 `role` 即进程的日志通道（`register` / `gateway` / `udp` / `business` / `api` / `dashboard`；  
@@ -837,6 +843,31 @@ composer demo:http      # php tests/Api/http_demo.php（HTTP 接口调用示例�
 
 > 通道在进程启动时定型：改代码或调整角色后需**重启对应角色进程**才会写入新文件，  
 > 旧文件停止写入并按 `LOG_KEEP_DAYS` 自然淘汰，不需要迁移。
+
+**日志归档**（`LOG_ARCHIVE_ENABLE=true` 时启用，由 `log-archive` 任务驱动，每 24h 一次、  
+进程启动后 1s 补跑一次）把上面这条「按天淘汰」升级为三级生命周期：
+
+| 阶段 | 形态 | 存活期 | 用途 |
+| --- | --- | --- | --- |
+| 热明文 | `logs/{role}_{YYYY-MM-DD}.log` | `LOG_ARCHIVE_AFTER_DAYS` 天 | 实时排查 |
+| 冷归档 | `logs/archive/{YYYY-MM}.tar.gz` | 再保留 `LOG_ARCHIVE_KEEP_DAYS` 天 | 留证 / 审计 |
+| 删除 | — | — | — |
+
+包名按**文件自身日期**的月份生成，而非归档发生的月份 —— 9 月 3 日归档 8 月 27 日的日志  
+会进 `2026-08.tar.gz`，包内不跨月。包内保留原始文件名，按需单取：
+
+```bash
+tar -tzf runtime/logs/archive/2026-09.tar.gz                        # 列出内容
+tar -xzf runtime/logs/archive/2026-09.tar.gz api_2026-09-01.log     # 只取某一个
+```
+
+格式为 POSIX ustar + gzip，**只依赖 PHP 内置 zlib**（不需要 `zip` / `phar` 扩展）。
+
+> 两点实现约定：
+> 1. **先写包成功、再删明文** —— 中途失败时明文会留下，绝不会出现「明文已删、归档包里却没有」的数据空洞；既有的包若已损坏，会跳过本轮并保留明文，且不覆盖该包。
+> 2. `log-archive` 必须排在 `log-cleanup` **之前**（两者都在启动后 1s 补跑，按声明顺序触发）。颠倒会让刚超期的明文先被清理任务删掉，归档永远拿不到内容 —— 不报错、不告警，只是归档恒为空。
+>
+> `LOG_ARCHIVE_ENABLE=false`（默认）时该任务空转一次即返回，`LOG_KEEP_DAYS` 是唯一生效的保留策略。
 
 #### Redis
 

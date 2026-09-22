@@ -205,6 +205,202 @@ final class LoggerTest extends TestCase
     }
 
     /* ---------------------------------------------------------------------
+     | 归档：明文 -> 月度 tar.gz -> 删明文
+     |
+     | 这几条守的是数据安全，不是「功能有没有」：
+     |   - 包损坏时若继续归档并删明文，历史日志就永久没了（不可逆）；
+     |   - 追加若写成覆盖，同月的旧归档会被整包清掉；
+     |   - 包名若按归档时刻而非文件自身日期取，跨月归档会串包；
+     |   - 任务顺序若颠倒，超期明文先被 cleanup 删掉，归档永远拿不到内容。
+     --------------------------------------------------------------------- */
+
+    public function testArchivePacksExpiredLogsIntoMonthPackAndRemovesPlaintext(): void
+    {
+        $aug1 = $this->makeStaleLog('api_2026-08-30.log', "aug-30-payload\n", 20);
+        $aug2 = $this->makeStaleLog('gateway_2026-08-31.log', "aug-31-payload\n", 20);
+        $sep  = $this->makeStaleLog('api_2026-09-01.log', "sep-01-payload\n", 20);
+
+        Logger::init($this->archiveConfig());
+        $this->assertSame(3, Logger::archive());
+
+        // 明文必须被删：留着就等于没有归档，文件数照样增长
+        $this->assertFileDoesNotExist($aug1);
+        $this->assertFileDoesNotExist($aug2);
+        $this->assertFileDoesNotExist($sep);
+
+        // 包按「文件自身日期」的月份分组，而非归档发生的月份
+        $augPack = $this->readPack('2026-08');
+        $this->assertStringContainsString('api_2026-08-30.log', $augPack);
+        $this->assertStringContainsString('aug-30-payload', $augPack);
+        $this->assertStringContainsString('gateway_2026-08-31.log', $augPack);
+        $this->assertStringNotContainsString(
+            'api_2026-09-01.log',
+            $augPack,
+            '9 月日志不得混进 8 月包，否则归档按月份取用即失效'
+        );
+
+        $sepPack = $this->readPack('2026-09');
+        $this->assertStringContainsString('api_2026-09-01.log', $sepPack);
+        $this->assertStringContainsString('sep-01-payload', $sepPack);
+    }
+
+    public function testArchiveAppendsToExistingPackInsteadOfOverwriting(): void
+    {
+        Logger::init($this->archiveConfig());
+
+        $this->makeStaleLog('api_2026-08-10.log', "first-batch\n", 20);
+        Logger::archive();
+
+        $this->makeStaleLog('gateway_2026-08-11.log', "second-batch\n", 20);
+        Logger::archive();
+
+        $raw = $this->readPack('2026-08');
+        $this->assertStringContainsString('first-batch', $raw, '追加时不得覆盖既有条目');
+        $this->assertStringContainsString('second-batch', $raw);
+    }
+
+    public function testArchiveIgnoresUndatedFilesAndFreshFiles(): void
+    {
+        // 无日期后缀：归 LOG_MAX_MB 管，不该进归档
+        $workerLog = $this->makeStaleLog('workerman.log', "worker-log\n", 60);
+        // 未超过 archive_after_days：仍属热日志，供实时排查
+        $fresh     = $this->makeStaleLog('api_' . date('Y-m-d') . '.log', "fresh\n", 1);
+
+        Logger::init($this->archiveConfig());
+        $this->assertSame(0, Logger::archive());
+
+        $this->assertFileExists($workerLog, '无日期命名的文件既不该被归档，也不该被删');
+        $this->assertFileExists($fresh, '未超过阈值的明文不得被归档');
+        $this->assertFileDoesNotExist($this->archivePath('2026-08'), '无待归档内容时不该产生空包');
+    }
+
+    public function testArchiveKeepsPlaintextWhenExistingPackIsCorrupt(): void
+    {
+        if (!is_dir($this->archiveDir())) {
+            mkdir($this->archiveDir(), 0777, true);
+        }
+        file_put_contents($this->archivePath('2026-08'), 'not-a-gzip-stream');
+
+        $plain = $this->makeStaleLog('api_2026-08-30.log', "must-survive\n", 20);
+
+        Logger::init($this->archiveConfig());
+        $this->assertSame(0, Logger::archive(), '包损坏时不得报告归档成功');
+
+        $this->assertFileExists($plain, '包写不成时必须留下明文，否则数据永久丢失');
+        $this->assertSame(
+            'not-a-gzip-stream',
+            (string)file_get_contents($this->archivePath('2026-08')),
+            '损坏的既有归档也不能被覆盖，否则连带毁掉其中历史'
+        );
+    }
+
+    /**
+     * @dataProvider archiveNoOpProvider
+     */
+    public function testArchiveIsNoOpWhenDisabledOrThresholdsInvalid(array $overrides): void
+    {
+        $plain = $this->makeStaleLog('api_2026-08-30.log', "keep-me\n", 60);
+
+        Logger::init($this->archiveConfig($overrides));
+        $this->assertSame(0, Logger::archive());
+        $this->assertFileExists($plain);
+        $this->assertFileDoesNotExist($this->archivePath('2026-08'));
+    }
+
+    public function archiveNoOpProvider(): array
+    {
+        return array(
+            '未开启归档'       => array(array('archive_enable' => false)),
+            '阈值等于保留期'   => array(array('archive_after_days' => 30)),
+            '阈值大于保留期'   => array(array('archive_after_days' => 45)),
+            '阈值为零'         => array(array('archive_after_days' => 0)),
+        );
+    }
+
+    public function testArchivePurgesExpiredPacks(): void
+    {
+        Logger::init($this->archiveConfig());
+        $this->makeStaleLog('api_2026-08-30.log', "old-pack\n", 20);
+        Logger::archive();
+
+        $pack = $this->archivePath('2026-08');
+        $this->assertFileExists($pack);
+
+        touch($pack, (int)strtotime('-200 day'));   // 超过 archive_keep_days = 180
+        Logger::archive();
+
+        $this->assertFileDoesNotExist($pack, '超过 archive_keep_days 的归档包应被清理');
+    }
+
+    public function testTarHeaderMatchesUstarLayout(): void
+    {
+        // 1000 字节：跨越 512 边界，可同时验证数据体补齐规则
+        $this->makeStaleLog('api_2026-08-30.log', str_repeat('x', 1000), 20);
+
+        Logger::init($this->archiveConfig());
+        Logger::archive();
+
+        $raw    = $this->readPack('2026-08');
+        $header = substr($raw, 0, 512);
+
+        $this->assertSame(512, strlen($header), 'tar 头必须是固定 512 字节块');
+        $this->assertSame(
+            'api_2026-08-30.log',
+            rtrim(substr($header, 0, 100), "\0"),
+            '条目名须落在偏移 0，否则解包出来是乱码'
+        );
+        $this->assertSame(
+            1000,
+            (int)octdec(trim(substr($header, 124, 12), "\0 ")),
+            'size 须为八进制且落在偏移 124'
+        );
+        $this->assertSame("ustar\0" . '00', substr($header, 257, 8), 'ustar magic + version 须落在偏移 257');
+        $this->assertSame('0', $header[156], 'typeflag 须为普通文件');
+
+        // 校验和：以 checksum 字段自身按 8 空格代入重算，须与写入值一致。
+        // 不符时 GNU tar 会直接判定归档损坏（"A lone zero block" / checksum error）
+        $expected = 0;
+        for ($i = 0; $i < 512; $i++) {
+            $expected += ord($i >= 148 && $i < 156 ? ' ' : $header[$i]);
+        }
+        $this->assertSame(
+            (int)octdec(trim(substr($header, 148, 8), "\0 ")),
+            $expected,
+            'tar 校验和不符，归档无法被解包工具读取'
+        );
+
+        $this->assertSame(
+            512 + 1024 + 1024,
+            strlen($raw),
+            '结构应为「头 512 + 数据补齐到 512 整数倍（1000 -> 1024）+ 终止双空块 1024」'
+        );
+    }
+
+    /**
+     * @dataProvider archiveMonthProvider
+     */
+    public function testArchiveMonthOfParsesOnlyDatedNaming($name, $expected): void
+    {
+        $this->assertSame($expected, Logger::archiveMonthOf($name));
+    }
+
+    public function archiveMonthProvider(): array
+    {
+        return array(
+            '角色日志'     => array('api_2026-09-01.log', '2026-09'),
+            '汇总通道'     => array('error_2026-12-31.log', '2026-12'),
+            '含下划线角色' => array('my_role_2026-01-05.log', '2026-01'),
+            'workerman'    => array('workerman.log', null),
+            'stdout'       => array('stdout.log', null),
+            '归档产物'     => array('2026-09.tar.gz', null),
+            '缺日期'       => array('api_2026-09.log', null),
+            '角色名超长'   => array(str_repeat('a', 17) . '_2026-09-01.log', null),
+            '大写角色'     => array('API_2026-09-01.log', null),
+            '路径穿越尝试' => array('../api_2026-09-01.log', null),
+        );
+    }
+
+    /* ---------------------------------------------------------------------
      | 结构性断言：防止新增角色时漏切通道
      |
      | 这是本次改造中最容易静默失效的一环 —— 漏掉一处，该角色的日志会默默
@@ -253,6 +449,105 @@ final class LoggerTest extends TestCase
     }
 
     /* ---------------------------------------------------------------------
+     | 清理任务的调度接线
+     |
+     | 清理逻辑本身没问题，问题在「什么时候跑」：workerman 的 Timer::add 是
+     | 延迟首跑 —— 先等满一个 interval 才执行第一次。周期 86400s 的任务只要进程
+     | 活不满一天就一次都不执行，而且完全静默（任务注册成功、无报错、count 恒 0）。
+     | 开发机每天重启，实际就是「从未清理过」。故把接线钉死在此。
+     --------------------------------------------------------------------- */
+
+    public function testCleanupTaskIsWiredToRunAtStartup(): void
+    {
+        $block = $this->taskBlock('log-cleanup');
+
+        $this->assertMatchesRegularExpression(
+            "/'interval'\s*=>\s*86400/",
+            $block,
+            '日志清理的周期应为 24h（86400s）'
+        );
+        $this->assertMatchesRegularExpression(
+            "/'scope'\s*=>\s*'first'/",
+            $block,
+            'log-cleanup 须全局唯一：多进程同时删同一批文件没有意义'
+        );
+        $this->assertMatchesRegularExpression(
+            "/'run_at_start'\s*=>\s*true/",
+            $block,
+            'log-cleanup 周期长达 86400s：不声明 run_at_start，进程活不满一天就永不清理'
+        );
+    }
+
+    public function testArchiveTaskIsWiredAndOrderedBeforeCleanup(): void
+    {
+        $archive = $this->taskBlock('log-archive');
+
+        $this->assertMatchesRegularExpression(
+            "/'interval'\s*=>\s*86400/",
+            $archive,
+            '日志归档的周期应为 24h（86400s）'
+        );
+        $this->assertMatchesRegularExpression(
+            "/'scope'\s*=>\s*'first'/",
+            $archive,
+            'log-archive 必须全局唯一：多进程同时读写同一个归档包会互相覆盖'
+        );
+        $this->assertMatchesRegularExpression(
+            "/'run_at_start'\s*=>\s*true/",
+            $archive,
+            'log-archive 周期 86400s：不声明 run_at_start 则永不执行'
+        );
+
+        // 纯顺序依赖的静默失效：两个任务都在启动后 1s 补跑，按声明顺序触发。
+        // 若 cleanup 先跑，刚超期的明文会被直接删掉，归档再也拿不到内容 ——
+        // 不报错、不告警，只是归档永远是空的。
+        $code      = (string)file_get_contents($this->root('config/business.php'));
+        $archiveAt = strpos($code, "'log-archive'");
+        $cleanupAt = strpos($code, "'log-cleanup'");
+
+        $this->assertNotFalse($archiveAt, 'config/business.php 未注册 log-archive 任务');
+        $this->assertNotFalse($cleanupAt, 'config/business.php 未注册 log-cleanup 任务');
+        $this->assertLessThan(
+            $cleanupAt,
+            $archiveAt,
+            'log-archive 必须声明在 log-cleanup 之前，否则明文先被删、归档拿不到内容'
+        );
+    }
+
+    public function testTaskRunnerImplementsRunAtStart(): void
+    {
+        $code = (string)file_get_contents($this->root('src/Business/Task.php'));
+
+        // 锚点带行首空白与完整条件：源码注释里同样会出现 run_at_start，
+        // 只用键名搜索会命中注释，断言随之失去意义（同类假阴性此前踩过）
+        $this->assertMatchesRegularExpression(
+            '/^[ \t]*if \(! empty\(\$job\[\'run_at_start\'\]\)\) \{$/m',
+            $code,
+            'Task 未实现 run_at_start 分支，配置声明将静默失效'
+        );
+
+        // 必须是单次延迟定时器（第 4 参数 false）；否则会变成第二个周期任务，
+        // 每轮多跑一次。同时要求复用 execute()，以保留防重入与统计能力。
+        $this->assertMatchesRegularExpression(
+            '/Timer::add\(self::START_RUN_DELAY, function \(\) use \(\$name\) \{\s*'
+            . 'self::execute\(\$name\);\s*\}, \[\], false\);/',
+            $code,
+            'run_at_start 的补跑必须是非持久化定时器，且经 execute() 执行'
+        );
+    }
+
+    public function testDeadLogRotateConfigIsGone(): void
+    {
+        $code = (string)file_get_contents($this->root('config/app.php'));
+
+        $this->assertDoesNotMatchRegularExpression(
+            "/^[ \t]*'rotate'\s*=>/m",
+            $code,
+            'config/app.php 的 rotate 从未被读取（按天分割在 Logger 内硬编码），属死配置'
+        );
+    }
+
+    /* ---------------------------------------------------------------------
      | 辅助
      --------------------------------------------------------------------- */
 
@@ -268,6 +563,33 @@ final class LoggerTest extends TestCase
     }
 
     /**
+     * 从 config/business.php 源码中切出指定任务的配置块
+     *
+     * 不直接 require 该文件：它会连带求值 Env::int() 等环境读取，单测里没有完整的
+     * 配置上下文。本处只断言接线关系，不需要求值。
+     *
+     * @param string $name
+     * @return string
+     */
+    private function taskBlock($name)
+    {
+        $code = (string)file_get_contents($this->root('config/business.php'));
+        $hit  = preg_match(
+            "/'name'\s*=>\s*'" . preg_quote($name, '/') . "'.*?\],/s",
+            $code,
+            $m
+        );
+
+        $this->assertSame(
+            1,
+            $hit,
+            '在 config/business.php 中未找到任务 ' . $name . '，任务清单可能已改名'
+        );
+
+        return isset($m[0]) ? $m[0] : '';
+    }
+
+    /**
      * @param string $name
      * @return string
      */
@@ -277,7 +599,80 @@ final class LoggerTest extends TestCase
     }
 
     /**
-     * 清空用例目录下的日志文件
+     * 归档目录（与 Logger 在 archive_dir 留空时的回落规则一致）
+     *
+     * @return string
+     */
+    private function archiveDir()
+    {
+        return $this->logDir . DIRECTORY_SEPARATOR . 'archive';
+    }
+
+    /**
+     * @param string $month 形如 2026-09
+     * @return string
+     */
+    private function archivePath($month)
+    {
+        return $this->archiveDir() . DIRECTORY_SEPARATOR . $month . '.tar.gz';
+    }
+
+    /**
+     * 归档场景的 Logger 配置（默认开启归档，便于各用例只覆盖关心的字段）
+     *
+     * @param array $overrides
+     * @return array
+     */
+    private function archiveConfig(array $overrides = array())
+    {
+        return array_merge(array(
+            'path'               => $this->logDir,
+            'stdout'             => false,
+            'keep_days'          => 30,
+            'archive_enable'     => true,
+            'archive_after_days' => 7,
+            'archive_keep_days'  => 180,
+        ), $overrides);
+    }
+
+    /**
+     * 造一个 mtime 落在 N 天前的按天日志
+     *
+     * @param string $name
+     * @param string $body
+     * @param int    $daysAgo
+     * @return string 文件路径
+     */
+    private function makeStaleLog($name, $body, $daysAgo)
+    {
+        $file = $this->path($name);
+        file_put_contents($file, $body);
+        touch($file, (int)strtotime('-' . $daysAgo . ' day'));
+        clearstatcache(true, $file);
+        return $file;
+    }
+
+    /**
+     * 取出归档包内解压后的 tar 缓冲区（同时校验它确实是合法 gzip 流）
+     *
+     * @param string $month
+     * @return string
+     */
+    private function readPack($month)
+    {
+        $pack = $this->archivePath($month);
+        $this->assertFileExists($pack, '归档包 ' . $month . ' 不存在');
+
+        $raw = @gzdecode((string)file_get_contents($pack));
+        $this->assertIsString($raw, '归档包 ' . $month . ' 不是合法的 gzip 流');
+
+        return $raw;
+    }
+
+    /**
+     * 清空用例目录下的日志与归档产物
+     *
+     * 归档也必须清：残留的包会被下一次归档当成「已有归档」读取，用例之间互相污染。
      *
      * @return void
      */
@@ -289,5 +684,13 @@ final class LoggerTest extends TestCase
                 @unlink($file);
             }
         }
+
+        $packs = glob($this->archiveDir() . DIRECTORY_SEPARATOR . '*.tar.gz');
+        if (is_array($packs)) {
+            foreach ($packs as $pack) {
+                @unlink($pack);
+            }
+        }
+        @rmdir($this->archiveDir());
     }
 }

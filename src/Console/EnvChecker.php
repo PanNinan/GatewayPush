@@ -178,7 +178,7 @@ final class EnvChecker
             );
             $ok = $ok && $modeOk;
 
-            $outKey = isset($gatewayConfig['udp']['out_queue']['key']) ? $gatewayConfig['udp']['out_queue']['key'] : '';
+            $outKey = $gatewayConfig['udp']['out_queue']['key'] ?? '';
             if (!empty($gatewayConfig['udp']['enable']) && $outKey !== '') {
                 $lines[] = sprintf('[%-4s] UDP 出站队列 %s', 'OK', $outKey);
             }

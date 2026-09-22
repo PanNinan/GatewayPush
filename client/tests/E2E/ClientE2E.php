@@ -17,7 +17,7 @@
  * 退出码：0 = 全部通过
  */
 
-define('BASE_PATH', dirname(dirname(dirname(__DIR__))));
+define('BASE_PATH', dirname(__DIR__, 3));
 require BASE_PATH . '/vendor/autoload.php';
 
 use GatewayPush\Client\Event\PushReceiver;
@@ -486,13 +486,13 @@ $worker->onWorkerStart = function () use (
     /* [J] 指令路由表：echo / session / 未知动作 4006 */
     $queue[] = function ($next) use (&$ws, $record) {
         $session = $ws;
-        $session->request('echo', array('j' => 1), function ($ok) use ($session, $record, $next) {
-            $session->request('session', [], function ($ok2) use ($session, $record, $next, $ok) {
-                $session->request('__unknown_action__', [], function ($ok3, $packet) use ($record, $next, $ok, $ok2) {
+        $session?->request('echo', array('j' => 1), function ($ok) use ($session, $record, $next) {
+            $session?->request('session', [], function ($ok2) use ($session, $record, $next, $ok) {
+                $session?->request('__unknown_action__', [], function ($ok3, $packet) use ($record, $next, $ok, $ok2) {
                     $code = ce2e_code($packet);
                     $pass = $ok && $ok2 && !$ok3 && $code === 4006;
                     $record('J', '路由表 echo/session + 未知动作 4006', $pass, 'unknown code=' . $code);
-                    call_user_func($next);
+                    $next();
                 });
             });
         });

@@ -55,13 +55,23 @@ return [
      | 日志配置
      --------------------------------------------------------------- */
     'log' => [
-        'path'           => $basePath . '/runtime/logs',
-        'level'          => Env::str('LOG_LEVEL', 'debug'),    // debug | info | warn | error
-        'rotate'         => 'daily',                           // 按天分割
-        'max_size_mb'    => Env::int('LOG_MAX_MB', 10),        // workerman.log 单文件上限（MB），0 = 不轮转
-        'keep_days'      => Env::int('LOG_KEEP_DAYS', 30),     // 自动清理超过 N 天的日志文件
-        'stdout'         => Env::bool('LOG_STDOUT', true),     // 同时输出到控制台
-        'global_handler' => true,                              // 注册全局异常 / 错误 / 致命错误捕获
+        'path'               => $basePath . '/runtime/logs',
+        'level'              => Env::str('LOG_LEVEL', 'debug'),   // debug | info | warn | error
+        // 按天分割（{role}_{YYYY-MM-DD}.log）由 Logger 内部固化，无需配置项
+        'max_size_mb'        => Env::int('LOG_MAX_MB', 10),       // workerman.log 单文件上限（MB），0 = 不轮转
+        'keep_days'          => Env::int('LOG_KEEP_DAYS', 30),    // 明文日志保留天数（归档开启后它退为兜底）
+        'stdout'             => Env::bool('LOG_STDOUT', true),    // 同时输出到控制台
+        'global_handler'     => true,                             // 注册全局异常 / 错误 / 致命错误捕获
+
+        /* 归档：把超期明文压进 archive/{YYYY-MM}.tar.gz 后删除明文（默认关闭）。
+         | 不变量：0 < archive_after_days < keep_days —— 反之明文会先被 cleanup 删掉，
+         | 归档永远拿不到内容。违反时 Logger 只告警并跳过本轮，不阻断启动。
+         | 归档产物后缀为 .tar.gz，与 cleanup 的 .log 判据天然隔离，不会被误删。 */
+        'archive_enable'     => Env::bool('LOG_ARCHIVE_ENABLE', false),
+        'archive_after_days' => Env::int('LOG_ARCHIVE_AFTER_DAYS', 7),    // 明文转为归档的天数
+        'archive_dir'        => Env::str('LOG_ARCHIVE_DIR', ''),         // 空 = runtime/logs/archive
+        'archive_keep_days'  => Env::int('LOG_ARCHIVE_KEEP_DAYS', 180),  // 归档包保留天数
+        'archive_level'      => Env::int('LOG_ARCHIVE_LEVEL', 6),        // gzip 级别 1~9，越界回落 6
     ],
 
     /* ---------------------------------------------------------------

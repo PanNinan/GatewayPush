@@ -28,6 +28,10 @@ class CommandParser
         $options = [];
         $literal = false; // `--` 之后进入字面量模式
 
+        // 必须用带索引的 for，不能用 foreach：下面 `--name value` 的分支要「消费掉
+        // 下一个 token」，靠 $i++ 跳过。foreach 迭代的是自己的内部指针快照，循环体内
+        // 修改 $i 不会影响下一次迭代 —— 值虽被写进 options，token 却会再次落进位置
+        // 参数（CliParserTest::testParsesLongOptionWithEqualsAndSpace 已钉死该行为）。
         $count = count($args);
         for ($i = 0; $i < $count; $i++) {
             $token = (string)$args[$i];
@@ -47,7 +51,7 @@ class CommandParser
             }
 
             // 长选项 --name[=value]
-            if (strpos($token, '--') === 0 && strlen($token) > 2) {
+            if (str_starts_with($token, '--') && strlen($token) > 2) {
                 $body = substr($token, 2);
                 $eq   = strpos($body, '=');
                 if ($eq !== false) {
@@ -55,7 +59,7 @@ class CommandParser
                     continue;
                 }
                 $next = isset($args[$i + 1]) ? (string)$args[$i + 1] : '';
-                if ($next !== '' && strpos($next, '-') !== 0) {
+                if ($next !== '' && ! str_starts_with($next, '-')) {
                     $options[$body] = $next;
                     $i++;
                 } else {
@@ -65,7 +69,7 @@ class CommandParser
             }
 
             // 短选项 -f（单独出现时按开关处理；-f=value 也支持）
-            if (strpos($token, '-') === 0 && strlen($token) > 1 && $token !== '-') {
+            if (str_starts_with($token, '-') && strlen($token) > 1 && $token !== '-') {
                 $body = ltrim($token, '-');
                 $eq   = strpos($body, '=');
                 if ($eq !== false) {

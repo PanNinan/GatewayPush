@@ -13,6 +13,14 @@
  *  - first：仅在 worker id = 0 的进程注册（全局唯一任务，如会话巡检）
  *  - all  ：每个进程都注册（需要分进程独立统计的任务，如指标上报）
  *
+ * 首跑时机 run_at_start（可选，默认 false）：
+ *  - workerman 的 Timer::add() 是「延迟首跑」——先等满一个 interval，再执行第一次。
+ *    周期越长这个空窗越致命：86400s 的日志清理任务，只要进程活不满 24h 就一次都
+ *    不会执行，而且是静默的（任务列表里看得到、统计里 count 恒为 0）。
+ *  - 声明 run_at_start = true 的任务，在注册后延迟 START_RUN_DELAY 秒补跑一次，
+ *    此后仍按 interval 周期执行。
+ *  - 频繁重启的环境下，小时级及以上的周期任务都应评估是否需要它。
+ *
  * 兼容 PHP 8.1 ~ 8.5
  */
 
@@ -23,6 +31,17 @@ use Workerman\Timer;
 
 class Task
 {
+    /**
+     * 声明了 run_at_start 的任务，在启动后延迟多久补跑首次执行（秒）
+     *
+     * 不直接在 start() 里内联调用，是为了不阻塞 onWorkerStart：cleanup() 这类
+     * 任务含同步文件 IO，挂在启动路径上会拖慢端口就绪；改为单次延迟定时器后，
+     * 既避开启动期的事件风暴，又能复用 execute() 的防重入 / 统计 / 超时能力。
+     *
+     * @var float
+     */
+    const START_RUN_DELAY = 1.0;
+
     /**
      * 任务运行时状态
      *
@@ -139,6 +158,21 @@ class Task
             'interval'   => $interval . 's',
             'persistent' => $persistent,
         ));
+
+        // 补跑首次执行：周期任务默认要空等一个 interval 才启动第一轮，
+        // 对 86400s 级的任务而言，进程活不满一天就永远不会跑（静默失效）——
+        // 在频繁重启的环境里，这等于没有清理。
+        // 非持久化的 Timer 即「延迟一次」，与周期定时器互不影响。
+        if (! empty($job['run_at_start'])) {
+            Timer::add(self::START_RUN_DELAY, function () use ($name) {
+                self::execute($name);
+            }, [], false);
+
+            Logger::info('定时任务已安排启动后补跑一次', array(
+                'name'  => $name,
+                'delay' => self::START_RUN_DELAY . 's',
+            ));
+        }
 
         return true;
     }

@@ -41,6 +41,7 @@ final class RoleCatalogTest extends TestCase
         'RATE_LIMIT_ENABLE',       // 限流
         'SUBSCRIBE_ENABLE',        // 订阅
         'MONITOR_ENABLE',          // 指标采集
+        'LOG_ARCHIVE_ENABLE',      // 日志归档（功能开关，角色照常启动）
     );
 
     /* ---------------------------------------------------------------------

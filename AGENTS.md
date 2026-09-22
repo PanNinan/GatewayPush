@@ -112,10 +112,28 @@ php  tests/Api/http_demo.php                         # HTTP 接口示例 13 场�
 - `emitError()` 只对 UDP 通道静默；HTTP 与 WS 都必须下发错误码。
 - UDP 回执分两层：先判 `isset($data['action'])` 区分**传输层 ack** 与**业务回执**。
 
+**日志与保留期**
+
+- `LOG_ARCHIVE_AFTER_DAYS` **必须小于** `LOG_KEEP_DAYS`，否则明文先被清理任务删掉、
+  归档永远拿不到内容。违反时 `Logger::archive()` 只告警并跳过本轮，不阻断启动（可选项
+  不该让服务起不来）。
+- `config/business.php` 的 tasks 数组里 **`log-archive` 必须声明在 `log-cleanup` 之前**：
+  两者都靠 `run_at_start` 在启动后 1s 补跑，按**声明顺序**触发。颠倒后不报错、不告警，
+  只是归档恒为空。
+- 归档写入顺序**不可颠倒**：先写包成功、再删明文。既有包损坏时跳过本轮并保留明文，
+  且**不覆盖**该包（否则连带毁掉包内既有历史）。以上三条均已由 `LoggerTest` 钉死。
+- 归档只认 `{channel}_{YYYY-MM-DD}.log` 命名；`workerman.log` / `stdout.log` 不入归档
+  （它们归 `LOG_MAX_MB` 管）。归档产物为 `archive/{YYYY-MM}.tar.gz`，包名取**文件自身
+  日期**的月份而非归档时刻，故跨月归档不串包。
+
 **平台差异（Windows 开发环境）**
 
 - 端口占用探测**必须走 `netstat`**：该平台 socket 默认允许重复 bind，`bind` 判定恒返回
   「未占用」且无任何报错。判 UDP 时**不能加 `LISTENING` 过滤**。
+- 这条规则的具体后果：**重复实例不会被拒绝**。已有服务在跑时再启动一套，两套都会绑住
+  同一端口（`netstat` 里每个端口出现 **2 个 PID**），推送与 UDP 回执随机落到其中任一套
+  —— 表现为 **e2e 用例随机失败**（每次失败的是不同用例，E/G/J/O 轮着来），
+  极易误诊成代码缺陷。**启动前务必先 `netstat` 确认端口空闲**。
 - **绝不要执行 `php start.php stop|restart|reload|status`** —— 非 Unix 下 workerman 跳过命令解析，
   `stop` 会**反向启动一个新实例**。停角色一律用 `bin\start.bat stop`。
 - 单启动文件只能初始化 1 个 Worker 实例，故 `--role=all` 在 Windows 会被入口直接拒绝。
@@ -156,6 +174,13 @@ bash bin/dev/boot_all.sh     # 仅需"把 6 个角色都拉起来并常驻"时�
 ```
 
 - 启动顺序：register → gateway → udp → business → api（dashboard 可选）。
+- **启动前先确认没有残留实例**：Windows 不会拒绝重复 bind，两套叠加后每个端口会有 2 个 PID，
+  故障现象是「e2e 随机失败」而非报错，排查成本极高。先探一次：
+
+  ```bash
+  netstat -ano | grep LISTENING | grep -E ':(1238|8282|8290|8291)\b'   # 有输出 = 已有实例在跑
+  ```
+
 - 本机 `REDIS_DB=9`（DB0 有历史残留 `gwpush:*` 键）。
 - **UDP 通而 WS 不通 ⇒ 先查网关注册路由**。
 - 被 `*_ENABLE=false` 关闭的角色会被脚本在就绪轮询前跳过；`bin/start.ps1` 的角色清单取自
