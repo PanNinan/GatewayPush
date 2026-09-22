@@ -58,14 +58,14 @@ class ActionContext
     /**
      * 原始报文
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected $packet;
 
     /**
      * 已校验并归一化的业务参数
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected $params;
 
@@ -135,19 +135,19 @@ class ActionContext
     /**
      * 动作私有配置（来自 config/actions.php 的 options 段）
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected $options = [];
 
     /**
      * @param string   $action    动作名
-     * @param array    $packet    原始报文
-     * @param array    $params    已校验参数
-     * @param array    $identity  ['client_id','uid','device_id','protocol']
+     * @param array<string, mixed>    $packet    原始报文
+     * @param array<string, mixed>    $params    已校验参数
+     * @param array<string, mixed>    $identity  ['client_id','uid','device_id','protocol']
      * @param string   $channel   ws | udp | http
      * @param string   $replyMode sync | none
      * @param callable $sender    function (array $packet): void
-     * @param array    $options   动作私有配置
+     * @param array<string, mixed>    $options   动作私有配置
      */
     public function __construct($action, array $packet, array $params, array $identity, $channel, $replyMode, callable $sender, array $options = [])
     {
@@ -229,7 +229,7 @@ class ActionContext
     /**
      * 原始报文
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public function packet()
     {
@@ -243,7 +243,7 @@ class ActionContext
     /**
      * 全部已校验参数
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public function params()
     {
@@ -279,7 +279,7 @@ class ActionContext
     /**
      * 全部动作私有配置
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public function options()
     {
@@ -327,7 +327,7 @@ class ActionContext
      *
      * reply = none 时不实际下发，仅标记已回执（见类注释）。
      *
-     * @param array $data 业务数据体
+     * @param array<string, mixed> $data 业务数据体
      *
      * @return bool 是否真正下发
      */
@@ -357,7 +357,7 @@ class ActionContext
     /**
      * 下发任意报文（需要自定义 cmd 时使用）
      *
-     * @param array $packet
+     * @param array<string, mixed> $packet
      *
      * @return bool 是否真正下发
      */

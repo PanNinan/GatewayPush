@@ -38,22 +38,22 @@ class Bootstrap
     /**
      * gateway.php 配置
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $config = [];
 
     /**
      * app.php 配置
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $appConfig = [];
 
     /**
      * 初始化网关层 Worker
      *
-     * @param array $gatewayConfig config/gateway.php
-     * @param array $appConfig     config/app.php
+     * @param array<string, mixed> $gatewayConfig config/gateway.php
+     * @param array<string, mixed> $appConfig     config/app.php
      *
      * @return void
      */
@@ -82,7 +82,7 @@ class Bootstrap
      * 业务处理由 BusinessWorker 异步消费队列完成，网关不感知业务逻辑。
      *
      * @param ConnectionInterface $connection
-     * @param array               $packet     已经过 UdpProtocol::decode 归一化
+     * @param array<string, mixed>               $packet     已经过 UdpProtocol::decode 归一化
      *
      * @return void
      */
@@ -165,7 +165,7 @@ class Bootstrap
      *   出站改由「业务进程写队列 -> 网关进程 sendto」闭环，与入站的解耦方式对称。
      *
      * @param Worker $worker
-     * @param array  $conf   gateway.udp.out_queue
+     * @param array<string, mixed>  $conf   gateway.udp.out_queue
      *
      * @return void
      */
@@ -376,8 +376,8 @@ class Bootstrap
      * 将 UDP 业务请求写入 Redis 队列
      *
      * @param ConnectionInterface $connection
-     * @param array               $packet
-     * @param array               $queueConf
+     * @param array<string, mixed>               $packet
+     * @param array<string, mixed>               $queueConf
      *
      * @return void
      */
@@ -425,7 +425,7 @@ class Bootstrap
      * @param Worker $worker
      * @param string $clientId
      * @param string $frame
-     * @param array  $task
+     * @param array<string, mixed>  $task
      *
      * @return void
      */

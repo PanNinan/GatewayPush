@@ -215,9 +215,9 @@ GatewayPush/
 ├── AGENTS.md                         AI 协作入口（红线 / 门禁 / 目录速查，供任意 AI 工具对齐）
 ├── start.php                         统一启动入口：命令分发 + 环境自检 + 启动（实现见 src/Console/）
 ├── composer.json                    依赖与脚本
-├── phpstan.neon                     静态分析配置（level 5 + 扩展 include + 刻意关闭的 strictRules）
+├── phpstan.neon                     静态分析配置（level 6 + 扩展 include + 刻意关闭的 strictRules）
 ├── phpstan-baseline.neon            生产代码存量基线（只减不增）
-├── phpstan-tests-baseline.neon      测试代码存量基线（tests 首次纳入分析时冻结，只减不增）
+├── phpstan-tests-baseline.neon      测试代码存量基线（提级到 level 6 时重新生成，只减不增）
 ├── phpunit.xml
 ├── .env.example                     配置模板（含全部变量的说明）
 └── docs/                             设计与接口文档
@@ -2072,7 +2072,7 @@ class OrderQueryAction implements ActionInterface
 ### 13.1 命令
 
 ```bash
-composer analyse        # PHPStan（level 5；baseline 冻结存量：生产代码 9 条 + 测试 51 条目）
+composer analyse        # PHPStan（level 6；baseline 冻结存量：生产代码 9 条 + 测试 324 条目/339 条）
 composer test           # PHPUnit（467 tests / 1317 assertions；含 client/tests/Unit）
 composer lint           # phpcs 审计：注释 / 命名 / 业务红线（只读，不写文件）
 composer lint:self      # phpcs 自定义嗅探器自检（RedisKeys 漂移 + 作用域/豁免矩阵）
@@ -2106,18 +2106,28 @@ composer test:client-e2e # 客户端 SDK 端到端对齐（A~O 共 15 个用例�
 | 分析范围       | `paths` = `src`、`client/src`、`start.php`、`tests`、`client/tests`（共 114 文件）。**`tests` 必须在列**，否则 `phpstan-phpunit` 的断言 / mock 规则不会生效 |
 | 分析口径       | `phpVersion: 80100` —— 刻意设置用于**拦截 8.2+ 语法误用**，保证 8.1 兼容性                 |
 | 扩展         | `phpstan-strict-rules` + `phpstan-phpunit`，**在 `includes` 里显式声明**（本项目未装 `phpstan/extension-installer`，不写 `includes` 则规则一条都不生效） |
-| strict-rules | `strictRules.allRules: true`，仅刻意关闭 3 条：`disallowedEmpty`、`booleansInConditions`(+`booleansInLoopConditions`)、`dynamicCallOnStaticMethod`（理由见 `phpstan.neon` 内的逐条注释） |
-| 收敛策略       | **两份 baseline**：`phpstan-baseline.neon`（生产代码，9 条）/ `phpstan-tests-baseline.neon`（测试存量，51 条目）。两份都**只减不增**；**不为让工具通过而改业务代码** |
+| strict-rules | `strictRules.allRules: true`，仅刻意关闭 4 条：`disallowedEmpty`、`booleansInConditions`(+`booleansInLoopConditions`)、`dynamicCallOnStaticMethod`（理由见 `phpstan.neon` 内的逐条注释） |
+| 收敛策略       | **两份 baseline**：`phpstan-baseline.neon`（生产代码，9 条）/ `phpstan-tests-baseline.neon`（测试存量，324 条目 / 339 条）。两份都**只减不增**；**不为让工具通过而改业务代码** |
 
 > **⚠ `level` 与 baseline 必须同源**：baseline 是用哪个 level 生成的，`parameters.level` 就得是哪个值。
 > 二者不一致时，PHPStan 会对每条不再命中的条目报 `ignore.unmatched (non-ignorable)` ——
 > 一次就能把门禁刷成红色（曾发生：baseline 以 level 6 生成 362 条，而配置仍为 level 5，
 > 结果 `composer analyse` 直接报 351 errors）。
 >
-> 本项目的 level 是**刻意停在 5** 的：升到 6 会额外检查「数组缺 value 类型」，实测
-> 生产代码 + 客户端 SDK 会从 16 条涨到 367 条且几乎全是 `missingType.iterableValue`。
-> 真修要给约 60 个文件补 `array<string, mixed>` 这类 phpdoc，用 baseline 一次性豁免
-> 350 条则等于放弃「新代码零容忍」，故暂不提级。
+> **本项目已于 2026-09-22 由 level 5 升至 level 6。** 提级前的量化：level 6 全量报
+> **538 errors / 66 文件，其中 100% 是 `missingType.*`**（`iterableValue` 330 / `return` 167 /
+> `parameter` 34 / `property` 7），**零语义告警** —— 即 level 6 的增量只是「数组元素类型
+> 标注完整性」，不新增逻辑类检查，风险为零、收益是文档性的。
+>
+> 处置方式按目录分层：
+> - **生产侧（`src` / `client/src` / `start.php`）265 条已全部补齐 phpdoc 标注** → 0 errors，
+>   生产 baseline 维持 9 条不动；
+> - **测试侧（`tests` / `client/tests`）273 条冻结进 `phpstan-tests-baseline.neon`** ——
+>   测试替身补 `: void` 之类收益低且有 TypeError 风险，沿用「测试噪音单独一份」的既有设计。
+>
+> 补标注时**只加 phpdoc、不加原生类型**（原生返回类型会改变运行期行为）；且以
+> `array<string, mixed>` 为主，精确 `array{...}` shape 会解锁键存在性检查、可能引出新告警，
+> 留作独立后续任务。
 
 > **`ignore.unmatched` 是修复的免费验证器**：baseline 中不再匹配任何实际错误的 `ignore`  
 > 条目会触发 `ignore.unmatched (non-ignorable)` 报错。因此「删掉 baseline 条目 → 分析干净通过」  

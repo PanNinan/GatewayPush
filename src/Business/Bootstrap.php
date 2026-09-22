@@ -43,14 +43,14 @@ class Bootstrap
     /**
      * business.php 配置
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $config = [];
 
     /**
      * app.php 配置
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $appConfig = [];
 
@@ -60,14 +60,14 @@ class Bootstrap
      * 存 uid 而非单纯的 true，是为了让报文级限流的用户维度无需再查一次
      * Redis 会话（每报文省一次往返）。uid 为空串表示鉴权功能关闭下的直通连接。
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $authed = [];
 
     /**
      * 鉴权超时定时器
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $authTimers = [];
 
@@ -81,7 +81,7 @@ class Bootstrap
     /**
      * 已调度「延迟关闭」的连接（防止同一连接重复触发）
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $closingClients = [];
 
@@ -92,10 +92,10 @@ class Bootstrap
     /**
      * 创建并配置 BusinessWorker
      *
-     * @param array $businessConfig config/business.php
-     * @param array $appConfig      config/app.php
-     * @param array $gatewayConfig  config/gateway.php（仅取 UDP 出站队列配置）
-     * @param array $actionConfig   config/actions.php（业务动作清单）
+     * @param array<string, mixed> $businessConfig config/business.php
+     * @param array<string, mixed> $appConfig      config/app.php
+     * @param array<string, mixed> $gatewayConfig  config/gateway.php（仅取 UDP 出站队列配置）
+     * @param array<string, mixed> $actionConfig   config/actions.php（业务动作清单）
      *
      * @return void
      */
@@ -260,7 +260,7 @@ class Bootstrap
      * WebSocket 握手完成
      *
      * @param string $clientId
-     * @param array  $data     ['get'=>..,'server'=>..,'cookie'=>..]
+     * @param array<string, mixed>  $data     ['get'=>..,'server'=>..,'cookie'=>..]
      *
      * @return void
      */
@@ -416,7 +416,7 @@ class Bootstrap
      * Router 处理器时复用统一的回执通道（含指标与异常兜底）。
      *
      * @param string $clientId
-     * @param array  $packet   已构造的报文数组
+     * @param array<string, mixed>  $packet   已构造的报文数组
      *
      * @return void
      */
@@ -445,7 +445,7 @@ class Bootstrap
      * 业务分发（限流通过后的主链路）
      *
      * @param string $clientId
-     * @param array  $packet
+     * @param array<string, mixed>  $packet
      *
      * @return void
      */
@@ -515,7 +515,7 @@ class Bootstrap
      * 避免「连接桶已扣、用户桶拒绝」造成的配额泄漏。
      *
      * @param string   $clientId
-     * @param array    $packet
+     * @param array<string, mixed>    $packet
      * @param callable $next     放行后的后续处理
      *
      * @return void
@@ -566,7 +566,7 @@ class Bootstrap
      * 而断开会在网络抖动时把限流放大成重连风暴。
      *
      * @param string $clientId
-     * @param array  $packet
+     * @param array<string, mixed>  $packet
      *
      * @return void
      */
@@ -606,7 +606,7 @@ class Bootstrap
      * 校验链路：本地签名与时效 -> Redis 撤销名单 -> uid/设备绑定 -> 写入会话
      *
      * @param string $clientId
-     * @param array  $packet
+     * @param array<string, mixed>  $packet
      *
      * @return void
      */
@@ -686,7 +686,7 @@ class Bootstrap
      * @param string $clientId
      * @param string $uid
      * @param string $deviceId
-     * @param array  $packet
+     * @param array<string, mixed>  $packet
      *
      * @return void
      */
@@ -765,7 +765,7 @@ class Bootstrap
      * 处理心跳指令
      *
      * @param string $clientId
-     * @param array  $packet
+     * @param array<string, mixed>  $packet
      *
      * @return void
      */
@@ -784,7 +784,7 @@ class Bootstrap
      * 报文中的 seq 即服务端下发的 msg_id，可直接与推送日志对齐排查。
      *
      * @param string $clientId
-     * @param array  $packet
+     * @param array<string, mixed>  $packet
      *
      * @return void
      */
@@ -813,7 +813,7 @@ class Bootstrap
      * 不需要为「UDP 上报的业务报文」再维护一套并行的分发逻辑。
      *
      * @param string $clientId
-     * @param array  $packet
+     * @param array<string, mixed>  $packet
      *
      * @return void
      */
@@ -845,7 +845,7 @@ class Bootstrap
      * 当作合法身份使用。仅当鉴权整体关闭、报文确实不带 Token 时才回退。
      *
      * @param string $clientId
-     * @param array  $packet
+     * @param array<string, mixed>  $packet
      *
      * @return string 解析失败返回空串
      */
@@ -1019,7 +1019,7 @@ class Bootstrap
      *
      * @param string   $clientId
      * @param string   $uid
-     * @param array    $packet
+     * @param array<string, mixed>    $packet
      * @param callable $next
      *
      * @return void
@@ -1064,7 +1064,7 @@ class Bootstrap
     /**
      * UDP 业务处理（限流通过后）
      *
-     * @param array  $job
+     * @param array<string, mixed>  $job
      * @param string $clientId
      * @param string $uid
      * @param string $deviceId
@@ -1152,7 +1152,7 @@ class Bootstrap
      * 传入已序列化的 JSON 字符串，由 Gateway 侧协议层完成帧封装。
      *
      * @param string $clientId
-     * @param array  $packet
+     * @param array<string, mixed>  $packet
      *
      * @return void
      */

@@ -52,7 +52,7 @@ class Monitor
     /**
      * 监控配置
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $config = [
         'enable'   => true,
@@ -64,21 +64,21 @@ class Monitor
     /**
      * 进程内累加计数
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $counters = [];
 
     /**
      * 进程内瞬时值
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $gauges = [];
 
     /**
      * 初始化
      *
-     * @param array $config app.monitor 配置
+     * @param array<string, mixed> $config app.monitor 配置
      *
      * @return void
      */
@@ -205,7 +205,7 @@ class Monitor
     /**
      * 当前进程未落盘的指标（调试用）
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public static function pending()
     {
@@ -225,11 +225,11 @@ class Monitor
      * 只认以 pid_at: 开头且后缀为纯数字的字段，其余（report_at、conn_total 等
      * 全局字段）一律不动 —— 它们不属于任何进程，没有「退出」概念。
      *
-     * @param array $gauge HGETALL 结果
+     * @param array<string, mixed> $gauge HGETALL 结果
      * @param int   $ttl   存活宽限（秒），<=0 时视为不清理
      * @param int   $now   当前时间戳
      *
-     * @return array 待删除的 field 列表；无需清理时为空数组
+     * @return array<int|string, mixed> 待删除的 field 列表；无需清理时为空数组
      */
     public static function staleFields(array $gauge, $ttl, $now)
     {

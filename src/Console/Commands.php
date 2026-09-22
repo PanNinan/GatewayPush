@@ -39,9 +39,9 @@ final class Commands
      * < .env.{env}.local < 真实环境变量的叠加语义只有 Env 类能正确还原，脚本再实现
      * 一遍必然漂移。
      *
-     * @param array $gatewayConfig  config/gateway.php
-     * @param array $businessConfig config/business.php
-     * @param array $appConfig      config/app.php
+     * @param array<string, mixed> $gatewayConfig  config/gateway.php
+     * @param array<string, mixed> $businessConfig config/business.php
+     * @param array<string, mixed> $appConfig      config/app.php
      *
      * @return string 合法 JSON；极端编码失败时退化为空清单而非非法输出
      */

@@ -34,12 +34,12 @@ final class RoleCatalog
      * 与 bin/start.ps1 的 RoleOrder / start.sh 的 ROLES_ALL 保持一致；
      * roles 命令按此顺序输出，故消费方无需自行排序。
      *
-     * @param array $gatewayConfig  config/gateway.php
-     * @param array $businessConfig config/business.php
-     * @param array $appConfig      config/app.php
+     * @param array<string, mixed> $gatewayConfig  config/gateway.php
+     * @param array<string, mixed> $businessConfig config/business.php
+     * @param array<string, mixed> $appConfig      config/app.php
      * @param bool  $isLinux        影响进程数口径，见下方 $count 注释
      *
-     * @return array 角色名 => array(name, listen, probe, count, enable, env)
+     * @return array<string, mixed> 角色名 => array(name, listen, probe, count, enable, env)
      */
     public static function build(array $gatewayConfig, array $businessConfig, array $appConfig, $isLinux = false)
     {

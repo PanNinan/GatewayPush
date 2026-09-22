@@ -41,7 +41,7 @@ abstract class AbstractApi
      * 发送动作请求并包装回调
      *
      * @param string        $action  动作名（须在服务端 config/actions.php 登记）
-     * @param array         $params  动作参数
+     * @param array<string, mixed>         $params  动作参数
      * @param null|callable $cb      function (bool $ok, array $data, ?array $error): void
      * @param null|float    $timeout 覆盖全局超时
      *

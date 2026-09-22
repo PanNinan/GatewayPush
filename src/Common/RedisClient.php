@@ -91,7 +91,7 @@ class RedisClient
     /**
      * 连接配置
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $config = [
         'host'       => '127.0.0.1',
@@ -130,14 +130,14 @@ class RedisClient
      *
      * 标记哪些连接已完成 DB / AUTH 预设，用于跳过连接回调中的兜底逻辑。
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $primed = [];
 
     /**
      * 初始化连接配置
      *
-     * @param array $config
+     * @param array<string, mixed> $config
      *
      * @return void
      */
@@ -189,6 +189,10 @@ class RedisClient
      | String
      --------------------------------------------------------------------- */
 
+    /**
+     * @param string $key
+     * @return mixed
+     */
     public static function get($key, ?callable $cb = null)
     {
         return self::connection()->get(self::key($key), self::wrap('GET', $cb, $key));
@@ -217,7 +221,7 @@ class RedisClient
     /**
      * 批量读取（自动补前缀），返回顺序与入参一致，缺失元素为 false
      *
-     * @param array         $keys
+     * @param array<int|string, mixed>         $keys
      * @param null|callable $cb
      *
      * @return mixed
@@ -297,7 +301,7 @@ class RedisClient
     /**
      * 删除 key（支持单个或数组）
      *
-     * @param array|string  $keys
+     * @param array<int|string, mixed>|string  $keys
      * @param null|callable $cb
      *
      * @return mixed
@@ -339,7 +343,7 @@ class RedisClient
      * 用 HMSET 而非多字段 HSET —— 后者需 Redis 4.0+，本封装兼顾 Redis 3.x。
      *
      * @param string        $key
-     * @param array         $hash
+     * @param array<string, mixed>         $hash
      * @param null|callable $cb
      *
      * @return mixed
@@ -380,7 +384,7 @@ class RedisClient
      * 删除一个或多个 Hash 字段
      *
      * @param string        $key
-     * @param array|string  $fields
+     * @param array<int|string, mixed>|string  $fields
      * @param null|callable $cb
      *
      * @return mixed
@@ -513,7 +517,7 @@ class RedisClient
      * 添加集合成员
      *
      * @param string        $key
-     * @param array|string  $members
+     * @param array<int|string, mixed>|string  $members
      * @param null|callable $cb
      *
      * @return mixed
@@ -533,7 +537,7 @@ class RedisClient
      * 移除集合成员
      *
      * @param string        $key
-     * @param array|string  $members
+     * @param array<int|string, mixed>|string  $members
      * @param null|callable $cb
      *
      * @return mixed
@@ -669,7 +673,7 @@ class RedisClient
     /**
      * 多桶令牌桶限流（原子）
      *
-     * @param array         $buckets 桶定义列表：[['key'=>string, 'rate'=>int, 'burst'=>int], ...]
+     * @param array<int|string, mixed>         $buckets 桶定义列表：[['key'=>string, 'rate'=>int, 'burst'=>int], ...]
      * @param int           $cost    本次消耗令牌数
      * @param null|callable $cb      function(bool $allowed)
      *
@@ -746,7 +750,7 @@ class RedisClient
      *              -> 得到 EVAL script key arg numkeys（numkeys 位置错误，Redis 报错）
      *
      * @param string        $script
-     * @param array         $args    KEYS + ARGV 顺序拼接（key 需已带全局前缀）
+     * @param array<int|string, mixed>         $args    KEYS + ARGV 顺序拼接（key 需已带全局前缀）
      * @param int           $numKeys KEYS 个数
      * @param null|callable $cb      function(mixed $result, Client $client = null)
      *
@@ -954,9 +958,9 @@ class RedisClient
     /**
      * 批量补齐 key 前缀
      *
-     * @param array $keys
+     * @param array<int|string, mixed> $keys
      *
-     * @return array
+     * @return array<int|string, mixed>
      */
     protected static function prefixKeys(array $keys)
     {

@@ -68,7 +68,7 @@ class Env
     /**
      * 实际读取到的文件（按优先级从高到低）
      *
-     * @var array
+     * @var array<int|string, mixed>
      */
     protected static $files = [];
 
@@ -102,7 +102,7 @@ class Env
      *
      * @param null|string $basePath 项目根目录，缺省为 src 的上两级
      *
-     * @return array 实际读取到的文件名列表（按加载顺序，即优先级从低到高）
+     * @return array<string, mixed> 实际读取到的文件名列表（按加载顺序，即优先级从低到高）
      */
     public static function load($basePath = null)
     {
@@ -173,7 +173,7 @@ class Env
     /**
      * 已读取到的环境文件列表（按加载顺序，后者覆盖前者）
      *
-     * @return array
+     * @return array<int|string, mixed>
      */
     public static function loadedFiles()
     {
@@ -336,9 +336,9 @@ class Env
      * 读取逗号分隔的列表
      *
      * @param string $key
-     * @param array  $default
+     * @param array<int|string, mixed>  $default
      *
-     * @return array
+     * @return array<int|string, mixed>
      */
     public static function list($key, $default = [])
     {

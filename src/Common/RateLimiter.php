@@ -71,7 +71,7 @@ class RateLimiter
     /**
      * 限流配置（app.rate_limit）
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $config = [
         'enable'          => true,
@@ -89,21 +89,21 @@ class RateLimiter
      *
      * 结构：{ "<dim>|<id>" => ['tokens' => float, 'ts' => float(毫秒)] }
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $buckets = [];
 
     /**
      * 超限日志采样时间戳：{ dim => float(秒) }
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $logAt = [];
 
     /**
      * 初始化
      *
-     * @param array $config app.rate_limit
+     * @param array<string, mixed> $config app.rate_limit
      *
      * @return void
      */
@@ -149,7 +149,7 @@ class RateLimiter
      *
      * @param string $dim
      *
-     * @return array ['rate' => int, 'burst' => int]，rate <= 0 表示该维度不限流
+     * @return array<string, mixed> ['rate' => int, 'burst' => int]，rate <= 0 表示该维度不限流
      */
     public static function spec($dim)
     {
@@ -235,7 +235,7 @@ class RateLimiter
      * @param string $dim
      * @param string $id
      *
-     * @return array 空数组表示该维度未启用限流
+     * @return array<string, mixed> 空数组表示该维度未启用限流
      */
     public static function bucket($dim, $id)
     {
@@ -254,7 +254,7 @@ class RateLimiter
     /**
      * Redis 多桶判定
      *
-     * @param array    $buckets bucket() 返回的桶定义列表（可含空数组，自动忽略）
+     * @param array<int|string, mixed>    $buckets bucket() 返回的桶定义列表（可含空数组，自动忽略）
      * @param int      $cost
      * @param callable $cb      function(bool $allowed)
      *
@@ -298,7 +298,7 @@ class RateLimiter
      *
      * @param string $dim
      * @param string $id
-     * @param array  $extra
+     * @param array<string, mixed>  $extra
      *
      * @return void
      */

@@ -32,12 +32,12 @@ final class EnvChecker
      *
      * 端口占用只作提示、不阻断：restart 场景下端口被自身占用属正常。
      *
-     * @param array $appConfig      config/app.php
-     * @param array $gatewayConfig  config/gateway.php
-     * @param array $businessConfig config/business.php
-     * @param array $actionConfig   config/actions.php
+     * @param array<string, mixed> $appConfig      config/app.php
+     * @param array<string, mixed> $gatewayConfig  config/gateway.php
+     * @param array<string, mixed> $businessConfig config/business.php
+     * @param array<string, mixed> $actionConfig   config/actions.php
      *
-     * @return array ['ok' => bool, 'text' => string]
+     * @return array<int|string, mixed> ['ok' => bool, 'text' => string]
      *
      * @throws \RuntimeException 运行时目录无法创建时抛出
      */

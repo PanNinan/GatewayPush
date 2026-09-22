@@ -15,7 +15,7 @@ namespace GatewayPush\Client\Service;
 final class EchoApi extends AbstractApi
 {
     /**
-     * @param array         $params 任意可 JSON 化载荷（服务端原样回显）
+     * @param array<string, mixed>         $params 任意可 JSON 化载荷（服务端原样回显）
      * @param null|callable $cb     function (bool $ok, array $data, ?array $error): void
      *
      * @return string 本请求 seq

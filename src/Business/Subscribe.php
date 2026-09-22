@@ -39,7 +39,7 @@ class Subscribe
     /**
      * 订阅配置
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $config = [
         'enable'             => true,
@@ -50,7 +50,7 @@ class Subscribe
     /**
      * 初始化
      *
-     * @param array $config app.subscribe
+     * @param array<string, mixed> $config app.subscribe
      *
      * @return void
      */
@@ -248,7 +248,7 @@ class Subscribe
      *
      * ttl <= 0 表示订阅关系长期有效，不做过期。
      *
-     * @param array $keys 裸键名（RedisClient 内部会补全局前缀）
+     * @param array<int|string, mixed> $keys 裸键名（RedisClient 内部会补全局前缀）
      *
      * @return void
      */

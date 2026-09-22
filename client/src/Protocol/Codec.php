@@ -44,7 +44,7 @@ final class Codec
      * @param mixed  $raw
      * @param string $error 输出错误原因
      *
-     * @return null|array 校验失败返回 null
+     * @return null|array<string, mixed> 校验失败返回 null
      */
     public static function decode($raw, &$error = null)
     {
@@ -55,10 +55,10 @@ final class Codec
      * 构造标准报文
      *
      * @param string $cmd
-     * @param array  $data
-     * @param array  $extra 附加/覆盖字段
+     * @param array<string, mixed>  $data
+     * @param array<string, mixed>  $extra 附加/覆盖字段
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public static function packet($cmd, array $data = [], array $extra = [])
     {
@@ -69,9 +69,9 @@ final class Codec
      * 构造回执报文（`seq` 原样回传）
      *
      * @param int|string $seq
-     * @param array      $data
+     * @param array<string, mixed>      $data
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public static function ack($seq = '', array $data = [])
     {
@@ -86,7 +86,7 @@ final class Codec
      * @param int|string $seq
      * @param string     $ref  触发错误的来源指令
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public static function error($code, $msg = '', $seq = '', $ref = '')
     {
@@ -101,9 +101,9 @@ final class Codec
      * 构造业务指令报文
      *
      * @param string $action 动作名（须已在服务端 config/actions.php 登记）
-     * @param array  $params 动作参数
+     * @param array<string, mixed>  $params 动作参数
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public static function dataPacket($action, array $params = [])
     {
@@ -116,7 +116,7 @@ final class Codec
     /**
      * 取出报文中承载的动作名（非 data 报文或缺失时返回空串）
      *
-     * @param array $packet
+     * @param array<string, mixed> $packet
      *
      * @return string
      */
@@ -134,9 +134,9 @@ final class Codec
     /**
      * 取出报文中承载的动作参数（缺失时返回空数组）
      *
-     * @param array $packet
+     * @param array<string, mixed> $packet
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public static function paramsOf(array $packet)
     {
@@ -156,7 +156,7 @@ final class Codec
      *   传输层 —— 网关收包即回，`data` 为空且**无** `action` 字段；
      *   业务层 —— 动作执行结果，带 `data.action`。
      *
-     * @param array $packet
+     * @param array<string, mixed> $packet
      *
      * @return bool
      */

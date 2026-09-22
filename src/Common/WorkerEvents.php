@@ -45,7 +45,7 @@ class WorkerEvents
     /**
      * 已绑定的 Worker（name#objectId），保证幂等
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $bound = [];
 
@@ -54,7 +54,7 @@ class WorkerEvents
      *
      * @param object $worker Workerman\Worker 及其子类实例
      * @param string $name   进程名，用于日志区分来源
-     * @param array  $opts   ['buffer' => bool] 是否绑定背压事件，默认 true
+     * @param array<string, mixed>  $opts   ['buffer' => bool] 是否绑定背压事件，默认 true
      *
      * @return void
      */

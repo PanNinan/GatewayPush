@@ -46,7 +46,11 @@ class Debugger
         'push', 'stats', 'health', 'shell', 'listen',
     ];
 
-    /** @var array 运行配置 */
+    /**
+     * 运行配置
+     *
+     * @var array<string, mixed>
+     */
     private $config;
 
     /** @var null|SessionManager */
@@ -65,7 +69,7 @@ class Debugger
     private $stdin;
 
     /**
-     * @param array $config uid / device_id / secret / proto / ws_url / udp_url / api_url /
+     * @param array<string, mixed> $config uid / device_id / secret / proto / ws_url / udp_url / api_url /
      *                      api_secret / timeout / heartbeat
      */
     public function __construct(array $config = [])
@@ -87,7 +91,7 @@ class Debugger
     /**
      * 入口：解析参数并拉起事件循环
      *
-     * @param array $args 不含程序名的 argv
+     * @param array<int|string, mixed> $args 不含程序名的 argv
      *
      * @return int 退出码（事件循环内 exit，实际不返回）
      *
@@ -147,7 +151,7 @@ class Debugger
     /**
      * 选项覆盖运行配置
      *
-     * @param array $options
+     * @param array<string, mixed> $options
      *
      * @return void
      */
@@ -187,7 +191,7 @@ class Debugger
     /**
      * 事件循环内的启动分发
      *
-     * @param array $parsed
+     * @param array<string, mixed> $parsed
      *
      * @return void
      */
@@ -349,7 +353,7 @@ class Debugger
      * 执行业务命令
      *
      * @param string $command
-     * @param array  $parsed
+     * @param array<string, mixed>  $parsed
      * @param bool   $exitAfter 完成后是否退出进程
      *
      * @return void
@@ -441,7 +445,7 @@ class Debugger
      * 主题族命令串行执行（订阅多个主题时逐个下发，避免乱序）
      *
      * @param string $action    subscribe|unsubscribe
-     * @param array  $args
+     * @param array<int|string, mixed>  $args
      * @param int    $index
      * @param bool   $exitAfter
      *
@@ -485,7 +489,7 @@ class Debugger
      * HTTP 管理端命令（/push /stats /health）
      *
      * @param string $command
-     * @param array  $parsed
+     * @param array<string, mixed>  $parsed
      *
      * @return void
      */
@@ -571,7 +575,7 @@ class Debugger
     /**
      * 启动挂机监听模式
      *
-     * @param array $parsed
+     * @param array<string, mixed> $parsed
      *
      * @return void
      */
@@ -768,8 +772,8 @@ class Debugger
      *
      * @param string     $label
      * @param bool       $ok
-     * @param null|array $data
-     * @param null|array $error
+     * @param null|array<string, mixed> $data
+     * @param null|array<string, mixed> $error
      * @param bool       $exitAfter
      *
      * @return void
@@ -829,7 +833,7 @@ class Debugger
     /**
      * 解析 JSON 位置参数
      *
-     * @param array $args
+     * @param array<int|string, mixed> $args
      * @param int   $index
      * @param mixed $default
      *

@@ -1,31 +1,40 @@
 # ---------------------------------------------------------------------
-# 测试代码专属 baseline —— 仅冻结「tests 首次纳入静态分析时」的存量
+# 测试代码专属 baseline —— 冻结 tests / client/tests 的存量
 #
 # 为什么单独一个文件（而不并入 phpstan-baseline.neon）：
 #   src / client/src 是生产代码，维持「新代码零容忍、baseline 只冻结极少数存量」；
-#   tests 是验证代码，此前从未被分析过，其全部告警在定义上都属存量。
+#   tests 是验证代码，存量天然更多。
 #   分成两个文件，才能让「src 侧 baseline 是否又长了」这个信号保持清晰。
 #
 # ⚠ 只许减、不许增：新增测试代码必须零告警，不得往这里追加条目。
 #   唯一例外是 PHPStan 对「按引用捕获的闭包」看不穿赋值导致的误判 ——
 #   这类条目若要新增，必须逐条注明原因。
 #
-# 存量构成（67 条 / 51 条目）：
+# 存量构成（339 条 / 324 条目）：
+#   【2026-09-22 提级至 level 6 时重新生成 —— 新增的 273 条全部是 missingType.*】
+#   - missingType.return（165）：测试替身 / 辅助方法缺返回类型。测试里
+#     `private function open() { ... }` 这类写法补 `: void` 收益极低，
+#     且引入原生类型反而有 TypeError 风险，故整批冻结。
+#   - missingType.iterableValue（68）/ parameter（33）/ property（7）：
+#     测试夹具的 `array` 形参、`public $x;` 属性缺值类型，同属低收益标注。
 #   - staticMethod/method.alreadyNarrowedType（26）：golden 值钉桩。
 #     如 assertSame(4004, ErrorCode::HTTP_NOT_FOUND) —— 常量被静态解析成字面量，
 #     PHPStan 判定断言恒真；但该断言的意图正是「钉住未来被改动的数值」。
 #   - staticMethod.impossibleType（4）：PHPUnit 断言落在按引用捕获的变量上，
 #     PHPStan 看不到闭包里的赋值，误判为 null / 空数组。
-#   - cast.useless(14) / closure.unusedUse(2)：纯机械噪音。
-#   - property.onlyWritten(4) / parameterByRef.unusedType(3) / nullsafe.neverNull(2) 等。
+#   - cast.useless（13）/ closure.unusedUse（2）：纯机械噪音。
+#   - property.onlyWritten（4）/ parameterByRef.unusedType（3）/ nullsafe.neverNull（2）等。
 #
-# ⚠ 2026-09-22 精简：重构提交把 11 条真实问题修掉后（ClientE2E 的 3 个多余 use、
-#   两个测试文件的 assertSame(count()) → assertCount()、_p5_bind_check 的多余 use），
-#   对应条目已失效但未同步删除，PHPStan 以 ignore.unmatched(non-ignorable) 报错、
-#   门禁变红。已按「失效即删」剔除 6 个条目（78 条/57 条目 → 67 条/51 条目）。
-#   生产侧 phpstan-baseline.neon 同步剔除 1 条（Auth.php 的多余 use）。
-#   教训：重构修掉真实告警后，必须同步删 baseline 条目，否则会以 unmatched 形式反噬。
+# 重新生成方法（仅在提级等结构变化时用，且必须在提交信息里写明原因）：
+#   1) phpstan.neon 的 level 改为目标级别，并**临时注释掉两个 baseline 的 includes**
+#      —— 否则已冻结的条目会先把错误吃掉，生成出来的 baseline 会缺条目；
+#   2) php vendor/bin/phpstan analyse --generate-baseline=phpstan-tests-baseline.neon
+#      —— 注意它按 `parameters.paths` 全量生成，会把生产侧那 9 条一并写进来；
+#   3) 剔除 path 不以 `tests/` 或 `client/tests/` 开头的条目（那 9 条属 phpstan-baseline.neon）；
+#   4) 恢复 includes 后再跑一次 `composer analyse`，必须 0 errors
+#      —— 若出现 `ignore.unmatched`，说明第 3 步剔错了条目。
 # ---------------------------------------------------------------------
+
 parameters:
 	ignoreErrors:
 		-
@@ -59,10 +68,442 @@ parameters:
 			path: client/tests/E2E/ClientE2E.php
 
 		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeHttpConnection\:\:connect\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Support/FakeHttpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeHttpConnection\:\:destroy\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Support/FakeHttpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeHttpConnection\:\:emit\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Support/FakeHttpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeHttpConnection\:\:emit\(\) has parameter \$raw with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Support/FakeHttpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeHttpConnection\:\:emitClose\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Support/FakeHttpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeHttpConnection\:\:emitError\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Support/FakeHttpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeHttpConnection\:\:emitError\(\) has parameter \$code with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Support/FakeHttpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeHttpConnection\:\:emitError\(\) has parameter \$msg with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Support/FakeHttpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeHttpConnection\:\:send\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Support/FakeHttpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeHttpConnection\:\:send\(\) has parameter \$data with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Support/FakeHttpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeHttpConnection\:\:send\(\) has parameter \$raw with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Support/FakeHttpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeTcpConnection\:\:close\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Support/FakeTcpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeTcpConnection\:\:connect\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Support/FakeTcpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeTcpConnection\:\:destroy\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Support/FakeTcpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeTcpConnection\:\:emit\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Support/FakeTcpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeTcpConnection\:\:emit\(\) has parameter \$frame with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Support/FakeTcpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeTcpConnection\:\:emitError\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Support/FakeTcpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeTcpConnection\:\:emitError\(\) has parameter \$code with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Support/FakeTcpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeTcpConnection\:\:emitError\(\) has parameter \$msg with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Support/FakeTcpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeTcpConnection\:\:send\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Support/FakeTcpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeTcpConnection\:\:send\(\) has parameter \$data with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Support/FakeTcpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeTcpConnection\:\:send\(\) has parameter \$raw with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Support/FakeTcpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeTransport\:\:drop\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Support/FakeTransport.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeTransport\:\:lastPacket\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Support/FakeTransport.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeTransport\:\:open\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Support/FakeTransport.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeTransport\:\:receive\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Support/FakeTransport.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeTransport\:\:receive\(\) has parameter \$packet with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: client/tests/Support/FakeTransport.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeTransport\:\:receiveRaw\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Support/FakeTransport.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeTransport\:\:receiveRaw\(\) has parameter \$raw with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Support/FakeTransport.php
+
+		-
+			message: '#^Property GatewayPush\\Client\\Tests\\Support\\FakeTransport\:\:\$closeCb has no type specified\.$#'
+			identifier: missingType.property
+			count: 1
+			path: client/tests/Support/FakeTransport.php
+
+		-
+			message: '#^Property GatewayPush\\Client\\Tests\\Support\\FakeTransport\:\:\$connectCalls has no type specified\.$#'
+			identifier: missingType.property
+			count: 1
+			path: client/tests/Support/FakeTransport.php
+
+		-
+			message: '#^Property GatewayPush\\Client\\Tests\\Support\\FakeTransport\:\:\$connected has no type specified\.$#'
+			identifier: missingType.property
+			count: 1
+			path: client/tests/Support/FakeTransport.php
+
+		-
+			message: '#^Property GatewayPush\\Client\\Tests\\Support\\FakeTransport\:\:\$errCb has no type specified\.$#'
+			identifier: missingType.property
+			count: 1
+			path: client/tests/Support/FakeTransport.php
+
+		-
 			message: '#^Property GatewayPush\\Client\\Tests\\Support\\FakeTransport\:\:\$errCb is never read, only written\.$#'
 			identifier: property.onlyWritten
 			count: 1
 			path: client/tests/Support/FakeTransport.php
+
+		-
+			message: '#^Property GatewayPush\\Client\\Tests\\Support\\FakeTransport\:\:\$msgCb has no type specified\.$#'
+			identifier: missingType.property
+			count: 1
+			path: client/tests/Support/FakeTransport.php
+
+		-
+			message: '#^Property GatewayPush\\Client\\Tests\\Support\\FakeTransport\:\:\$openCb has no type specified\.$#'
+			identifier: missingType.property
+			count: 1
+			path: client/tests/Support/FakeTransport.php
+
+		-
+			message: '#^Property GatewayPush\\Client\\Tests\\Support\\FakeTransport\:\:\$sentPackets type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: client/tests/Support/FakeTransport.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeUdpConnection\:\:close\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Support/FakeUdpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeUdpConnection\:\:connect\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Support/FakeUdpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeUdpConnection\:\:emit\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Support/FakeUdpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeUdpConnection\:\:emit\(\) has parameter \$raw with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Support/FakeUdpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeUdpConnection\:\:send\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Support/FakeUdpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeUdpConnection\:\:send\(\) has parameter \$buffer with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Support/FakeUdpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeUdpConnection\:\:sendCount\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Support/FakeUdpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeUdpConnection\:\:sendCount\(\) has parameter \$frame with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Support/FakeUdpConnection.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\AdminApiTest\:\:fireTimer\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/AdminApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\AdminApiTest\:\:fireTimer\(\) has parameter \$id with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Unit/AdminApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\AdminApiTest\:\:lastTimerId\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/AdminApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\AdminApiTest\:\:makeApi\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/AdminApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\AdminApiTest\:\:makeApi\(\) has parameter \$fake with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Unit/AdminApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\AdminApiTest\:\:makeTimers\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/AdminApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\AdminApiTest\:\:nonPersistentTimers\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/AdminApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\AdminApiTest\:\:parseRequest\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: client/tests/Unit/AdminApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\AdminApiTest\:\:persistentTimers\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/AdminApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\AdminApiTest\:\:respond\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/AdminApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\AdminApiTest\:\:respond\(\) has parameter \$body with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Unit/AdminApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\AdminApiTest\:\:respond\(\) has parameter \$status with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Unit/AdminApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\AdminApiTest\:\:testBadSignResponds401Triplet\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/AdminApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\AdminApiTest\:\:testBusinessCodeNonZeroFailsEvenOn200\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/AdminApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\AdminApiTest\:\:testEmptySecretStillSendsRequest\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/AdminApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\AdminApiTest\:\:testHealthCarriesValidSignOverEmptyBody\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/AdminApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\AdminApiTest\:\:testNonJsonResponseFailsWithServerError\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/AdminApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\AdminApiTest\:\:testPushBuildsJobAndSignsRawBody\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/AdminApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\AdminApiTest\:\:testStatsSuccessTriplet\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/AdminApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\AdminApiTest\:\:testTransportFailureUsesLocalCode\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/AdminApiTest.php
+
+		-
+			message: '#^Property GatewayPush\\Client\\Tests\\Unit\\AdminApiTest\:\:\$timers type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: client/tests/Unit/AdminApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\CliParserTest\:\:testDoubleDashStopsOptionParsing\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/CliParserTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\CliParserTest\:\:testEmptyArgsYieldsEmptyCommand\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/CliParserTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\CliParserTest\:\:testFlagWithoutValueBecomesTrue\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/CliParserTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\CliParserTest\:\:testParsesCommandAndPositionalArgs\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/CliParserTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\CliParserTest\:\:testParsesLongOptionWithEqualsAndSpace\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/CliParserTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\CliParserTest\:\:testShortOptionIsSwitch\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/CliParserTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\CliParserTest\:\:testTypedAccessors\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/CliParserTest.php
 
 		-
 			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with 0 and 0 will always evaluate to true\.$#'
@@ -143,10 +584,148 @@ parameters:
 			path: client/tests/Unit/HttpTransportTest.php
 
 		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\HttpTransportTest\:\:fireTimer\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/HttpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\HttpTransportTest\:\:fireTimer\(\) has parameter \$id with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Unit/HttpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\HttpTransportTest\:\:lastTimerId\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/HttpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\HttpTransportTest\:\:makeTimers\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/HttpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\HttpTransportTest\:\:makeTransport\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/HttpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\HttpTransportTest\:\:makeTransport\(\) has parameter \$fake with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Unit/HttpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\HttpTransportTest\:\:nonPersistentTimers\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/HttpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\HttpTransportTest\:\:persistentTimers\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/HttpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\HttpTransportTest\:\:testChunkedArrivalWaitsForFullBody\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/HttpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\HttpTransportTest\:\:testCloseFallbackWithoutContentLength\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/HttpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\HttpTransportTest\:\:testConnectionErrorSettlesWithError\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/HttpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\HttpTransportTest\:\:testGetRequestShape\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/HttpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\HttpTransportTest\:\:testInvalidUrlThrowsConfig\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/HttpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\HttpTransportTest\:\:testPostRequestShape\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/HttpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\HttpTransportTest\:\:testResponseParsedByContentLength\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/HttpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\HttpTransportTest\:\:testSettleOnlyOnce\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/HttpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\HttpTransportTest\:\:testTimeoutSettlesWithError\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/HttpTransportTest.php
+
+		-
 			message: '#^Property GatewayPush\\Client\\Tests\\Unit\\HttpTransportTest\:\:\$fake is never read, only written\.$#'
 			identifier: property.onlyWritten
 			count: 1
 			path: client/tests/Unit/HttpTransportTest.php
+
+		-
+			message: '#^Property GatewayPush\\Client\\Tests\\Unit\\HttpTransportTest\:\:\$timers type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: client/tests/Unit/HttpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\PushReceiverTest\:\:fireTimer\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/PushReceiverTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\PushReceiverTest\:\:fireTimer\(\) has parameter \$id with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Unit/PushReceiverTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\PushReceiverTest\:\:lastTimerId\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/PushReceiverTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\PushReceiverTest\:\:makeReady\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/PushReceiverTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\PushReceiverTest\:\:makeReady\(\) has parameter \$overrides with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: client/tests/Unit/PushReceiverTest.php
 
 		-
 			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\PushReceiverTest\:\:makeReady\(\) never assigns null to &\$transport so it can be removed from the by\-ref type\.$#'
@@ -155,8 +734,212 @@ parameters:
 			path: client/tests/Unit/PushReceiverTest.php
 
 		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\PushReceiverTest\:\:makeTimers\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/PushReceiverTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\PushReceiverTest\:\:nonPersistentTimers\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/PushReceiverTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\PushReceiverTest\:\:persistentTimers\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/PushReceiverTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\PushReceiverTest\:\:pushPacket\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/PushReceiverTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\PushReceiverTest\:\:pushPacket\(\) has parameter \$overrides with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: client/tests/Unit/PushReceiverTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\PushReceiverTest\:\:testMsgIdFallsBackToSeq\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/PushReceiverTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\PushReceiverTest\:\:testOfflineFlagMarksBackfillPush\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/PushReceiverTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\PushReceiverTest\:\:testPushIsAcknowledgedAutomatically\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/PushReceiverTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\PushReceiverTest\:\:testPushIsParsedIntoPayloadAndMeta\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/PushReceiverTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\PushReceiverTest\:\:testPushWithoutReceiverCallbackStillAcks\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/PushReceiverTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\PushReceiverTest\:\:testSendAckSkippedWhenNotReady\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/PushReceiverTest.php
+
+		-
+			message: '#^Property GatewayPush\\Client\\Tests\\Unit\\PushReceiverTest\:\:\$timers type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: client/tests/Unit/PushReceiverTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\ServiceApiTest\:\:ackLast\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/ServiceApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\ServiceApiTest\:\:ackLast\(\) has parameter \$data with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: client/tests/Unit/ServiceApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\ServiceApiTest\:\:fireTimer\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/ServiceApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\ServiceApiTest\:\:fireTimer\(\) has parameter \$id with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Unit/ServiceApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\ServiceApiTest\:\:lastDataPacket\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/ServiceApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\ServiceApiTest\:\:lastTimerId\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/ServiceApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\ServiceApiTest\:\:makeReady\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/ServiceApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\ServiceApiTest\:\:makeReady\(\) has parameter \$overrides with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: client/tests/Unit/ServiceApiTest.php
+
+		-
 			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\ServiceApiTest\:\:makeReady\(\) never assigns null to &\$transport so it can be removed from the by\-ref type\.$#'
 			identifier: parameterByRef.unusedType
+			count: 1
+			path: client/tests/Unit/ServiceApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\ServiceApiTest\:\:makeTimers\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/ServiceApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\ServiceApiTest\:\:nonPersistentTimers\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/ServiceApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\ServiceApiTest\:\:persistentTimers\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/ServiceApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\ServiceApiTest\:\:testEchoSendsParamsVerbatim\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/ServiceApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\ServiceApiTest\:\:testLocalTimeoutSurfacesAsClientTimeoutError\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/ServiceApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\ServiceApiTest\:\:testNotifyBuildsValueMsgIdOfflineMode\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/ServiceApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\ServiceApiTest\:\:testNotifyDefaults\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/ServiceApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\ServiceApiTest\:\:testReportBuildsTopicCountValue\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/ServiceApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\ServiceApiTest\:\:testReportDefaultsCountToOne\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/ServiceApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\ServiceApiTest\:\:testRequestBeforeReadyThrows\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/ServiceApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\ServiceApiTest\:\:testServerErrorSurfacesInCallback\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/ServiceApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\ServiceApiTest\:\:testSessionApiSendsNoParams\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/ServiceApiTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\ServiceApiTest\:\:testSubscribeUnsubscribeTopics\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/ServiceApiTest.php
+
+		-
+			message: '#^Property GatewayPush\\Client\\Tests\\Unit\\ServiceApiTest\:\:\$timers type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
 			count: 1
 			path: client/tests/Unit/ServiceApiTest.php
 
@@ -173,10 +956,244 @@ parameters:
 			path: client/tests/Unit/SessionManagerTest.php
 
 		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:connectAndReady\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:fireTimer\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:fireTimer\(\) has parameter \$id with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:lastTimerId\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:makeSession\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:makeSession\(\) has parameter \$overrides with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
 			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:makeSession\(\) never assigns null to &\$transport so it can be removed from the by\-ref type\.$#'
 			identifier: parameterByRef.unusedType
 			count: 1
 			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:makeTimers\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:nonPersistentTimers\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:persistentTimers\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testAttachTokenCarriesTokenOnOutgoingPackets\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testAttachTokenDisabledKeepsPacketsTokenFree\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testAuthAckEntersReadyAndSchedulesHeartbeat\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testAuthErrorRejectsPendingAndFiresError\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testAutoAuthSendsAuthPacketOnOpen\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testConnectTwiceThrowsState\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testDisconnectFailsPendingAndSchedulesReconnect\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testHeartbeatDisabledWhenZero\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testHeartbeatSendsPingPeriodically\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testInvalidFrameFiresBadPacketError\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testInvalidWsUrlThrowsWhenTransportNotInjected\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testManualAuthModeStaysConnectedAfterOpen\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testMissingRequiredConfigThrows\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testPingPongSetsRtt\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testPushIsForwardedToCallback\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testReconnectBackoffIsExponential\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testReconnectDisabledGoesDisconnected\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testReconnectSuccessResetsAttempts\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testRequestBeforeReadyThrowsState\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testRequestBuildsDataPacketAndSettlesOnAck\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testRequestTimeoutFiresTimeoutError\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testServerReversePingIsAnsweredWithPong\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testStatsSnapshotShape\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testTransportAckSettlesAuthAndPingButNotData\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testUnsolicitedAckIsIgnored\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testUserCloseDoesNotReconnect\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:testUserCloseDuringReconnectCancelsReconnectTimer\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Property GatewayPush\\Client\\Tests\\Unit\\SessionManagerTest\:\:\$timers type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: client/tests/Unit/SessionManagerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SignerTest\:\:fixtureData\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: client/tests/Unit/SignerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\SignerTest\:\:fixturePacket\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: client/tests/Unit/SignerTest.php
 
 		-
 			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertNotNull\(\) with null and ''重传耗尽须触发 onError'' will always evaluate to false\.$#'
@@ -191,16 +1208,211 @@ parameters:
 			path: client/tests/Unit/UdpTransportTest.php
 
 		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:connectAndWarmup\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:fireTimer\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:fireTimer\(\) has parameter \$id with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:lastTimerId\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:makeTimers\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:makeTransport\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:makeTransport\(\) has parameter \$fake with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:makeTransport\(\) has parameter \$options with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:nonPersistentTimers\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:persistentTimers\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:testCloseCancelsPendingTimers\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:testCloseFiresOnCloseAndDiscardsConnection\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:testConnectFiresOpenSynchronously\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:testConnectIsIdempotent\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:testInboundConfirmsOldestInflightAndStopsRetransmit\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:testInvalidUrlThrowsConfig\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:testRetransmitExhaustionDropsFrameAndFiresError\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:testRetransmitResendsInflightUntilAcked\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:testSendAfterWarmupGoesOutImmediately\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:testSendBeforeConnectThrowsState\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:testSendDuringWarmupIsQueuedAndFlushed\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:testWarmupFlushDropsFramesIfClosedInBetween\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
 			message: '#^Property GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:\$fake is never read, only written\.$#'
 			identifier: property.onlyWritten
 			count: 1
 			path: client/tests/Unit/UdpTransportTest.php
 
 		-
+			message: '#^Property GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:\$timers type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: client/tests/Unit/UdpTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\WsTransportTest\:\:makeTransport\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/WsTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\WsTransportTest\:\:makeTransport\(\) has parameter \$fake with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: client/tests/Unit/WsTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\WsTransportTest\:\:testCloseFiresOnCloseAndAllowsReconnect\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/WsTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\WsTransportTest\:\:testConnectFailureEmitsErrorThenCloseSignal\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/WsTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\WsTransportTest\:\:testConnectFiresOpenAndMessagePasses\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/WsTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\WsTransportTest\:\:testInvalidUrlThrowsConfig\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/WsTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\WsTransportTest\:\:testMidConnectionErrorDoesNotForceClose\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/WsTransportTest.php
+
+		-
+			message: '#^Method GatewayPush\\Client\\Tests\\Unit\\WsTransportTest\:\:testSendBeforeConnectThrowsState\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: client/tests/Unit/WsTransportTest.php
+
+		-
 			message: '#^Property GatewayPush\\Client\\Tests\\Unit\\WsTransportTest\:\:\$fake is never read, only written\.$#'
 			identifier: property.onlyWritten
 			count: 1
 			path: client/tests/Unit/WsTransportTest.php
+
+
+
+
+
+
+
+
+
 
 		-
 			message: '#^Casting to string something that''s already string\.$#'
@@ -215,6 +1427,66 @@ parameters:
 			path: tests/E2E/CaseActionUdp.php
 
 		-
+			message: '#^Method GatewayPush\\Tests\\E2E\\CaseHttpAction\:\:callAction\(\) has parameter \$body with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/E2E/CaseHttpAction.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\E2E\\CaseHttpAction\:\:callAction\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/E2E/CaseHttpAction.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\E2E\\CaseHttpAction\:\:checkEcho\(\) has parameter \$ctx with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/E2E/CaseHttpAction.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\E2E\\CaseHttpAction\:\:checkEcho\(\) has parameter \$errors with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/E2E/CaseHttpAction.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\E2E\\CaseHttpAction\:\:checkMissingResult\(\) has parameter \$errors with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/E2E/CaseHttpAction.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\E2E\\CaseHttpAction\:\:checkRejections\(\) has parameter \$ctx with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/E2E/CaseHttpAction.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\E2E\\CaseHttpAction\:\:checkRejections\(\) has parameter \$errors with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/E2E/CaseHttpAction.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\E2E\\CaseHttpAction\:\:checkReportPersisted\(\) has parameter \$ctx with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/E2E/CaseHttpAction.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\E2E\\CaseHttpAction\:\:checkReportPersisted\(\) has parameter \$errors with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/E2E/CaseHttpAction.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\E2E\\CaseHttpAction\:\:resultField\(\) has parameter \$res with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/E2E/CaseHttpAction.php
+
+		-
 			message: '#^Negated boolean expression is always true\.$#'
 			identifier: booleanNot.alwaysTrue
 			count: 1
@@ -237,6 +1509,78 @@ parameters:
 			identifier: booleanOr.rightAlwaysFalse
 			count: 1
 			path: tests/E2E/CasePushOnline.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\E2E\\Harness\:\:__construct\(\) has parameter \$appConfig with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/E2E/Harness.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\E2E\\Harness\:\:boot\(\) has parameter \$argv with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/E2E/Harness.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\E2E\\Harness\:\:buildPacket\(\) has parameter \$extra with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/E2E/Harness.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\E2E\\Harness\:\:buildPacket\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/E2E/Harness.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\E2E\\Harness\:\:ctx\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/E2E/Harness.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\E2E\\Harness\:\:encode\(\) has parameter \$packet with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/E2E/Harness.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\E2E\\Harness\:\:httpRequest\(\) has parameter \$headers with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/E2E/Harness.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\E2E\\Harness\:\:httpRequest\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/E2E/Harness.php
+
+		-
+			message: '#^Property GatewayPush\\Tests\\E2E\\Harness\:\:\$appConfig type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/E2E/Harness.php
+
+		-
+			message: '#^Property GatewayPush\\Tests\\E2E\\Harness\:\:\$ctx type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/E2E/Harness.php
+
+		-
+			message: '#^Property GatewayPush\\Tests\\E2E\\Harness\:\:\$deviceId has no type specified\.$#'
+			identifier: missingType.property
+			count: 1
+			path: tests/E2E/Harness.php
+
+		-
+			message: '#^Property GatewayPush\\Tests\\E2E\\Harness\:\:\$state type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/E2E/Harness.php
 
 		-
 			message: '#^Casting to string something that''s already string\.$#'
@@ -281,6 +1625,144 @@ parameters:
 			path: tests/Manual/_p5_reconnect_check.php
 
 		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\ActionContextTest\:\:context\(\) has parameter \$options with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/ActionContextTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\ActionContextTest\:\:context\(\) has parameter \$packet with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/ActionContextTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\ActionContextTest\:\:context\(\) has parameter \$params with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/ActionContextTest.php
+
+		-
+			message: '#^Property GatewayPush\\Tests\\Unit\\ActionContextTest\:\:\$sent type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/ActionContextTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\ActionRunnerTest\:\:load\(\) has parameter \$actions with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/ActionRunnerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\ActionRunnerTest\:\:load\(\) has parameter \$defaults with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/ActionRunnerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\ActionRunnerTest\:\:load\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/ActionRunnerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\ApiSignSwitchTest\:\:listenProvider\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/ApiSignSwitchTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\ApiSignSwitchTest\:\:testLoopbackHostDetection\(\) has parameter \$expected with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: tests/Unit/ApiSignSwitchTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\ApiSignSwitchTest\:\:testLoopbackHostDetection\(\) has parameter \$listen with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: tests/Unit/ApiSignSwitchTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\ApiSignSwitchTest\:\:testLoopbackHostDetection\(\) has parameter \$why with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: tests/Unit/ApiSignSwitchTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\ApiSignSwitchTest\:\:withConfig\(\) has parameter \$config with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/ApiSignSwitchTest.php
+
+		-
+			message: '#^Property GatewayPush\\Tests\\Unit\\ApiSignSwitchTest\:\:\$configSnapshot type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/ApiSignSwitchTest.php
+
+		-
+			message: '#^Property GatewayPush\\Tests\\Unit\\EnvTest\:\:\$injected type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/EnvTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\LoggerTest\:\:archiveConfig\(\) has parameter \$overrides with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/LoggerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\LoggerTest\:\:archiveConfig\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/LoggerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\LoggerTest\:\:archiveMonthProvider\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/LoggerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\LoggerTest\:\:archiveNoOpProvider\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/LoggerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\LoggerTest\:\:invalidRoleProvider\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/LoggerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\LoggerTest\:\:testArchiveIsNoOpWhenDisabledOrThresholdsInvalid\(\) has parameter \$overrides with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/LoggerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\LoggerTest\:\:testArchiveMonthOfParsesOnlyDatedNaming\(\) has parameter \$expected with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: tests/Unit/LoggerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\LoggerTest\:\:testArchiveMonthOfParsesOnlyDatedNaming\(\) has parameter \$name with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: tests/Unit/LoggerTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\LoggerTest\:\:testInvalidRoleFallsBackToDefaultChannel\(\) has parameter \$role with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: tests/Unit/LoggerTest.php
+
+		-
 			message: '#^Parameter \#1 \$seq of static method GatewayPush\\Business\\Message\:\:ack\(\) expects string, int given\.$#'
 			identifier: argument.type
 			count: 1
@@ -317,9 +1799,183 @@ parameters:
 			path: tests/Unit/MonitorTest.php
 
 		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\MonitorTest\:\:gauge\(\) has parameter \$extra with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/MonitorTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\MonitorTest\:\:gauge\(\) has parameter \$pidAts with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/MonitorTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\MonitorTest\:\:gauge\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/MonitorTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\MonitorTest\:\:root\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: tests/Unit/MonitorTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\MonitorTest\:\:root\(\) has parameter \$relative with no type specified\.$#'
+			identifier: missingType.parameter
+			count: 1
+			path: tests/Unit/MonitorTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\MonitorTest\:\:testDashboardParsesTheSameFieldPrefixes\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: tests/Unit/MonitorTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\MonitorTest\:\:testFieldPrefixGoldStandard\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: tests/Unit/MonitorTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\MonitorTest\:\:testIgnoresMissingOrCorruptTimestamp\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: tests/Unit/MonitorTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\MonitorTest\:\:testIgnoresNonNumericPidSuffix\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: tests/Unit/MonitorTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\MonitorTest\:\:testIgnoresProcessFieldsWithoutPidAt\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: tests/Unit/MonitorTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\MonitorTest\:\:testKeepsLiveProcess\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: tests/Unit/MonitorTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\MonitorTest\:\:testKeepsProcessExactlyAtDeadline\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: tests/Unit/MonitorTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\MonitorTest\:\:testNeverTouchesGlobalFields\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: tests/Unit/MonitorTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\MonitorTest\:\:testPurgesAllFourFieldsOfEachDeadProcess\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: tests/Unit/MonitorTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\MonitorTest\:\:testPurgesOnlyExpiredAmongMixedProcesses\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: tests/Unit/MonitorTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\MonitorTest\:\:testPurgesProcessOneSecondPastDeadline\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: tests/Unit/MonitorTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\MonitorTest\:\:testReportInvokesPurgeAfterExpire\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: tests/Unit/MonitorTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\MonitorTest\:\:testReturnsEmptyWhenGaugeIsEmpty\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: tests/Unit/MonitorTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\MonitorTest\:\:testReturnsEmptyWhenTtlDisabled\(\) has no return type specified\.$#'
+			identifier: missingType.return
+			count: 1
+			path: tests/Unit/MonitorTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\ParamValidatorTest\:\:validate\(\) has parameter \$input with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/ParamValidatorTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\ParamValidatorTest\:\:validate\(\) has parameter \$rules with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/ParamValidatorTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\ParamValidatorTest\:\:validate\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/ParamValidatorTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\RateLimiterTest\:\:configure\(\) has parameter \$overrides with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/RateLimiterTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\RedisKeysTest\:\:dynamicKeyProvider\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/RedisKeysTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\RedisKeysTest\:\:testDynamicKeyGolden\(\) has parameter \$args with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/RedisKeysTest.php
+
+		-
 			message: '#^Casting to string something that''s already string\.$#'
 			identifier: cast.useless
 			count: 2
+			path: tests/Unit/RoleCatalogTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\RoleCatalogTest\:\:byRole\(\) has parameter \$env with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/RoleCatalogTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\RoleCatalogTest\:\:byRole\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/RoleCatalogTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\RoleCatalogTest\:\:roles\(\) has parameter \$env with no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
+			path: tests/Unit/RoleCatalogTest.php
+
+		-
+			message: '#^Method GatewayPush\\Tests\\Unit\\RoleCatalogTest\:\:roles\(\) return type has no value type specified in iterable type array\.$#'
+			identifier: missingType.iterableValue
+			count: 1
 			path: tests/Unit/RoleCatalogTest.php
 
 		-

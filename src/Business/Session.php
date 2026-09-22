@@ -43,7 +43,7 @@ class Session
     /**
      * 会话配置
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected static $config = [
         'ttl'           => 7200,
@@ -54,7 +54,7 @@ class Session
     /**
      * 初始化
      *
-     * @param array $config app.session 配置
+     * @param array<string, mixed> $config app.session 配置
      *
      * @return void
      */
@@ -71,9 +71,9 @@ class Session
      * 绑定会话（鉴权成功后调用）
      *
      * @param string        $clientId
-     * @param array         $identity ['uid'=>..., 'device_id'=>...]
+     * @param array<string, mixed>         $identity ['uid'=>..., 'device_id'=>...]
      * @param string        $protocol Session::PROTOCOL_WS / PROTOCOL_UDP
-     * @param array         $connInfo ['client_ip','client_port','gateway','connect_at']
+     * @param array<string, mixed>         $connInfo ['client_ip','client_port','gateway','connect_at']
      * @param null|callable $cb
      *
      * @return void

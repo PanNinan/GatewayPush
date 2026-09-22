@@ -91,14 +91,14 @@ final class UdpTransport implements TransportInterface
     /**
      * 预热窗口内缓冲的帧
      *
-     * @var array
+     * @var array<string, mixed>
      */
     private $queue = [];
 
     /**
      * 在途报文：frame => 已发送次数（收到下行即确认最旧一笔）
      *
-     * @var array
+     * @var array<string, mixed>
      */
     private $inflight = [];
 
@@ -135,7 +135,7 @@ final class UdpTransport implements TransportInterface
 
     /**
      * @param string        $url         udp://host:port
-     * @param array         $options     first_send_delay / retransmit_interval / max_attempts
+     * @param array<string, mixed>         $options     first_send_delay / retransmit_interval / max_attempts
      * @param null|callable $connFactory 连接工厂（单测注入假连接），缺省创建 AsyncUdpConnection
      * @param null|callable $timerAdd    计时器创建（单测注入假计时器）
      * @param null|callable $timerDel    计时器删除
