@@ -1,7 +1,7 @@
-# GatewayWorker 客户端 SDK 与调试器设计方案
+# GatewayPush 客户端 SDK 与调试器设计方案
 
 > 状态：已确认，**P0、P1、P2 已完成**（2026-09-20），P3~P6 按阶段实现
-> 对应服务端：`Workman V2 GatewayWorker 实时数据推送服务技术方案文档.md`
+> 对应服务端：`Workerman V2 GatewayPush 实时数据推送服务技术方案文档.md`
 > 使用手册：`README.md`
 
 ---

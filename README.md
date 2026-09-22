@@ -1,4 +1,4 @@
-# GatewayWorker 实时数据推送服务
+# GatewayPush 实时数据推送服务
 
 基于 [workerman](https://github.com/walkor/workerman) + [GatewayWorker](https://github.com/walkor/GatewayWorker) 的  
 **WebSocket + UDP 双协议**实时数据推送服务。面向「单对一定向推送」场景（一个用户/设备对应一条有效连接），  
@@ -128,7 +128,7 @@ WebSocket 长连接（实时双向）  UDP 轻量上报（低开销、可丢包�
 ## 3. 目录结构
 
 ```
-GatewayWorker/
+GatewayPush/
 ├── bin/                              服务管理脚本（跨平台，处理终端编码）
 │   ├── start.sh                      Linux / macOS
 │   ├── start.bat                     Windows 入口（纯 ASCII，仅转发到 ps1）
@@ -198,13 +198,17 @@ GatewayWorker/
 │   ├── bootstrap.php
 │   └── e2e_check.php                 e2e 入口
 ├── postman/
-│   └── GatewayWorker.postman_collection.json   可直接导入的 HTTP 接口集合（9 个请求，内置自动签名）
+│   └── GatewayPush.postman_collection.json   可直接导入的 HTTP 接口集合（9 个请求，内置自动签名）
 ├── start.php                         统一启动入口：命令解析 + 角色装配 + 环境自检
 ├── composer.json                    依赖与脚本
 ├── phpstan.neon / phpstan-baseline.neon
 ├── phpunit.xml
 ├── .env.example                     配置模板（含全部变量的说明）
-└── Workman V2 GatewayWorker 实时数据推送服务技术方案文档.md
+└── docs/                             设计与接口文档
+    ├── GatewayPush 对外接口文档.md      面向调用方的字段级接口契约
+    ├── GatewayPush 客户端SDK与调试器设计方案.md
+    ├── Workerman V2 GatewayPush 实时数据推送服务技术方案文档.md
+    └── Workerman 框架 AI 编码规范.md
 ```
 
 ---
@@ -234,8 +238,8 @@ GatewayWorker/
 ### 5.1 安装依赖
 
 ```bash
-git clone <repo> GatewayWorker
-cd GatewayWorker
+git clone <repo> GatewayPush
+cd GatewayPush
 composer install
 ```
 
@@ -261,7 +265,7 @@ UDP 队列 key 一致性、`.env` 加载链、密钥强度（含占位值检测�
 典型输出：
 
 ```
-GatewayWorker 推送服务 - 运行环境自检
+GatewayPush 推送服务 - 运行环境自检
 ======================================================================
 PHP 版本  : 8.2.9 (cli)
 操作系统  : WINNT [单进程模式]
@@ -322,7 +326,7 @@ php start.php start --role=dashboard
 「跑的是哪份配置、哪个版本的框架、哪些组件」：
 
 ```text
-GatewayWorker 实时数据推送服务 - 启动信息
+GatewayPush 实时数据推送服务 - 启动信息
 ======================================================================
 PHP 版本  : 8.2.9 (cli) / Linux [多进程模式]
 启动角色  : all
@@ -1617,7 +1621,7 @@ curl -s -X POST http://127.0.0.1:8290/action \
 > ```
 >
 > 可直接导入 Postman 的集合同样覆盖 `/action` 全系列：  
-> `postman/GatewayWorker.postman_collection.json`（9 个请求，含集合级自动签名脚本）。
+> `postman/GatewayPush.postman_collection.json`（9 个请求，含集合级自动签名脚本）。
 
 #### 接口清单
 
@@ -2371,13 +2375,14 @@ grep "已清理已退出进程" runtime/logs/*.log
 
 | 文档 | 面向 | 内容 |
 | --- | --- | --- |
-| **`GatewayWorker 对外接口文档.md`** | **调用方 / 接入方** | **字段级接口契约**：接入点、三套凭证、逐接口请求/响应字段、业务动作参数 schema、错误码、限额汇总。接入方只需读这一份 |
-| `Workman V2 GatewayWorker 实时数据推送服务技术方案文档.md` | 设计者 | 设计决策、取舍理由与演进路线 |
-| `GatewayWorker 客户端SDK与调试器设计方案.md` | 客户端开发者 | 五层架构与 P0~P6 里程碑 |
+| **`docs/GatewayPush 对外接口文档.md`** | **调用方 / 接入方** | **字段级接口契约**：接入点、三套凭证、逐接口请求/响应字段、业务动作参数 schema、错误码、限额汇总。接入方只需读这一份 |
+| `docs/Workerman V2 GatewayPush 实时数据推送服务技术方案文档.md` | 设计者 | 设计决策、取舍理由与演进路线 |
+| `docs/GatewayPush 客户端SDK与调试器设计方案.md` | 客户端开发者 | 五层架构与 P0~P6 里程碑 |
+| `docs/Workerman 框架 AI 编码规范.md` | 开发者 / AI 协作 | Workerman 底层约束 + PSR-12 + 常驻内存避坑，可作 AI System Prompt |
 | `client/README.md` | PHP 客户端使用者 | SDK 用法与状态 |
 
 > 本文件（README）是**使用者手册**：部署、配置、原理、运维。
-> 接口字段的权威定义在代码；字段级契约的集中视图在 `GatewayWorker 对外接口文档.md`。
+> 接口字段的权威定义在代码；字段级契约的集中视图在 `docs/GatewayPush 对外接口文档.md`。
 > 三者不一致时以代码为准，并须同时修正另外两处。
 
 ## License

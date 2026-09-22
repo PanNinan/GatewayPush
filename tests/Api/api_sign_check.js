@@ -21,7 +21,7 @@
  * 而不是报 FAIL —— 否则本地调试环境会持续误报门禁红。
  *
  * 密钥从 .env 读取但**不打印**。签名规则与可直接导入的 Postman 集合见
- * postman/GatewayWorker.postman_collection.json。
+ * postman/GatewayPush.postman_collection.json。
  *
  * 前置条件：api 角色已启动（`bin/start.bat start api`，或随 all 一起起）；
  * 用例 5) 还需 business 角色（动作由业务进程执行）。

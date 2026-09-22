@@ -1,7 +1,7 @@
 #!/usr/bin/env php
 <?php
 /**
- * gwclient —— GatewayWorker 实时推送服务客户端调试器
+ * gwclient —— GatewayPush 实时推送服务客户端调试器
  *
  * 用法：
  *   php client/bin/gwclient.php <command> [args] [options]

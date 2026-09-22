@@ -1,4 +1,4 @@
-# GatewayWorker 对外接口文档
+# GatewayPush 对外接口文档
 
 > **定位**：本文件是**面向调用方**的字段级接口契约，回答「连哪里、带什么、回什么、错了怎么办」。
 > `README.md` 是**使用者手册**（部署、配置、原理、运维），两者的分工不同：
@@ -810,7 +810,7 @@ WS / UDP 侧凡注册即可用（受 `auth` 与限流约束）。
 |---|---|---|---|
 | HTTP 全场景 demo | `php tests/Api/http_demo.php`（`composer demo:http`） | 13 场景 / 19 断言，含签名构造全过程。`--curl` 打印等价 curl 命令 | api + business 在线 |
 | HTTP 验签与错误分支 | `node tests/Api/api_sign_check.js` | 8 形态（正确/空 body/错误签名/免鉴权/`/action` 正常/`session` 拒绝/错签名/补查 404） | api + business 在线 |
-| Postman 集合 | 导入 `postman/GatewayWorker.postman_collection.json` | 9 个请求，**集合级自动签名** | api + business 在线 |
+| Postman 集合 | 导入 `postman/GatewayPush.postman_collection.json` | 9 个请求，**集合级自动签名** | api + business 在线 |
 | 端到端全链路 | `composer test:e2e` | 16 用例（WS / UDP / HTTP / 推送 / 动作 / 限流 / 离线补投） | 全部角色在线 |
 | 环境自检 | `php start.php check` | 配置、密钥、队列键一致性、端口 | 无 |
 

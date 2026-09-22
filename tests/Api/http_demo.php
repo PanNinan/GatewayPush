@@ -1,6 +1,6 @@
 <?php
 /**
- * GatewayWorker HTTP 接口 —— 调用示例（可直接运行）
+ * GatewayPush HTTP 接口 —— 调用示例（可直接运行）
  * =====================================================================
  * 用途
  * ---------------------------------------------------------------------
@@ -89,7 +89,7 @@ $uid      = 'demo-http';
 $deviceId = 'demo-device';
 $topic    = 'demo_http_topic';
 
-echo "GatewayWorker HTTP 接口调用示例\n";
+echo "GatewayPush HTTP 接口调用示例\n";
 echo str_repeat('=', 70) . "\n";
 echo "服务地址  : {$baseUrl}\n";
 echo "密钥来源  : {$decideSecret[1]}\n";

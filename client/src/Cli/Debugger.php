@@ -784,7 +784,7 @@ class Debugger
     private function printHelp()
     {
         echo <<<TXT
-gwclient —— GatewayWorker 客户端调试器 v{$this->version()}
+gwclient —— GatewayPush 客户端调试器 v{$this->version()}
 
 用法：
   php client/bin/gwclient.php <command> [args] [options]

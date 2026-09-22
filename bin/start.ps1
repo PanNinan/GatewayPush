@@ -1,7 +1,7 @@
 ﻿#Requires -Version 5.1
 <#
 ============================================================================
- GatewayWorker 实时数据推送服务 —— Windows 服务管理脚本
+ GatewayPush 实时数据推送服务 —— Windows 服务管理脚本
 ============================================================================
 
  职责边界
@@ -808,7 +808,7 @@ function Invoke-Log {
 
 function Show-Help {
     Write-Host @'
-GatewayWorker 实时数据推送服务 —— Windows 服务管理脚本
+GatewayPush 实时数据推送服务 —— Windows 服务管理脚本
 
 用法：
   bin\start.bat <命令> [参数]

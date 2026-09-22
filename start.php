@@ -59,8 +59,8 @@ use Workerman\Worker;
 /* ---------------------------------------------------------------------
  | 2. 命令与角色解析
  --------------------------------------------------------------------- */
-$argvList = isset($argv) ? $argv : array();
-$command  = isset($argvList[1]) ? $argvList[1] : 'help';
+$argvList = $argv ?? array();
+$command  = $argvList[1] ?? 'help';
 $role     = 'all';
 
 // 提取 --role=xxx 并从 argv 中剔除，避免干扰 workerman 自身的命令解析
@@ -283,7 +283,7 @@ function checkEnvironment(array $appConfig, array $gatewayConfig, array $busines
     $ok      = true;
     $isLinux = DIRECTORY_SEPARATOR === '/';
 
-    $lines[] = 'GatewayWorker 推送服务 - 运行环境自检';
+    $lines[] = 'GatewayPush 推送服务 - 运行环境自检';
     $lines[] = str_repeat('=', 70);
     $lines[] = 'PHP 版本  : ' . PHP_VERSION . ' (' . PHP_SAPI . ')';
     $lines[] = '操作系统  : ' . PHP_OS . ($isLinux ? ' [多进程模式]' : ' [单进程模式]');
@@ -770,7 +770,7 @@ function startupBanner(array $appConfig, array $gatewayConfig, array $businessCo
         : '（未找到，全部使用代码内默认值）';
 
     $lines   = array();
-    $lines[] = 'GatewayWorker 实时数据推送服务 - 启动信息';
+    $lines[] = 'GatewayPush 实时数据推送服务 - 启动信息';
     $lines[] = str_repeat('=', 70);
     $lines[] = 'PHP 版本  : ' . PHP_VERSION . ' (' . PHP_SAPI . ') / ' . PHP_OS_FAMILY
         . ($isLinux ? ' [多进程模式]' : ' [单进程模式]');
@@ -1145,7 +1145,7 @@ function usageText()
 {
     $isLinux = DIRECTORY_SEPARATOR === '/';
     $text    = array();
-    $text[]  = 'GatewayWorker 实时数据推送服务（WebSocket + UDP 双协议）';
+    $text[]  = 'GatewayPush 实时数据推送服务（WebSocket + UDP 双协议）';
     $text[]  = str_repeat('=', 70);
     $text[]  = '用法：php start.php <command> [--role=<role>]';
     $text[]  = '';
