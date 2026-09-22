@@ -613,7 +613,8 @@ class ActionRunner
             return;
         }
 
-        call_user_func(self::sender($channel, $clientId), Message::error(
+        $sender = self::sender($channel, $clientId);
+        $sender(Message::error(
             $code,
             $msg,
             isset($packet['seq']) ? (string)$packet['seq'] : '',

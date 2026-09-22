@@ -296,7 +296,7 @@ class RedisClient
      * @param string        $traceKey
      * @return callable
      */
-    protected static function wrap($command, callable $cb = null, $traceKey = '')
+    protected static function wrap($command, ?callable $cb = null, $traceKey = '')
     {
         if ($cb !== null) {
             return $cb;
@@ -335,7 +335,7 @@ class RedisClient
      | String
      --------------------------------------------------------------------- */
 
-    public static function get($key, callable $cb = null)
+    public static function get($key, ?callable $cb = null)
     {
         return self::connection()->get(self::key($key), self::wrap('GET', $cb, $key));
     }
@@ -349,7 +349,7 @@ class RedisClient
      * @param callable|null $cb
      * @return mixed
      */
-    public static function set($key, $value, $ttl = 0, callable $cb = null)
+    public static function set($key, $value, $ttl = 0, ?callable $cb = null)
     {
         $fullKey = self::key($key);
         if ((int)$ttl > 0) {
@@ -365,34 +365,34 @@ class RedisClient
      * @param callable|null $cb
      * @return mixed
      */
-    public static function mGet(array $keys, callable $cb = null)
+    public static function mGet(array $keys, ?callable $cb = null)
     {
         $fullKeys = self::prefixKeys($keys);
         if (!$fullKeys) {
             if ($cb) {
-                call_user_func($cb, array());
+                $cb(array());
             }
             return null;
         }
         return self::connection()->mGet($fullKeys, self::wrap('MGET', $cb, count($fullKeys) . ' keys'));
     }
 
-    public static function exists($key, callable $cb = null)
+    public static function exists($key, ?callable $cb = null)
     {
         return self::connection()->exists(self::key($key), self::wrap('EXISTS', $cb, $key));
     }
 
-    public static function expire($key, $ttl, callable $cb = null)
+    public static function expire($key, $ttl, ?callable $cb = null)
     {
         return self::connection()->expire(self::key($key), (int)$ttl, self::wrap('EXPIRE', $cb, $key));
     }
 
-    public static function ttl($key, callable $cb = null)
+    public static function ttl($key, ?callable $cb = null)
     {
         return self::connection()->ttl(self::key($key), self::wrap('TTL', $cb, $key));
     }
 
-    public static function incr($key, $step = 1, callable $cb = null)
+    public static function incr($key, $step = 1, ?callable $cb = null)
     {
         return self::connection()->incr(self::key($key), (int)$step, self::wrap('INCRBY', $cb, $key));
     }
@@ -408,7 +408,7 @@ class RedisClient
      * @param callable|null $cb
      * @return mixed
      */
-    public static function del($keys, callable $cb = null)
+    public static function del($keys, ?callable $cb = null)
     {
         $fullKeys = self::prefixKeys((array)$keys);
         if (!$fullKeys) {
@@ -416,44 +416,44 @@ class RedisClient
         }
         $args   = $fullKeys;
         $args[] = self::wrap('DEL', $cb, implode(',', $fullKeys));
-        return call_user_func_array(array(self::connection(), 'del'), $args);
+        return self::connection()->del(...$args);
     }
 
     /* ---------------------------------------------------------------------
      | Hash
      --------------------------------------------------------------------- */
 
-    public static function hSet($key, $field, $value, callable $cb = null)
+    public static function hSet($key, $field, $value, ?callable $cb = null)
     {
         return self::connection()->hSet(self::key($key), $field, $value, self::wrap('HSET', $cb, $key));
     }
 
-    public static function hMSet($key, array $hash, callable $cb = null)
+    public static function hMSet($key, array $hash, ?callable $cb = null)
     {
         return self::connection()->hMSet(self::key($key), $hash, self::wrap('HMSET', $cb, $key));
     }
 
-    public static function hGet($key, $field, callable $cb = null)
+    public static function hGet($key, $field, ?callable $cb = null)
     {
         return self::connection()->hGet(self::key($key), $field, self::wrap('HGET', $cb, $key));
     }
 
-    public static function hGetAll($key, callable $cb = null)
+    public static function hGetAll($key, ?callable $cb = null)
     {
         return self::connection()->hGetAll(self::key($key), self::wrap('HGETALL', $cb, $key));
     }
 
-    public static function hDel($key, $fields, callable $cb = null)
+    public static function hDel($key, $fields, ?callable $cb = null)
     {
         $args   = array(self::key($key));
         foreach ((array)$fields as $field) {
             $args[] = $field;
         }
         $args[] = self::wrap('HDEL', $cb, $key);
-        return call_user_func_array(array(self::connection(), 'hDel'), $args);
+        return self::connection()->hDel(...$args);
     }
 
-    public static function hIncrBy($key, $field, $step = 1, callable $cb = null)
+    public static function hIncrBy($key, $field, $step = 1, ?callable $cb = null)
     {
         return self::connection()->hIncrBy(self::key($key), $field, (int)$step, self::wrap('HINCRBY', $cb, $key));
     }
@@ -462,17 +462,17 @@ class RedisClient
      | List（UDP 队列使用）
      --------------------------------------------------------------------- */
 
-    public static function rPush($key, $value, callable $cb = null)
+    public static function rPush($key, $value, ?callable $cb = null)
     {
         return self::connection()->rPush(self::key($key), $value, self::wrap('RPUSH', $cb, $key));
     }
 
-    public static function lLen($key, callable $cb = null)
+    public static function lLen($key, ?callable $cb = null)
     {
         return self::connection()->lLen(self::key($key), self::wrap('LLEN', $cb, $key));
     }
 
-    public static function lRange($key, $start, $stop, callable $cb = null)
+    public static function lRange($key, $start, $stop, ?callable $cb = null)
     {
         return self::connection()->lRange(
             self::key($key),
@@ -482,7 +482,7 @@ class RedisClient
         );
     }
 
-    public static function lTrim($key, $start, $stop, callable $cb = null)
+    public static function lTrim($key, $start, $stop, ?callable $cb = null)
     {
         return self::connection()->lTrim(
             self::key($key),
@@ -502,7 +502,7 @@ class RedisClient
      * @param callable|null $cb
      * @return mixed
      */
-    public static function lTrimKeepLast($key, $keep, callable $cb = null)
+    public static function lTrimKeepLast($key, $keep, ?callable $cb = null)
     {
         $keep = max(1, (int)$keep);
 
@@ -518,37 +518,37 @@ class RedisClient
      | Set（在线集合使用）
      --------------------------------------------------------------------- */
 
-    public static function sAdd($key, $members, callable $cb = null)
+    public static function sAdd($key, $members, ?callable $cb = null)
     {
         $args = array(self::key($key));
         foreach ((array)$members as $member) {
             $args[] = $member;
         }
         $args[] = self::wrap('SADD', $cb, $key);
-        return call_user_func_array(array(self::connection(), 'sAdd'), $args);
+        return self::connection()->sAdd(...$args);
     }
 
-    public static function sRem($key, $members, callable $cb = null)
+    public static function sRem($key, $members, ?callable $cb = null)
     {
         $args = array(self::key($key));
         foreach ((array)$members as $member) {
             $args[] = $member;
         }
         $args[] = self::wrap('SREM', $cb, $key);
-        return call_user_func_array(array(self::connection(), 'sRem'), $args);
+        return self::connection()->sRem(...$args);
     }
 
-    public static function sMembers($key, callable $cb = null)
+    public static function sMembers($key, ?callable $cb = null)
     {
         return self::connection()->sMembers(self::key($key), self::wrap('SMEMBERS', $cb, $key));
     }
 
-    public static function sCard($key, callable $cb = null)
+    public static function sCard($key, ?callable $cb = null)
     {
         return self::connection()->sCard(self::key($key), self::wrap('SCARD', $cb, $key));
     }
 
-    public static function sIsMember($key, $member, callable $cb = null)
+    public static function sIsMember($key, $member, ?callable $cb = null)
     {
         return self::connection()->sIsMember(self::key($key), $member, self::wrap('SISMEMBER', $cb, $key));
     }
@@ -569,7 +569,7 @@ class RedisClient
      * @param callable|null $cb    function(array $items)
      * @return mixed
      */
-    public static function popBatch($key, $batch = 100, callable $cb = null)
+    public static function popBatch($key, $batch = 100, ?callable $cb = null)
     {
         $batch   = max(1, (int)$batch);
         $fullKey = self::key($key);
@@ -585,7 +585,7 @@ class RedisClient
                 }
                 $items = is_array($result) ? $result : [];
                 if ($cb) {
-                    call_user_func($cb, $items);
+                    $cb($items);
                 }
                 return $items;
             }
@@ -603,7 +603,7 @@ class RedisClient
      * @param callable|null $cb function(bool $first)
      * @return mixed
      */
-    public static function setNxEx($key, $value, $ttl = 0, callable $cb = null)
+    public static function setNxEx($key, $value, $ttl = 0, ?callable $cb = null)
     {
         $ttl     = max(1, (int)$ttl);
         $fullKey = self::key($key);
@@ -619,7 +619,7 @@ class RedisClient
                 }
                 $first = (int)$result === 1;
                 if ($cb) {
-                    call_user_func($cb, $first);
+                    $cb($first);
                 }
                 return $first;
             }
@@ -634,11 +634,11 @@ class RedisClient
      * @param callable|null $cb      function(bool $allowed)
      * @return mixed
      */
-    public static function tokenBuckets(array $buckets, $cost = 1, callable $cb = null)
+    public static function tokenBuckets(array $buckets, $cost = 1, ?callable $cb = null)
     {
         if (!$buckets) {
             if ($cb) {
-                call_user_func($cb, true);
+                $cb(true);
             }
             return true;
         }
@@ -675,13 +675,13 @@ class RedisClient
                     // 交由调用方决定降级策略（RateLimiter 采用 fail-open）
                     Logger::error('Redis 令牌桶执行失败', array('error' => $error));
                     if ($cb) {
-                        call_user_func($cb, null, $error);
+                        $cb(null, $error);
                     }
                     return null;
                 }
                 $allowed = (int)$result === 1;
                 if ($cb) {
-                    call_user_func($cb, $allowed, '');
+                    $cb($allowed, '');
                 }
                 return $allowed;
             }
@@ -707,7 +707,7 @@ class RedisClient
      * @param callable|null $cb      function(mixed $result, Client $client = null)
      * @return mixed
      */
-    public static function eval($script, array $args = [], $numKeys = 0, callable $cb = null)
+    public static function eval($script, array $args = [], $numKeys = 0, ?callable $cb = null)
     {
         $flat = array_merge(array((int)$numKeys), array_values($args));
 
@@ -731,12 +731,12 @@ class RedisClient
      * @param callable|null $cb
      * @return mixed
      */
-    public static function healthCheck(callable $cb = null)
+    public static function healthCheck(?callable $cb = null)
     {
         return self::connection()->exists(self::key(RedisKeys::HEALTH_PROBE), function ($result, $client = null) use ($cb) {
             $ok = ($client && method_exists($client, 'error') && $client->error() !== '') ? false : true;
             if ($cb) {
-                call_user_func($cb, $ok);
+                $cb($ok);
             }
         });
     }

@@ -158,12 +158,12 @@ class Push
      * @param callable|null $cb         function(bool $ok)
      * @return void
      */
-    public static function enqueue($targetType, $target, array $payload, array $opts = [], callable $cb = null)
+    public static function enqueue($targetType, $target, array $payload, array $opts = [], ?callable $cb = null)
     {
         if (!self::enabled()) {
             Logger::warn('推送功能未启用，任务已丢弃', array('target_type' => $targetType, 'target' => $target));
             if ($cb) {
-                call_user_func($cb, false);
+                $cb(false);
             }
             return;
         }
@@ -173,7 +173,7 @@ class Push
         if ($target === '') {
             Logger::warn('推送目标为空，任务已丢弃', array('target_type' => $targetType));
             if ($cb) {
-                call_user_func($cb, false);
+                $cb(false);
             }
             return;
         }
@@ -192,7 +192,7 @@ class Push
         if ($raw === false) {
             Logger::error('推送任务序列化失败', array('target_type' => $targetType, 'target' => $target));
             if ($cb) {
-                call_user_func($cb, false);
+                $cb(false);
             }
             return;
         }
@@ -218,7 +218,7 @@ class Push
                 ));
             }
             if ($cb) {
-                call_user_func($cb, $ok);
+                $cb($ok);
             }
         });
     }
@@ -289,12 +289,12 @@ class Push
      * @param callable|null $cb function(int $targets) 入队目标数
      * @return void
      */
-    public static function enqueueTopic($topic, array $payload, array $opts = [], callable $cb = null)
+    public static function enqueueTopic($topic, array $payload, array $opts = [], ?callable $cb = null)
     {
         $topic = (string)$topic;
         if ($topic === '') {
             if ($cb) {
-                call_user_func($cb, 0);
+                $cb(0);
             }
             return;
         }
@@ -303,7 +303,7 @@ class Push
             if (!$uids) {
                 Logger::debug('主题无订阅者，广播跳过', array('topic' => $topic));
                 if ($cb) {
-                    call_user_func($cb, 0);
+                    $cb(0);
                 }
                 return;
             }
@@ -327,7 +327,7 @@ class Push
             ));
 
             if ($cb) {
-                call_user_func($cb, count($uids));
+                $cb(count($uids));
             }
         });
     }
@@ -471,17 +471,17 @@ class Push
                     $uid = isset($session['uid']) ? (string)$session['uid'] : '';
 
                     if (!self::isOnline($target, $session)) {
-                        call_user_func($cb, [], $uid, 'offline');
+                        $cb([], $uid, 'offline');
                         return;
                     }
-                    call_user_func($cb, array(self::target($target)), $uid, '');
+                    $cb(array(self::target($target)), $uid, '');
                 });
                 return;
 
             case self::TARGET_DEVICE:
                 Session::findByDevice($target, function ($clientId) use ($cb, $target) {
                     if (!is_string($clientId) || $clientId === '') {
-                        call_user_func($cb, [], '', 'offline');
+                        $cb([], '', 'offline');
                         return;
                     }
                     Session::get($clientId, function ($session) use ($cb, $clientId, $target) {
@@ -492,10 +492,10 @@ class Push
                                 'device_id' => $target,
                                 'client_id' => $clientId,
                             ));
-                            call_user_func($cb, [], $uid, 'offline');
+                            $cb([], $uid, 'offline');
                             return;
                         }
-                        call_user_func($cb, array(self::target($clientId)), $uid, '');
+                        $cb(array(self::target($clientId)), $uid, '');
                     });
                 });
                 return;
@@ -507,10 +507,10 @@ class Push
                 Session::findByUid($target, function ($clientIds) use ($cb, $target) {
                     if (!is_array($clientIds) || !$clientIds) {
                         if (self::nativeUidOnline($target)) {
-                            call_user_func($cb, array(self::target($target, self::CHANNEL_WS, 'native')), $target, '');
+                            $cb(array(self::target($target, self::CHANNEL_WS, 'native')), $target, '');
                             return;
                         }
-                        call_user_func($cb, [], $target, 'offline');
+                        $cb([], $target, 'offline');
                         return;
                     }
 
@@ -527,10 +527,10 @@ class Push
                                     $targets[] = self::target($target, self::CHANNEL_WS, 'native');
                                 }
                                 if (!$targets) {
-                                    call_user_func($cb, [], $target, 'offline');
+                                    $cb([], $target, 'offline');
                                     return;
                                 }
-                                call_user_func($cb, $targets, $target, '');
+                                $cb($targets, $target, '');
                             }
                         });
                     }
@@ -721,17 +721,17 @@ class Push
      * @param callable|null $cb function(int $count) 补投条数
      * @return void
      */
-    public static function replayOffline($uid, $clientId, callable $cb = null)
+    public static function replayOffline($uid, $clientId, ?callable $cb = null)
     {
         if ($uid === '' || $clientId === '') {
             if ($cb) {
-                call_user_func($cb, 0);
+                $cb(0);
             }
             return;
         }
         if (self::offlineMode() !== self::MODE_QUEUE) {
             if ($cb) {
-                call_user_func($cb, 0);
+                $cb(0);
             }
             return;
         }
@@ -744,7 +744,7 @@ class Push
                 'client_id' => $clientId,
             ));
             if ($cb) {
-                call_user_func($cb, 0);
+                $cb(0);
             }
             return;
         }
@@ -755,7 +755,7 @@ class Push
         RedisClient::popBatch($key, $batch, function ($items) use ($uid, $clientId, $cb, $batch, $isUdp) {
             if (!$items) {
                 if ($cb) {
-                    call_user_func($cb, 0);
+                    $cb(0);
                 }
                 return;
             }
@@ -812,7 +812,7 @@ class Push
             }
 
             if ($cb) {
-                call_user_func($cb, $sent);
+                $cb($sent);
             }
         });
     }

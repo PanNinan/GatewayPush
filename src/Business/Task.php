@@ -257,7 +257,7 @@ class Task
         $job['last_start'] = microtime(true);
 
         try {
-            call_user_func($job['handler']);
+            ($job['handler'])();
         } catch (\Throwable $e) {
             $job['fail']++;
             Logger::exception($e, 'task:' . $name);

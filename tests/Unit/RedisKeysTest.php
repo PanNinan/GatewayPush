@@ -108,9 +108,14 @@ class RedisKeysTest extends TestCase
      */
     public function testDynamicKeyGolden(string $method, array $args, string $expected): void
     {
+        // 经 callable 变量而非 RedisKeys::$method() 直调：后者会触发
+        // phpstan-strict-rules 的 staticMethod.dynamicName（变量静态方法名）。
+        /** @var callable $factory */
+        $factory = [RedisKeys::class, $method];
+
         $this->assertSame(
             $expected,
-            call_user_func_array(array(RedisKeys::class, $method), $args),
+            $factory(...$args),
             'RedisKeys::' . $method . '() 的产出已变更'
         );
     }

@@ -73,7 +73,7 @@ function loadEnv(string $path): array
     }
     foreach (file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
         $line = trim($line);
-        if ($line === '' || strpos($line, '#') === 0) {
+        if ($line === '' || str_starts_with($line, '#')) {
             continue;
         }
         if (preg_match('/^([A-Z0-9_]+)=(.*)$/', $line, $m)) {
@@ -218,7 +218,7 @@ function demoWs(callable $next): void
 
     // 1.5s 后（notify 推送已抵达）切换至 UDP 演示
     Timer::add(4.0, function () use ($next) {
-        call_user_func($next);
+        $next();
     }, [], false);
 }
 
@@ -268,7 +268,7 @@ function demoUdp(callable $next): void
                     . ' dropped=' . $transport->droppedCount());
                 // 进入 HTTP 管理端演示
                 Timer::add(1.0, function () use ($next) {
-                    call_user_func($next);
+                    $next();
                 }, [], false);
             }, [], false);
         });

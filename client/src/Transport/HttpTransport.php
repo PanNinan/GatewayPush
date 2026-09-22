@@ -60,9 +60,9 @@ final class HttpTransport
     public function __construct(
         $baseUrl,
         $timeout = 5.0,
-        callable $connFactory = null,
-        callable $timerAdd = null,
-        callable $timerDel = null
+        ?callable $connFactory = null,
+        ?callable $timerAdd = null,
+        ?callable $timerDel = null
     ) {
         $baseUrl = (string)$baseUrl;
         $parts   = parse_url($baseUrl);
@@ -138,19 +138,19 @@ final class HttpTransport
             }
             $ctx->settled = true;
             if ($ctx->timerId > 0) {
-                call_user_func($this->timerDel, $ctx->timerId);
+                ($this->timerDel)($ctx->timerId);
             }
             if ($ctx->conn !== null) {
                 $ctx->conn->destroy(); // 一次性连接，不触发 onClose 兜底
                 $ctx->conn = null;
             }
-            call_user_func($cb, $response);
+            $cb($response);
         };
 
         try {
-            $conn = call_user_func($this->connFactory, $tcpUrl);
+            $conn = ($this->connFactory)($tcpUrl);
         } catch (\Throwable $e) {
-            call_user_func($cb, array('status' => 0, 'body' => '', 'json' => null, 'error' => '建连失败：' . $e->getMessage()));
+            $cb(array('status' => 0, 'body' => '', 'json' => null, 'error' => '建连失败：' . $e->getMessage()));
             return;
         }
         $ctx->conn = $conn;
@@ -217,7 +217,7 @@ final class HttpTransport
         };
 
         // 超时保护
-        $ctx->timerId = (int)call_user_func($this->timerAdd, $this->timeout, false, function () use ($settle, $method, $path) {
+        $ctx->timerId = (int)($this->timerAdd)($this->timeout, false, function () use ($settle, $method, $path) {
             $settle(array('status' => 0, 'body' => '', 'json' => null, 'error' => '请求超时：' . $method . ' ' . $path));
         });
 

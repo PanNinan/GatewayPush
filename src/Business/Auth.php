@@ -160,7 +160,7 @@ class Auth
         if (count($parts) !== 2) {
             return $fail(Message::CODE_AUTH_FAILED, 'Token 结构非法');
         }
-        list($body, $sign) = $parts;
+        [$body, $sign] = $parts;
 
         // 签名校验（hash_equals 防时序攻击）
         if (!hash_equals(self::base64UrlEncode(self::hash($body)), $sign)) {
@@ -214,7 +214,7 @@ class Auth
      * @param callable|null $cb
      * @return void
      */
-    public static function revoke($token, $ttl = 0, callable $cb = null)
+    public static function revoke($token, $ttl = 0, ?callable $cb = null)
     {
         $ttl = $ttl > 0 ? (int)$ttl : (int)self::$config['token_ttl'];
         RedisClient::set(RedisKeys::authRevoked(self::tokenFingerprint($token)), 1, $ttl, function ($result, $client = null) use ($token, $cb) {
@@ -223,7 +223,7 @@ class Auth
                 Logger::info('Token 已加入撤销名单', array('fingerprint' => self::tokenFingerprint($token)));
             }
             if ($cb) {
-                call_user_func($cb, $error === '');
+                $cb($error === '');
             }
         });
     }
@@ -283,7 +283,7 @@ class Auth
      * @param callable|null $cb
      * @return void
      */
-    public static function unbindDevice($uid, callable $cb = null)
+    public static function unbindDevice($uid, ?callable $cb = null)
     {
         RedisClient::del(RedisKeys::authBind($uid), $cb);
     }

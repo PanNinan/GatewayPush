@@ -501,7 +501,7 @@ class Bootstrap
         $conf = isset(self::$businessConfig['action_queue']) ? self::$businessConfig['action_queue'] : [];
 
         if (empty($conf['enable'])) {
-            call_user_func($cb, self::CODE_SERVER_ERROR, '动作队列未启用（ACTION_QUEUE_ENABLE=false）');
+            $cb(self::CODE_SERVER_ERROR, '动作队列未启用（ACTION_QUEUE_ENABLE=false）');
             return;
         }
 
@@ -522,17 +522,17 @@ class Bootstrap
             $raw = json_encode($job, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             if ($raw === false) {
                 Logger::error('HTTP 动作任务序列化失败', array('request_id' => $requestId));
-                call_user_func($cb, self::CODE_SERVER_ERROR, '动作任务序列化失败');
+                $cb(self::CODE_SERVER_ERROR, '动作任务序列化失败');
                 return;
             }
 
             RedisClient::rPush($key, $raw, function ($result) use ($requestId, $cb) {
                 if (!is_int($result)) {
                     Logger::error('HTTP 动作任务入队失败', array('request_id' => $requestId));
-                    call_user_func($cb, self::CODE_SERVER_ERROR, '动作任务入队失败');
+                    $cb(self::CODE_SERVER_ERROR, '动作任务入队失败');
                     return;
                 }
-                call_user_func($cb, self::CODE_OK, '');
+                $cb(self::CODE_OK, '');
             });
         };
 
@@ -548,7 +548,7 @@ class Bootstrap
                     'len'   => $len,
                     'max'   => $maxLen,
                 ));
-                call_user_func($cb, self::CODE_OVERLOAD, '动作队列积压超限，请稍后重试');
+                $cb(self::CODE_OVERLOAD, '动作队列积压超限，请稍后重试');
                 return;
             }
             $enqueue();

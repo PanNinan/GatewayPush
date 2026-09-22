@@ -64,7 +64,7 @@ $showCurl = in_array('--curl', array_slice($argv, 1), true);
 // 地址：命令行 > .env API_LISTEN > 代码默认值
 $cliAddr = '';
 foreach (array_slice($argv, 1) as $arg) {
-    if ($arg !== '' && strpos($arg, '--') !== 0) {
+    if ($arg !== '' && !str_starts_with($arg, '--')) {
         $cliAddr = $arg;
         break;
     }
@@ -440,7 +440,7 @@ function loadEnv(string $path): array
 
     foreach (file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
         $line = trim((string)$line);
-        if ($line === '' || strpos($line, '#') === 0) {
+        if ($line === '' || str_starts_with($line, '#')) {
             continue;
         }
         if (preg_match('/^([A-Z0-9_]+)=(.*)$/', $line, $m) === 1) {

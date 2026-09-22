@@ -310,7 +310,7 @@ class Debugger
 
             if ($state === SessionManager::STATE_READY) {
                 Timer::del((int)$timerId);
-                call_user_func($cb);
+                $cb();
                 return;
             }
 
@@ -434,14 +434,14 @@ class Debugger
         if ($action === 'subscribe') {
             $api->subscribe($topic, function ($ok, $data, $error) use ($topic, $next) {
                 $this->result('subscribe ' . $topic, $ok, $data, $error, false);
-                call_user_func($next, $ok);
+                $next($ok);
             });
             return;
         }
 
         $api->unsubscribe($topic, function ($ok, $data, $error) use ($topic, $next) {
             $this->result('unsubscribe ' . $topic, $ok, $data, $error, false);
-            call_user_func($next, $ok);
+            $next($ok);
         });
     }
 

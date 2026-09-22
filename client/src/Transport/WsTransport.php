@@ -65,7 +65,7 @@ final class WsTransport implements TransportInterface
      * @param callable|null $connFactory 连接工厂（单测注入假连接）
      * @throws ClientException URL 非法
      */
-    public function __construct($url, callable $connFactory = null)
+    public function __construct($url, ?callable $connFactory = null)
     {
         $url    = (string)$url;
         $scheme = parse_url($url, PHP_URL_SCHEME);
@@ -88,19 +88,19 @@ final class WsTransport implements TransportInterface
         }
 
         $conn = $this->connFactory !== null
-            ? call_user_func($this->connFactory, $this->url)
+            ? ($this->connFactory)($this->url)
             : new AsyncTcpConnection($this->url);
 
         $conn->onConnect = function () {
             $this->connected = true;
             if ($this->onOpenCb !== null) {
-                call_user_func($this->onOpenCb);
+                ($this->onOpenCb)();
             }
         };
 
         $conn->onMessage = function ($con, $frame) {
             if ($this->onMessageCb !== null) {
-                call_user_func($this->onMessageCb, (string)$frame);
+                ($this->onMessageCb)((string)$frame);
             }
         };
 
@@ -109,13 +109,13 @@ final class WsTransport implements TransportInterface
             $this->connected = false;
             $this->conn      = null;
             if ($this->onCloseCb !== null) {
-                call_user_func($this->onCloseCb);
+                ($this->onCloseCb)();
             }
         };
 
         $conn->onError = function ($con, $code, $msg) {
             if ($this->onErrorCb !== null) {
-                call_user_func($this->onErrorCb, (int)$code, (string)$msg);
+                ($this->onErrorCb)((int)$code, (string)$msg);
             }
             // 建连失败（网关暂不可达等）时 workerman 只触发 onError、不触发 onClose
             // （见 AsyncTcpConnection::checkConnection 失败分支）。若不补发 close 信号，

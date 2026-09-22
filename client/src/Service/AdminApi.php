@@ -43,7 +43,7 @@ final class AdminApi
      * @param float              $timeout   请求超时（秒）
      * @param HttpTransport|null $transport 缺省按 url/timeout 构造
      */
-    public function __construct($apiUrl, $apiSecret, $timeout = 5.0, HttpTransport $transport = null)
+    public function __construct($apiUrl, $apiSecret, $timeout = 5.0, ?HttpTransport $transport = null)
     {
         $this->transport  = $transport !== null
             ? $transport
@@ -113,7 +113,7 @@ final class AdminApi
      * @param callable|null $cb
      * @return void
      */
-    private function call($method, $path, array $job = null, $cb = null)
+    private function call($method, $path, ?array $job = null, $cb = null)
     {
         $body = $job !== null ? $this->encode($job) : '';
         $ts   = time();
@@ -129,7 +129,7 @@ final class AdminApi
             }
 
             if ($response['error'] !== '' || $response['status'] === 0) {
-                call_user_func($cb, false, [], array(
+                $cb(false, [], array(
                     'status' => 0,
                     'code'   => ErrorCode::CLIENT_TRANSPORT,
                     'msg'    => $response['error'] !== '' ? $response['error'] : '传输失败',
@@ -139,7 +139,7 @@ final class AdminApi
 
             $json = $response['json'];
             if (!is_array($json)) {
-                call_user_func($cb, false, [], array(
+                $cb(false, [], array(
                     'status' => $response['status'],
                     'code'   => ErrorCode::HTTP_SERVER_ERROR,
                     'msg'    => '响应不是合法 JSON（HTTP ' . $response['status'] . '）',
@@ -154,11 +154,11 @@ final class AdminApi
             $data    = isset($json['data']) && is_array($json['data']) ? $json['data'] : $json;
 
             if ($ok) {
-                call_user_func($cb, true, $data, null);
+                $cb(true, $data, null);
                 return;
             }
 
-            call_user_func($cb, false, $data, array(
+            $cb(false, $data, array(
                 'status' => $response['status'],
                 'code'   => $code,
                 'msg'    => $msg !== '' ? $msg : '请求失败（HTTP ' . $response['status'] . '）',

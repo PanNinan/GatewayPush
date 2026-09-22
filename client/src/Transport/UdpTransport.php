@@ -138,9 +138,9 @@ final class UdpTransport implements TransportInterface
     public function __construct(
         $url,
         array $options = [],
-        callable $connFactory = null,
-        callable $timerAdd = null,
-        callable $timerDel = null
+        ?callable $connFactory = null,
+        ?callable $timerAdd = null,
+        ?callable $timerDel = null
     ) {
         $url    = (string)$url;
         $scheme = parse_url($url, PHP_URL_SCHEME);
@@ -185,12 +185,12 @@ final class UdpTransport implements TransportInterface
             return; // 幂等：已在建连/已连接，重复调用无副作用
         }
 
-        $conn = call_user_func($this->connFactory);
+        $conn = ($this->connFactory)();
 
         $conn->onConnect = function () {
             $this->connected = true;
             if ($this->onOpenCb !== null) {
-                call_user_func($this->onOpenCb);
+                ($this->onOpenCb)();
             }
         };
 
@@ -204,7 +204,7 @@ final class UdpTransport implements TransportInterface
             $this->conn      = null;
             $this->stopTimers();
             if ($this->onCloseCb !== null) {
-                call_user_func($this->onCloseCb);
+                ($this->onCloseCb)();
             }
         };
 
@@ -349,7 +349,7 @@ final class UdpTransport implements TransportInterface
         }
 
         if ($this->onMessageCb !== null) {
-            call_user_func($this->onMessageCb, $raw);
+            ($this->onMessageCb)($raw);
         }
     }
 
@@ -426,7 +426,7 @@ final class UdpTransport implements TransportInterface
                 unset($this->inflight[$frame]);
                 $this->dropped++;
                 if ($this->onErrorCb !== null) {
-                    call_user_func($this->onErrorCb, ErrorCode::CLIENT_TRANSPORT, sprintf(
+                    ($this->onErrorCb)(ErrorCode::CLIENT_TRANSPORT, sprintf(
                         'UDP 报文重传 %d 次未收到回执，已放弃（%d 字节）',
                         $this->maxAttempts,
                         strlen($frame)
@@ -463,13 +463,13 @@ final class UdpTransport implements TransportInterface
 
     private function addTimer($interval, $persistent, $fn)
     {
-        return (int)call_user_func($this->timerAdd, (float)$interval, $persistent, $fn);
+        return (int)($this->timerAdd)((float)$interval, $persistent, $fn);
     }
 
     private function delTimer($timerId)
     {
         if ($timerId) {
-            call_user_func($this->timerDel, (int)$timerId);
+            ($this->timerDel)((int)$timerId);
         }
     }
 }

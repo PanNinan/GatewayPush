@@ -158,7 +158,7 @@ class ActionReply
      * @param callable|null $cb       function(bool $first)
      * @return void
      */
-    public static function store($clientId, array $packet, callable $cb = null)
+    public static function store($clientId, array $packet, ?callable $cb = null)
     {
         $requestId = self::requestId($clientId);
 
@@ -168,7 +168,7 @@ class ActionReply
                 'client_id' => $clientId,
             ));
             if ($cb) {
-                call_user_func($cb, false);
+                $cb(false);
             }
             return;
         }
@@ -181,7 +181,7 @@ class ActionReply
                 Logger::debug('HTTP 动作回执已存在，保留首次结果', array('request_id' => $requestId));
             }
             if ($cb) {
-                call_user_func($cb, $first);
+                $cb($first);
             }
         });
     }
@@ -199,24 +199,24 @@ class ActionReply
     {
         $requestId = (string)$requestId;
         if (!self::validRequestId($requestId)) {
-            call_user_func($cb, null);
+            $cb(null);
             return;
         }
 
         RedisClient::get(RedisKeys::actionResult($requestId), function ($raw) use ($cb) {
             if (!is_string($raw) || $raw === '') {
-                call_user_func($cb, null);
+                $cb(null);
                 return;
             }
 
             $packet = json_decode($raw, true);
             if (!is_array($packet)) {
                 Logger::warn('HTTP 动作回执反序列化失败，按未就绪处理');
-                call_user_func($cb, null);
+                $cb(null);
                 return;
             }
 
-            call_user_func($cb, $packet);
+            $cb($packet);
         });
     }
 }

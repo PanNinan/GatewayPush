@@ -46,9 +46,11 @@
         "demo:http": "php tests/Api/http_demo.php"
     },
     "require-dev": {
+        "friendsofphp/php-cs-fixer": "^3.95",
         "phpstan/phpstan": "^2.0",
         "phpstan/phpstan-phpunit": "^2.0",
         "phpstan/phpstan-strict-rules": "^2.0",
-        "phpunit/phpunit": "^9.6"
+        "phpunit/phpunit": "^9.6",
+        "squizlabs/php_codesniffer": "^4.0"
     }
 }

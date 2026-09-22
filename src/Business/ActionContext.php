@@ -356,14 +356,14 @@ class ActionContext
         // 无论是否真正下发，都视为已回执：避免超时保护对静默动作误报
         $this->replied = true;
         if ($first && $this->replyHook !== null) {
-            call_user_func($this->replyHook);
+            ($this->replyHook)();
         }
 
         if ($this->replyMode === self::REPLY_NONE) {
             return false;
         }
 
-        call_user_func($this->sender, $packet);
+        ($this->sender)($packet);
         return true;
     }
 }

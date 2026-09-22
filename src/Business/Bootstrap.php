@@ -288,7 +288,7 @@ class Bootstrap
 
         // 处理器异常在此统一兜底：保证单条报文异常不影响连接与进程
         try {
-            call_user_func($handler, $clientId, $packet);
+            $handler($clientId, $packet);
         } catch (\Throwable $e) {
             Monitor::incr('msg_fail');
             Logger::exception($e, 'business.route:' . $packet['cmd']);
@@ -324,7 +324,7 @@ class Bootstrap
     protected static function guardRate($clientId, array $packet, callable $next)
     {
         if (!RateLimiter::enabled()) {
-            call_user_func($next);
+            $next();
             return;
         }
 
@@ -340,7 +340,7 @@ class Bootstrap
 
         RateLimiter::acquire($buckets, 1, function ($allowed) use ($clientId, $packet, $dim, $next) {
             if ($allowed) {
-                call_user_func($next);
+                $next();
                 return;
             }
 
@@ -953,7 +953,7 @@ class Bootstrap
     protected static function guardUdpRate($clientId, $uid, array $packet, callable $next)
     {
         if (!RateLimiter::enabled()) {
-            call_user_func($next);
+            $next();
             return;
         }
 
@@ -968,7 +968,7 @@ class Bootstrap
 
         RateLimiter::acquire($buckets, 1, function ($allowed) use ($clientId, $uid, $cmd, $dim, $next) {
             if ($allowed) {
-                call_user_func($next);
+                $next();
                 return;
             }
 
@@ -1060,7 +1060,7 @@ class Bootstrap
 
         // 处理器异常统一兜底：单条 UDP 报文异常不得影响进程与后续队列消费
         try {
-            call_user_func($handler, $clientId, $packet);
+            $handler($clientId, $packet);
         } catch (\Throwable $e) {
             Monitor::incr('msg_fail');
             Logger::exception($e, 'business.udp.route:' . $cmd);

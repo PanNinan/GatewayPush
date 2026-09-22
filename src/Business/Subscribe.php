@@ -78,14 +78,14 @@ class Subscribe
      * @param callable|null $cb function(bool $ok, string $msg)
      * @return void
      */
-    public static function add($uid, $topic, callable $cb = null)
+    public static function add($uid, $topic, ?callable $cb = null)
     {
         $uid   = (string)$uid;
         $topic = (string)$topic;
 
         if (!self::enabled() || $uid === '' || $topic === '') {
             if ($cb) {
-                call_user_func($cb, false, '订阅功能未启用或参数为空');
+                $cb(false, '订阅功能未启用或参数为空');
             }
             return;
         }
@@ -98,7 +98,7 @@ class Subscribe
             if (!is_int($added)) {
                 Logger::error('订阅写入失败', array('uid' => $uid, 'topic' => $topic, 'stage' => 'uid_index'));
                 if ($cb) {
-                    call_user_func($cb, false, '订阅写入失败');
+                    $cb(false, '订阅写入失败');
                 }
                 return;
             }
@@ -110,7 +110,7 @@ class Subscribe
                         // 回滚正向索引，避免两个方向不一致
                         RedisClient::sRem($uidKey, $topic);
                         if ($cb) {
-                            call_user_func($cb, false, '订阅写入失败');
+                            $cb(false, '订阅写入失败');
                         }
                         return;
                     }
@@ -119,7 +119,7 @@ class Subscribe
 
                     Logger::info('订阅成功', array('uid' => $uid, 'topic' => $topic));
                     if ($cb) {
-                        call_user_func($cb, true, '');
+                        $cb(true, '');
                     }
                 });
             };
@@ -135,7 +135,7 @@ class Subscribe
                     RedisClient::sRem($uidKey, $topic, function () use ($uid, $max, $cb) {
                         Logger::warn('订阅主题数超出上限，已拒绝', array('uid' => $uid, 'max' => $max));
                         if ($cb) {
-                            call_user_func($cb, false, '订阅主题数超出上限 ' . $max);
+                            $cb(false, '订阅主题数超出上限 ' . $max);
                         }
                     });
                     return;
@@ -153,14 +153,14 @@ class Subscribe
      * @param callable|null $cb function(bool $ok, string $msg)
      * @return void
      */
-    public static function remove($uid, $topic, callable $cb = null)
+    public static function remove($uid, $topic, ?callable $cb = null)
     {
         $uid   = (string)$uid;
         $topic = (string)$topic;
 
         if ($uid === '' || $topic === '') {
             if ($cb) {
-                call_user_func($cb, false, '参数为空');
+                $cb(false, '参数为空');
             }
             return;
         }
@@ -170,7 +170,7 @@ class Subscribe
             RedisClient::sRem(RedisKeys::subscribeTopic($topic), $uid, function () use ($uid, $topic, $cb) {
                 Logger::info('取消订阅完成', array('uid' => $uid, 'topic' => $topic));
                 if ($cb) {
-                    call_user_func($cb, true, '');
+                    $cb(true, '');
                 }
             });
         });
@@ -190,7 +190,7 @@ class Subscribe
     public static function topicsOf($uid, callable $cb)
     {
         RedisClient::sMembers(RedisKeys::subscribeUid($uid), function ($topics) use ($cb) {
-            call_user_func($cb, is_array($topics) ? array_values($topics) : array());
+            $cb(is_array($topics) ? array_values($topics) : array());
         });
     }
 
@@ -204,7 +204,7 @@ class Subscribe
     public static function subscribers($topic, callable $cb)
     {
         RedisClient::sMembers(RedisKeys::subscribeTopic((string)$topic), function ($uids) use ($cb) {
-            call_user_func($cb, is_array($uids) ? array_values($uids) : array());
+            $cb(is_array($uids) ? array_values($uids) : array());
         });
     }
 
@@ -218,7 +218,7 @@ class Subscribe
     public static function count($topic, callable $cb)
     {
         RedisClient::sCard(RedisKeys::subscribeTopic((string)$topic), function ($count) use ($cb) {
-            call_user_func($cb, is_int($count) ? $count : 0);
+            $cb(is_int($count) ? $count : 0);
         });
     }
 

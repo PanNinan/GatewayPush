@@ -71,7 +71,7 @@ class Session
      * @param callable|null $cb
      * @return void
      */
-    public static function bind($clientId, array $identity, $protocol, array $connInfo = [], callable $cb = null)
+    public static function bind($clientId, array $identity, $protocol, array $connInfo = [], ?callable $cb = null)
     {
         $ttl      = (int)self::$config['ttl'];
         $now      = time();
@@ -112,7 +112,7 @@ class Session
         ));
 
         if ($cb) {
-            call_user_func($cb, true);
+            $cb(true);
         }
     }
 
@@ -125,7 +125,7 @@ class Session
      * @param callable|null $cb
      * @return void
      */
-    public static function touch($clientId, callable $cb = null)
+    public static function touch($clientId, ?callable $cb = null)
     {
         RedisClient::set(
             RedisKeys::heartbeat($clientId),
@@ -145,7 +145,7 @@ class Session
      * @param callable|null $cb
      * @return void
      */
-    public static function markOffline($clientId, callable $cb = null)
+    public static function markOffline($clientId, ?callable $cb = null)
     {
         RedisClient::hGetAll(RedisKeys::session($clientId), function ($session) use ($clientId, $cb) {
             $protocol = is_array($session) && isset($session['protocol']) ? (string)$session['protocol'] : '';
@@ -167,7 +167,7 @@ class Session
             ));
 
             if ($cb) {
-                call_user_func($cb, true);
+                $cb(true);
             }
         });
     }
@@ -179,7 +179,7 @@ class Session
      * @param callable|null $cb
      * @return void
      */
-    public static function unbind($clientId, callable $cb = null)
+    public static function unbind($clientId, ?callable $cb = null)
     {
         RedisClient::hGetAll(RedisKeys::session($clientId), function ($session) use ($clientId, $cb) {
             $uid      = is_array($session) && isset($session['uid']) ? (string)$session['uid'] : '';
@@ -214,7 +214,7 @@ class Session
             ));
 
             if ($cb) {
-                call_user_func($cb, true);
+                $cb(true);
             }
         });
     }
@@ -233,7 +233,7 @@ class Session
     public static function get($clientId, callable $cb)
     {
         RedisClient::hGetAll(RedisKeys::session($clientId), function ($session) use ($cb) {
-            call_user_func($cb, is_array($session) ? $session : array());
+            $cb(is_array($session) ? $session : array());
         });
     }
 
@@ -250,7 +250,7 @@ class Session
     public static function exists($clientId, callable $cb)
     {
         RedisClient::exists(RedisKeys::session($clientId), function ($result) use ($cb) {
-            call_user_func($cb, !empty($result));
+            $cb(!empty($result));
         });
     }
 
@@ -264,7 +264,7 @@ class Session
     public static function findByDevice($deviceId, callable $cb)
     {
         RedisClient::get(RedisKeys::deviceClient($deviceId), function ($clientId) use ($cb) {
-            call_user_func($cb, is_string($clientId) ? $clientId : '');
+            $cb(is_string($clientId) ? $clientId : '');
         });
     }
 
@@ -278,7 +278,7 @@ class Session
     public static function findByUid($uid, callable $cb)
     {
         RedisClient::sMembers(RedisKeys::uidClients($uid), function ($members) use ($cb) {
-            call_user_func($cb, is_array($members) ? $members : array());
+            $cb(is_array($members) ? $members : array());
         });
     }
 
@@ -292,17 +292,17 @@ class Session
     public static function restore($deviceId, callable $cb)
     {
         if (empty(self::$config['restore'])) {
-            call_user_func($cb, array());
+            $cb(array());
             return;
         }
 
         self::findByDevice($deviceId, function ($clientId) use ($cb) {
             if ($clientId === '') {
-                call_user_func($cb, array());
+                $cb(array());
                 return;
             }
             self::get($clientId, function ($session) use ($cb) {
-                call_user_func($cb, $session);
+                $cb($session);
             });
         });
     }
@@ -314,7 +314,7 @@ class Session
      * @param callable|null $cb       function(int $count)
      * @return void
      */
-    public static function countOnline($protocol = '', callable $cb = null)
+    public static function countOnline($protocol = '', ?callable $cb = null)
     {
         if ($cb === null) {
             $cb = function () {
@@ -322,7 +322,7 @@ class Session
         }
         $key = RedisKeys::online($protocol);
         RedisClient::sCard($key, function ($count) use ($cb) {
-            call_user_func($cb, is_int($count) ? $count : 0);
+            $cb(is_int($count) ? $count : 0);
         });
     }
 

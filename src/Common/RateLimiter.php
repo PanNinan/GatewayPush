@@ -294,7 +294,7 @@ class RateLimiter
         }
 
         if (!self::enabled() || !$valid) {
-            call_user_func($cb, true);
+            $cb(true);
             return;
         }
 
@@ -302,10 +302,10 @@ class RateLimiter
             if ($allowed === null) {
                 // Redis 异常：fail-open 放行，避免限流器故障放大为业务全量中断
                 Logger::error('限流器不可用，按 fail-open 放行', array('error' => $error));
-                call_user_func($cb, true);
+                $cb(true);
                 return;
             }
-            call_user_func($cb, (bool)$allowed);
+            $cb((bool)$allowed);
         });
     }
 

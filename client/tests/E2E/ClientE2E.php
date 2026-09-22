@@ -122,20 +122,20 @@ $attach = function ($key, SessionManager $session) use (&$pushes) {
  * @param callable|null  $fail
  * @return void
  */
-$waitState = function (SessionManager $session, $target, callable $ok, callable $fail = null) {
+$waitState = function (SessionManager $session, $target, callable $ok, ?callable $fail = null) {
     $waited  = 0.0;
     $timerId = null;
     $timerId = Timer::add(0.1, function () use (&$timerId, &$waited, $session, $target, $ok, $fail) {
         $waited += 0.1;
         if ($session->state() === $target) {
             Timer::del((int)$timerId);
-            call_user_func($ok);
+            $ok();
             return;
         }
         if ($waited > 12.0) {
             Timer::del((int)$timerId);
             if ($fail !== null) {
-                call_user_func($fail);
+                $fail();
             }
         }
     });
@@ -154,14 +154,14 @@ $waitUntil = function (callable $cond, $limit, callable $done) {
     $timerId = null;
     $timerId = Timer::add(0.1, function () use (&$timerId, &$waited, $cond, $limit, $done) {
         $waited += 0.1;
-        if (call_user_func($cond)) {
+        if ($cond()) {
             Timer::del((int)$timerId);
-            call_user_func($done, true);
+            $done(true);
             return;
         }
         if ($waited > $limit) {
             Timer::del((int)$timerId);
-            call_user_func($done, false);
+            $done(false);
         }
     });
 };
@@ -222,7 +222,7 @@ $worker->onWorkerStart = function () use (
             echo sprintf("客户端 E2E 结论：%d 用例，失败 %d\n", count($results), $fail);
             exit($fail === 0 ? 0 : 1);
         }
-        call_user_func($step, $run);
+        $step($run);
     };
 
     $uidWs  = $prefix . '-ws';
@@ -241,11 +241,11 @@ $worker->onWorkerStart = function () use (
         $waitState($ws, SessionManager::STATE_READY, function () use ($ws, $record, $next) {
             $ws->ping(function ($ok) use ($ws, $record, $next) {
                 $record('A', 'WS 链路 auth+ping', $ok, 'rtt=' . sprintf('%.1f', $ws->lastRtt() * 1000) . 'ms');
-                call_user_func($next);
+                $next();
             });
         }, function () use ($record, $next) {
             $record('A', 'WS 链路 auth+ping', false, '等待 ready 超时');
-            call_user_func($next);
+            $next();
         });
     };
 
@@ -265,7 +265,7 @@ $worker->onWorkerStart = function () use (
             $code    = ce2e_code($packet);
             $record('B', '未鉴权越权拦截 4003', $code === 4003, 'code=' . $code);
             $transport->close();
-            call_user_func($next);
+            $next();
         });
 
         $transport->onOpen(function () use ($transport) {
@@ -280,7 +280,7 @@ $worker->onWorkerStart = function () use (
             $settled = true;
             $record('B', '未鉴权越权拦截 4003', false, '传输错误 ' . $code . ':' . $msg);
             $transport->close();
-            call_user_func($next);
+            $next();
         });
 
         $transport->connect();
@@ -292,7 +292,7 @@ $worker->onWorkerStart = function () use (
             $settled = true;
             $record('B', '未鉴权越权拦截 4003', false, '等待回执超时');
             $transport->close();
-            call_user_func($next);
+            $next();
         }, [], false);
     };
 
@@ -303,10 +303,10 @@ $worker->onWorkerStart = function () use (
         $udp->connect();
         $waitState($udp, SessionManager::STATE_READY, function () use ($record, $next) {
             $record('C', 'UDP 链路 auth', true);
-            call_user_func($next);
+            $next();
         }, function () use ($record, $next) {
             $record('C', 'UDP 链路 auth', false, '等待 ready 超时（查服务端日志）');
-            call_user_func($next);
+            $next();
         });
     };
 
@@ -337,13 +337,13 @@ $worker->onWorkerStart = function () use (
             $settled = true;
             $record('D', 'UDP 错误签名 4001', $ok, $detail);
             $transport->close();
-            call_user_func($next);
+            $next();
         };
 
         $transport->onMessage(function ($frame) use ($finish) {
             $packet = Codec::decode($frame);
             $code   = ce2e_code($packet);
-            call_user_func($finish, $code === 4001, 'code=' . $code);
+            $finish($code === 4001, 'code=' . $code);
         });
 
         $transport->onOpen(function () use ($transport, $packet) {
@@ -351,13 +351,13 @@ $worker->onWorkerStart = function () use (
         });
 
         $transport->onError(function ($code, $msg) use ($finish) {
-            call_user_func($finish, false, '传输错误 ' . $code . ':' . $msg);
+            $finish(false, '传输错误 ' . $code . ':' . $msg);
         });
 
         $transport->connect();
 
         Timer::add(6.0, function () use ($finish) {
-            call_user_func($finish, false, '等待回执超时（UDP 错误多为静默，查服务端日志）');
+            $finish(false, '等待回执超时（UDP 错误多为静默，查服务端日志）');
         }, [], false);
     };
 
@@ -367,7 +367,7 @@ $worker->onWorkerStart = function () use (
         $admin->push('uid', $GLOBALS['uidWsFix'], array('case' => 'E'), array('msg_id' => $msgId), function ($ok) use (&$pushes, $waitUntil, $record, $next, $msgId) {
             if (!$ok) {
                 $record('E', '在线定向推送', false, '受理失败');
-                call_user_func($next);
+                $next();
                 return;
             }
             $waitUntil(function () use (&$pushes, $msgId) {
@@ -379,7 +379,7 @@ $worker->onWorkerStart = function () use (
                 return false;
             }, 5.0, function ($hit) use ($record, $next, $msgId) {
                 $record('E', '在线定向推送', $hit, 'msg_id=' . $msgId);
-                call_user_func($next);
+                $next();
             });
         });
     };
@@ -413,7 +413,7 @@ $worker->onWorkerStart = function () use (
                             $record('F', '离线缓存 + 重连补投 offline=1', $hit,
                                 'msg_id=' . $msgId . ' 实收[' . implode(' ', $seen) . ']');
                             $s2->close();
-                            call_user_func($next);
+                            $next();
                         }, [], false);
                     });
                     }, [], false);
@@ -437,7 +437,7 @@ $worker->onWorkerStart = function () use (
                         }
                     }
                     $record('G', '推送幂等（同 msg_id 仅一次）', $count === 1, '收到 ' . $count . ' 次');
-                    call_user_func($next);
+                    $next();
                 }, [], false);
             });
         });
@@ -454,7 +454,7 @@ $worker->onWorkerStart = function () use (
                     $pass   = $ok && $ok2 && !$ok3 && $status === 401;
                     $record('H', 'HTTP health/stats + 验签拒绝 401', $pass, 'health=' . var_export($ok, true)
                         . ' stats=' . var_export($ok2, true) . ' badStatus=' . $status);
-                    call_user_func($next);
+                    $next();
                 });
             });
         });
@@ -466,7 +466,7 @@ $worker->onWorkerStart = function () use (
         $admin->push('uid', $GLOBALS['uidUdpFix'], array('case' => 'I'), array('msg_id' => $msgId), function ($ok) use (&$pushes, $waitUntil, $record, $next, $msgId) {
             if (!$ok) {
                 $record('I', 'UDP 定向推送', false, '受理失败');
-                call_user_func($next);
+                $next();
                 return;
             }
             $waitUntil(function () use (&$pushes, $msgId) {
@@ -478,7 +478,7 @@ $worker->onWorkerStart = function () use (
                 return false;
             }, 6.0, function ($hit) use ($record, $next, $msgId) {
                 $record('I', 'UDP 定向推送（出站队列）', $hit, 'msg_id=' . $msgId);
-                call_user_func($next);
+                $next();
             });
         });
     };
@@ -518,12 +518,12 @@ $worker->onWorkerStart = function () use (
                     }, 5.0, function ($hit) use ($s, $record, $next, $msgId) {
                         $record('K', 'UDP 离线补投 offline=1', $hit, 'msg_id=' . $msgId);
                         $s->close();
-                        call_user_func($next);
+                        $next();
                     });
                 }, function () use ($s, $record, $next) {
                     $record('K', 'UDP 离线补投 offline=1', false, 'UDP ready 超时');
                     $s->close();
-                    call_user_func($next);
+                    $next();
                 });
             }, [], false);
         });
@@ -550,19 +550,19 @@ $worker->onWorkerStart = function () use (
                 $record('L', '报文级限流（出现 4008）', $limited,
                     '放行 ' . $passed . ' / 100，codes=' . implode(',', array_unique($codes)));
                 $session->close();
-                call_user_func($next);
+                $next();
             };
 
             for ($i = 0; $i < 100; $i++) {
                 $session->request('echo', array('burst' => $i), function ($ok, $packet) use (&$codes, $maybe) {
                     $codes[] = ce2e_code($packet);
-                    call_user_func($maybe);
+                    $maybe();
                 });
             }
         }, function () use ($session, $record, $next) {
             $record('L', '报文级限流（出现 4008）', false, '等待 ready 超时');
             $session->close();
-            call_user_func($next);
+            $next();
         });
     };
 
@@ -571,7 +571,7 @@ $worker->onWorkerStart = function () use (
         $ws->request('report', array('count' => 1), function ($ok, $packet) use ($record, $next) {
             $code = ce2e_code($packet);
             $record('M', '动作契约：缺参数 4007', !$ok && $code === 4007, 'code=' . $code);
-            call_user_func($next);
+            $next();
         });
     };
 
@@ -583,7 +583,7 @@ $worker->onWorkerStart = function () use (
                 $code = ce2e_code($packet);
                 $pass = $ok && !$ok2 && $code === 10001; // 10001 = 本地超时（UDP 侧按声明静默）
                 $record('N', 'UDP echo 回执 + report 静默', $pass, 'echo=' . var_export($ok, true) . ' report code=' . $code);
-                call_user_func($next);
+                $next();
             });
         });
     };
@@ -598,7 +598,7 @@ $worker->onWorkerStart = function () use (
                 $ws->request('unsubscribe', array('topic' => $topic), function ($ok3) use ($record, $next, $ok, $ok2, $hasIt) {
                     $record('O', '订阅闭环 subscribe/topics/unsubscribe', $ok && $ok2 && $hasIt && $ok3,
                         'subscribed=' . var_export($hasIt, true));
-                    call_user_func($next);
+                    $next();
                 });
             });
         });
@@ -607,7 +607,7 @@ $worker->onWorkerStart = function () use (
     $GLOBALS['uidWsFix']  = $uidWs;
     $GLOBALS['uidUdpFix'] = $uidUdp;
 
-    call_user_func($run);
+    $run();
 };
 
 $GLOBALS['secret']    = $secret;

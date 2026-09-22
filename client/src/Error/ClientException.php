@@ -29,7 +29,7 @@ class ClientException extends \RuntimeException
      * @param array           $packet   原始报文
      * @param \Throwable|null $previous 上游异常
      */
-    public function __construct($code, $message, array $packet = [], \Throwable $previous = null)
+    public function __construct($code, $message, array $packet = [], ?\Throwable $previous = null)
     {
         parent::__construct($message, (int)$code, $previous);
         $this->packet = $packet;
@@ -97,7 +97,7 @@ class ClientException extends \RuntimeException
      * @param \Throwable|null $previous
      * @return self
      */
-    public static function transport($message, \Throwable $previous = null)
+    public static function transport($message, ?\Throwable $previous = null)
     {
         return new self(ErrorCode::CLIENT_TRANSPORT, $message, [], $previous);
     }
@@ -131,7 +131,7 @@ class ClientException extends \RuntimeException
      * @param \Throwable|null $previous
      * @return self
      */
-    public static function internal($message, \Throwable $previous = null)
+    public static function internal($message, ?\Throwable $previous = null)
     {
         return new self(ErrorCode::CLIENT_INTERNAL, $message, [], $previous);
     }

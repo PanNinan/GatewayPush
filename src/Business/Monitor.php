@@ -350,7 +350,7 @@ class Monitor
         $fields   = [];
 
         foreach ($gauge as $field => $value) {
-            if (strpos($field, self::FIELD_PID_AT) !== 0) {
+            if (!str_starts_with($field, self::FIELD_PID_AT)) {
                 continue;
             }
 

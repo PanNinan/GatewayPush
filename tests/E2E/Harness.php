@@ -510,7 +510,7 @@ final class Harness
         stream_set_timeout($fp, (int)$timeout);
         while (($line = fgets($fp, 4096)) !== false) {
             $head .= $line;
-            if (strpos($head, "\r\n\r\n") !== false) {
+            if (str_contains($head, "\r\n\r\n")) {
                 break;
             }
         }

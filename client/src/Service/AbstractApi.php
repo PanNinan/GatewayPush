@@ -51,7 +51,7 @@ abstract class AbstractApi
             $data = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : [];
 
             if ($ok) {
-                call_user_func($cb, true, $data, null);
+                $cb(true, $data, null);
                 return;
             }
 
@@ -61,7 +61,7 @@ abstract class AbstractApi
                 ? (string)$data['msg']
                 : ErrorCode::message($code);
 
-            call_user_func($cb, false, $data, array('code' => $code, 'msg' => $msg));
+            $cb(false, $data, array('code' => $code, 'msg' => $msg));
         }, $timeout);
     }
 }

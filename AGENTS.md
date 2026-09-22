@@ -73,7 +73,9 @@ node tests/Api/api_sign_check.js                     # HTTP 验签 8 形态（�
 php  tests/Api/http_demo.php                         # HTTP 接口示例 13 场景（需 api + business 在线）
 ```
 
-- **改完代码先清 `runtime/phpstan/` 再跑全量 `analyse`** —— 结果缓存会掩盖既有错误。
+- **改完代码先清 PHPStan 结果缓存再跑全量 `analyse`** —— 结果缓存会掩盖既有错误。清缓存用
+  `php vendor/bin/phpstan clear-result-cache --memory-limit=512M`；
+  **不要用 `rm -rf runtime/phpstan`**（本机安全策略对批量删除会直接拦截）。
 - 新增告警必须修，**不得追加进任何 baseline**。两份 baseline 的分工：
   `phpstan-baseline.neon`（生产代码，10 条）/ `phpstan-tests-baseline.neon`（测试存量，57 条目）。
 - **⚠ `level` 与 baseline 必须同源**：baseline 用哪个 level 生成，`phpstan.neon` 的

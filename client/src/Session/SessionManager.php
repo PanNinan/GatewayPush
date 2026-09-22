@@ -153,10 +153,10 @@ class SessionManager
      */
     public function __construct(
         array $config,
-        TransportInterface $transport = null,
-        TokenIssuer $issuer = null,
-        callable $timerAdd = null,
-        callable $timerDel = null
+        ?TransportInterface $transport = null,
+        ?TokenIssuer $issuer = null,
+        ?callable $timerAdd = null,
+        ?callable $timerDel = null
     ) {
         $this->config = array_merge(self::defaultConfig(), $config);
 
@@ -543,7 +543,7 @@ class SessionManager
                 if ($packet['cmd'] === Message::CMD_ACK
                     && Codec::isTransportAck($packet)
                     && isset($this->pending[$ackSeq])
-                    && strpos($this->pending[$ackSeq]->what, 'data.') === 0
+                    && str_starts_with($this->pending[$ackSeq]->what, 'data.')
                 ) {
                     return;
                 }
@@ -557,7 +557,7 @@ class SessionManager
 
             case Message::CMD_PUSH:
                 if ($this->onPushCb !== null) {
-                    call_user_func($this->onPushCb, $packet);
+                    ($this->onPushCb)($packet);
                 }
                 return;
 
@@ -629,7 +629,7 @@ class SessionManager
 
             $ex = ClientException::timeout($timedOut->what, $seq, $timedOut->timeout);
             if ($timedOut->onReply !== null) {
-                call_user_func($timedOut->onReply, false, array());
+                ($timedOut->onReply)(false, array());
             }
             $this->fireError($ex);
         });
@@ -663,7 +663,7 @@ class SessionManager
             }
         }
         if ($req->onReply !== null) {
-            call_user_func($req->onReply, $ok, $packet);
+            ($req->onReply)($ok, $packet);
         }
     }
 
@@ -678,7 +678,7 @@ class SessionManager
         foreach ($this->pending as $req) {
             $this->delTimer($req->timerId);
             if ($req->onReply !== null) {
-                call_user_func($req->onReply, false, array('reason' => $reason));
+                ($req->onReply)(false, array('reason' => $reason));
             }
         }
         $this->pending = [];
@@ -732,7 +732,7 @@ class SessionManager
         }
 
         if ($old !== $new && $this->onStateChangeCb !== null) {
-            call_user_func($this->onStateChangeCb, $new, $old);
+            ($this->onStateChangeCb)($new, $old);
         }
     }
 
@@ -768,20 +768,20 @@ class SessionManager
 
     private function addTimer($interval, $persistent, $fn)
     {
-        return (int)call_user_func($this->timerAdd, (float)$interval, $persistent, $fn);
+        return (int)($this->timerAdd)((float)$interval, $persistent, $fn);
     }
 
     private function delTimer($timerId)
     {
         if ($timerId) {
-            call_user_func($this->timerDel, (int)$timerId);
+            ($this->timerDel)((int)$timerId);
         }
     }
 
     private function fireError(ClientException $e)
     {
         if ($this->onErrorCb !== null) {
-            call_user_func($this->onErrorCb, $e);
+            ($this->onErrorCb)($e);
         }
     }
 }

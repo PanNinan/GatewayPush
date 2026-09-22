@@ -56,7 +56,7 @@ $worker->onWorkerStart = function () use ($uid, $secret, &$result) {
             }
             $settled = true;
             $session->close();
-            call_user_func($done, $ok, $code, $msg);
+            $done($ok, $code, $msg);
         };
 
         $session->onStateChange(function ($new, $old) use ($session, $finish) {

@@ -83,7 +83,7 @@ $worker->onWorkerStart = function () use ($udpUrl, $secret, $uid, $device, &$sta
             return;
         }
         // [5] report 静默 → 本地超时（预期）
-        if (strpos($e->getMessage(), 'data.report') !== false
+        if (str_contains($e->getMessage(), 'data.report')
             && $e->getCode() === ErrorCode::CLIENT_TIMEOUT) {
             $state['report'] = true;
             echo "[5] <- report 本地超时（服务端声明静默，预期）\n";

@@ -89,7 +89,7 @@ final class PushReceiver
         $payload = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : [];
 
         if ($this->onPushCb !== null) {
-            call_user_func($this->onPushCb, $payload, $meta);
+            ($this->onPushCb)($payload, $meta);
         }
 
         // 自动回执（至少一次语义；未 ready 时静默跳过，如断线瞬间收到的最后一条）
