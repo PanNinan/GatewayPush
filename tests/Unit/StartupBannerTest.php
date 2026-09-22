@@ -33,8 +33,21 @@ final class StartupBannerTest extends TestCase
 
         $beforeRunAll = substr($code, 0, (int)$runAllAt);
 
-        $condAt = strpos($beforeRunAll, "in_array(\$command, array('start', 'restart'), true)");
-        $this->assertNotFalse($condAt, 'start / restart 的横幅打印条件缺失');
+        // 锚点同时接受 array(...) 与 [...] 两种等价写法：php-cs-fixer 的 array_syntax
+        // 会把前者规整成后者，而本用例锁的是「条件与打印点的相对位置」，
+        // 不该因排版工具落地而失败（2026-09-22 曾因此红过一次）。
+        $matched = [];
+        $this->assertSame(
+            1,
+            preg_match(
+                "/in_array\(\\\$command, (?:array\('start', 'restart'\)|\\['start', 'restart'\\]), true\)/",
+                $beforeRunAll,
+                $matched,
+                PREG_OFFSET_CAPTURE
+            ),
+            'start / restart 的横幅打印条件缺失'
+        );
+        $condAt = $matched[0][1];
 
         // 只检查条件之后的一段窗口，而非全文搜索：info 命令也有自己的横幅调用
         // （同样位于 runAll() 之前），全文搜索会被它满足 —— 那样即便把 start 分支
@@ -42,7 +55,7 @@ final class StartupBannerTest extends TestCase
         //
         // 横幅的文本拼装自 v2 起下沉到 Console\Banner，但**打印点与打印条件仍留在
         // 入口 start.php** —— 本用例锁的正是后者（时机），故锚点指向 start.php。
-        $window = substr($beforeRunAll, (int)$condAt, 600);
+        $window = substr($beforeRunAll, $condAt, 600);
         $this->assertMatchesRegularExpression(
             '/^[ \t]*echo [^\n]*Banner::render\(/m',
             $window,
@@ -57,7 +70,7 @@ final class StartupBannerTest extends TestCase
         $code = (string)file_get_contents($this->root('start.php'));
 
         $this->assertMatchesRegularExpression(
-            '/in_array\(\$command, array\(\'start\', \'restart\'\), true\)\s*&&\s*!in_array\(\'-q\', \$cleanArgv, true\)/',
+            "/in_array\(\\\$command, (?:array\('start', 'restart'\)|\\['start', 'restart'\\]), true\)\s*&&\s*!in_array\('-q', \\\$cleanArgv, true\)/",
             $code,
             '横幅的打印条件必须同时限定「start / restart」与「未带 -q」，'
             . '否则 stop / status 也会打印启动信息，且 -q 无法静默'

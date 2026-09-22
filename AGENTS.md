@@ -26,6 +26,7 @@
 | 改对外接口 / 命令 / Redis 键结构 | `docs/GatewayPush 对外接口文档.md`（字段级契约）**与** `README.md`（.env 变量表 / 协议 / 运维）—— **两处必须同步改**，对照表见对外接口文档末尾附录 |
 | 理解设计取舍 | `docs/Workerman V2 GatewayPush 实时数据推送服务技术方案文档.md` |
 | 改客户端 SDK | `docs/GatewayPush 客户端SDK与调试器设计方案.md` + `client/README.md` |
+| 改质量工具链（phpcs / php-cs-fixer / PHPStan 的规则、排除项、门禁） | **`docs/代码质量工具链说明.md`** —— 四套工具的机制、职责边界、每条排除项的实测依据、已知坑位 |
 
 ## 3. 目录速查
 
@@ -59,7 +60,7 @@ runtime/                  运行时产物：logs/ pid/ phpstan/（已 gitignore�
 ## 4. 质量门禁（改完必跑）
 
 ```bash
-composer analyse      # PHPStan L5，112 文件（含 tests）；两份 baseline 冻结存量 → 必须 0 errors
+composer analyse      # PHPStan L5，114 文件（含 tests）；两份 baseline 冻结存量 → 必须 0 errors
 composer test         # PHPUnit：467 tests / 1317 assertions
 composer lint         # phpcs 审计（注释/命名/业务红线）；只读，仅 error 影响退出码
 composer lint:self    # 两个自定义 phpcs 嗅探器自检（漂移检测 + 作用域/豁免矩阵）
@@ -81,7 +82,9 @@ php  tests/Manual/phpcs_business_rules_check.php     # phpcs 自定义嗅探器�
   `php vendor/bin/phpstan clear-result-cache --memory-limit=512M`；
   **不要用 `rm -rf runtime/phpstan`**（本机安全策略对批量删除会直接拦截）。
 - 新增告警必须修，**不得追加进任何 baseline**。两份 baseline 的分工：
-  `phpstan-baseline.neon`（生产代码，10 条）/ `phpstan-tests-baseline.neon`（测试存量，57 条目）。
+  `phpstan-baseline.neon`（生产代码，9 条）/ `phpstan-tests-baseline.neon`（测试存量，51 条目）。
+- **重构修掉真实告警后，必须同步删掉 baseline 里对应的失效条目**。失效条目不删，PHPStan 会以
+  `ignore.unmatched (non-ignorable)` 报错，门禁同样变红 —— 已发生过一次（2026-09-22，7 条）。
 - **⚠ `level` 与 baseline 必须同源**：baseline 用哪个 level 生成，`phpstan.neon` 的
   `parameters.level` 就得是哪个值。不一致会触发成百上千条 `ignore.unmatched (non-ignorable)`，
   门禁直接红——已发生过一次（baseline 以 level 6 生成，而配置仍为 level 5 → 351 errors）。
@@ -92,6 +95,12 @@ php  tests/Manual/phpcs_business_rules_check.php     # phpcs 自定义嗅探器�
   只装 composer 包不写 `includes`，规则一条都不会生效。同理 `phpstan.neon` 的 `scanFiles`
   必须列 `tools/phpcs/Sniffs/*.php` —— phpcs 的 composer.json **没有 autoload 段**，
   不声明它们，`tests/Manual/phpcs_business_rules_check.php` 一实例化就报 `class.notFound`。
+
+- **`composer cs` 落地排版后必须复跑 `composer test`**：`StartupBannerTest`、`LoggerTest` 等用例
+  是**读源码做正则断言**（锁「时机与结构」，运行期断言覆盖不到），而 `array(...)`→`[...]`、
+  `! empty(`→`!empty(` 这类纯排版改动会把锚点打散 —— 2026-09-22 曾因此红过 3 个用例。
+  锚点应写成**容忍两种等价写法**的形式（它们锁结构，不该对排版有观点）。
+  详见 `docs/代码质量工具链说明.md` §8.6。
 
 ### 4.1 风格工具分工（越界即长期噪声）
 

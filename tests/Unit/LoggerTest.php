@@ -520,8 +520,9 @@ final class LoggerTest extends TestCase
 
         // 锚点带行首空白与完整条件：源码注释里同样会出现 run_at_start，
         // 只用键名搜索会命中注释，断言随之失去意义（同类假阴性此前踩过）
+        // `!\s?empty` 兼容 `! empty(` 与 `!empty(` 两种排版写法。
         $this->assertMatchesRegularExpression(
-            '/^[ \t]*if \(! empty\(\$job\[\'run_at_start\'\]\)\) \{$/m',
+            '/^[ \t]*if \(!\s?empty\(\$job\[\'run_at_start\'\]\)\) \{$/m',
             $code,
             'Task 未实现 run_at_start 分支，配置声明将静默失效'
         );

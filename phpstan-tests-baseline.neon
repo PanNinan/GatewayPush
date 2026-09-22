@@ -10,35 +10,24 @@
 #   唯一例外是 PHPStan 对「按引用捕获的闭包」看不穿赋值导致的误判 ——
 #   这类条目若要新增，必须逐条注明原因。
 #
-# 存量构成（78 条 / 57 条目）：
+# 存量构成（67 条 / 51 条目）：
 #   - staticMethod/method.alreadyNarrowedType（26）：golden 值钉桩。
 #     如 assertSame(4004, ErrorCode::HTTP_NOT_FOUND) —— 常量被静态解析成字面量，
 #     PHPStan 判定断言恒真；但该断言的意图正是「钉住未来被改动的数值」。
 #   - staticMethod.impossibleType（4）：PHPUnit 断言落在按引用捕获的变量上，
 #     PHPStan 看不到闭包里的赋值，误判为 null / 空数组。
-#   - cast.useless(14) / closure.unusedUse(9)：纯机械噪音。
+#   - cast.useless(14) / closure.unusedUse(2)：纯机械噪音。
 #   - property.onlyWritten(4) / parameterByRef.unusedType(3) / nullsafe.neverNull(2) 等。
+#
+# ⚠ 2026-09-22 精简：重构提交把 11 条真实问题修掉后（ClientE2E 的 3 个多余 use、
+#   两个测试文件的 assertSame(count()) → assertCount()、_p5_bind_check 的多余 use），
+#   对应条目已失效但未同步删除，PHPStan 以 ignore.unmatched(non-ignorable) 报错、
+#   门禁变红。已按「失效即删」剔除 6 个条目（78 条/57 条目 → 67 条/51 条目）。
+#   生产侧 phpstan-baseline.neon 同步剔除 1 条（Auth.php 的多余 use）。
+#   教训：重构修掉真实告警后，必须同步删 baseline 条目，否则会以 unmatched 形式反噬。
 # ---------------------------------------------------------------------
 parameters:
 	ignoreErrors:
-		-
-			message: '#^Anonymous function has an unused use \$prefix\.$#'
-			identifier: closure.unusedUse
-			count: 3
-			path: client/tests/E2E/ClientE2E.php
-
-		-
-			message: '#^Anonymous function has an unused use \$uid\.$#'
-			identifier: closure.unusedUse
-			count: 1
-			path: client/tests/E2E/ClientE2E.php
-
-		-
-			message: '#^Anonymous function has an unused use \$waitUntil\.$#'
-			identifier: closure.unusedUse
-			count: 2
-			path: client/tests/E2E/ClientE2E.php
-
 		-
 			message: '#^Anonymous function has an unused use \$ws\.$#'
 			identifier: closure.unusedUse
@@ -190,12 +179,6 @@ parameters:
 			path: client/tests/Unit/SessionManagerTest.php
 
 		-
-			message: '#^You should use assertCount\(\$expectedCount, \$variable\) instead of assertSame\(\$expectedCount, count\(\$variable\)\)\.$#'
-			identifier: phpunit.assertCount
-			count: 1
-			path: client/tests/Unit/TokenIssuerTest.php
-
-		-
 			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertNotNull\(\) with null and ''重传耗尽须触发 onError'' will always evaluate to false\.$#'
 			identifier: staticMethod.impossibleType
 			count: 1
@@ -211,12 +194,6 @@ parameters:
 			message: '#^Property GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:\$fake is never read, only written\.$#'
 			identifier: property.onlyWritten
 			count: 1
-			path: client/tests/Unit/UdpTransportTest.php
-
-		-
-			message: '#^You should use assertCount\(\$expectedCount, \$variable\) instead of assertSame\(\$expectedCount, count\(\$variable\)\)\.$#'
-			identifier: phpunit.assertCount
-			count: 3
 			path: client/tests/Unit/UdpTransportTest.php
 
 		-
@@ -272,12 +249,6 @@ parameters:
 			identifier: foreach.emptyArray
 			count: 1
 			path: tests/Manual/_p4_admin_check.php
-
-		-
-			message: '#^Anonymous function has an unused use \$uid\.$#'
-			identifier: closure.unusedUse
-			count: 1
-			path: tests/Manual/_p5_bind_check.php
 
 		-
 			message: '#^Parameter \#2 \$cb of method Workerman\\Redis\\Client\:\:select\(\) expects null, Closure given\.$#'
@@ -354,7 +325,7 @@ parameters:
 		-
 			message: '#^Casting to int something that''s already int\<0, max\>\.$#'
 			identifier: cast.useless
-			count: 2
+			count: 1
 			path: tests/Unit/StartupBannerTest.php
 
 		-
