@@ -106,7 +106,7 @@ class Push
      * @param array $udpOut gateway.udp.out_queue
      * @return void
      */
-    public static function init(array $config, array $queue = array(), array $udpOut = array())
+    public static function init(array $config, array $queue = [], array $udpOut = array())
     {
         self::$config = array_merge(self::$config, $config);
         if ($queue) {
@@ -158,7 +158,7 @@ class Push
      * @param callable|null $cb         function(bool $ok)
      * @return void
      */
-    public static function enqueue($targetType, $target, array $payload, array $opts = array(), callable $cb = null)
+    public static function enqueue($targetType, $target, array $payload, array $opts = [], callable $cb = null)
     {
         if (!self::enabled()) {
             Logger::warn('推送功能未启用，任务已丢弃', array('target_type' => $targetType, 'target' => $target));
@@ -289,7 +289,7 @@ class Push
      * @param callable|null $cb function(int $targets) 入队目标数
      * @return void
      */
-    public static function enqueueTopic($topic, array $payload, array $opts = array(), callable $cb = null)
+    public static function enqueueTopic($topic, array $payload, array $opts = [], callable $cb = null)
     {
         $topic = (string)$topic;
         if ($topic === '') {
@@ -386,7 +386,7 @@ class Push
 
         $targetType = self::normalizeTargetType(isset($job['target_type']) ? $job['target_type'] : '');
         $target     = isset($job['target']) ? (string)$job['target'] : '';
-        $payload    = isset($job['payload']) && is_array($job['payload']) ? $job['payload'] : array();
+        $payload    = isset($job['payload']) && is_array($job['payload']) ? $job['payload'] : [];
         $msgId      = isset($job['msg_id']) ? (string)$job['msg_id'] : '';
         $mode       = self::resolveMode(isset($job['offline_mode']) ? $job['offline_mode'] : '');
 
@@ -471,7 +471,7 @@ class Push
                     $uid = isset($session['uid']) ? (string)$session['uid'] : '';
 
                     if (!self::isOnline($target, $session)) {
-                        call_user_func($cb, array(), $uid, 'offline');
+                        call_user_func($cb, [], $uid, 'offline');
                         return;
                     }
                     call_user_func($cb, array(self::target($target)), $uid, '');
@@ -481,7 +481,7 @@ class Push
             case self::TARGET_DEVICE:
                 Session::findByDevice($target, function ($clientId) use ($cb, $target) {
                     if (!is_string($clientId) || $clientId === '') {
-                        call_user_func($cb, array(), '', 'offline');
+                        call_user_func($cb, [], '', 'offline');
                         return;
                     }
                     Session::get($clientId, function ($session) use ($cb, $clientId, $target) {
@@ -492,7 +492,7 @@ class Push
                                 'device_id' => $target,
                                 'client_id' => $clientId,
                             ));
-                            call_user_func($cb, array(), $uid, 'offline');
+                            call_user_func($cb, [], $uid, 'offline');
                             return;
                         }
                         call_user_func($cb, array(self::target($clientId)), $uid, '');
@@ -510,12 +510,12 @@ class Push
                             call_user_func($cb, array(self::target($target, self::CHANNEL_WS, 'native')), $target, '');
                             return;
                         }
-                        call_user_func($cb, array(), $target, 'offline');
+                        call_user_func($cb, [], $target, 'offline');
                         return;
                     }
 
                     $pending = count($clientIds);
-                    $targets = array();
+                    $targets = [];
 
                     foreach ($clientIds as $clientId) {
                         Session::get($clientId, function ($session) use (&$pending, &$targets, $cb, $clientId, $target) {
@@ -527,7 +527,7 @@ class Push
                                     $targets[] = self::target($target, self::CHANNEL_WS, 'native');
                                 }
                                 if (!$targets) {
-                                    call_user_func($cb, array(), $target, 'offline');
+                                    call_user_func($cb, [], $target, 'offline');
                                     return;
                                 }
                                 call_user_func($cb, $targets, $target, '');
@@ -768,7 +768,7 @@ class Push
                 }
 
                 $frame = self::buildFrame(
-                    is_array($item['payload']) ? $item['payload'] : array(),
+                    is_array($item['payload']) ? $item['payload'] : [],
                     isset($item['msg_id']) ? (string)$item['msg_id'] : '',
                     array(
                         'source'     => isset($item['source']) ? (string)$item['source'] : '',

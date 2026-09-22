@@ -24,7 +24,7 @@ final class FakeUdpConnection
     public $onClose;
 
     /** @var string[] 已发出的原始帧 */
-    public $sent = array();
+    public $sent = [];
 
     /** @var int */
     public $connectCalls = 0;

@@ -29,7 +29,7 @@ class ClientException extends \RuntimeException
      * @param array           $packet   原始报文
      * @param \Throwable|null $previous 上游异常
      */
-    public function __construct($code, $message, array $packet = array(), \Throwable $previous = null)
+    public function __construct($code, $message, array $packet = [], \Throwable $previous = null)
     {
         parent::__construct($message, (int)$code, $previous);
         $this->packet = $packet;
@@ -57,7 +57,7 @@ class ClientException extends \RuntimeException
      */
     public static function fromPacket(array $packet)
     {
-        $data = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : array();
+        $data = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : [];
 
         $code = isset($data['code']) ? (int)$data['code'] : ErrorCode::SERVER_ERROR;
         $msg  = isset($data['msg']) && is_string($data['msg']) && $data['msg'] !== ''
@@ -99,7 +99,7 @@ class ClientException extends \RuntimeException
      */
     public static function transport($message, \Throwable $previous = null)
     {
-        return new self(ErrorCode::CLIENT_TRANSPORT, $message, array(), $previous);
+        return new self(ErrorCode::CLIENT_TRANSPORT, $message, [], $previous);
     }
 
     /**
@@ -133,6 +133,6 @@ class ClientException extends \RuntimeException
      */
     public static function internal($message, \Throwable $previous = null)
     {
-        return new self(ErrorCode::CLIENT_INTERNAL, $message, array(), $previous);
+        return new self(ErrorCode::CLIENT_INTERNAL, $message, [], $previous);
     }
 }

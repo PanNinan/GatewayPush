@@ -99,7 +99,7 @@ final class ServiceApiTest extends TestCase
 
         $p = $this->lastDataPacket($transport);
         self::assertSame('session', $p['data']['action']);
-        self::assertSame(array(), $p['data']['params']);
+        self::assertSame([], $p['data']['params']);
     }
 
     public function testReportBuildsTopicCountValue()
@@ -147,7 +147,7 @@ final class ServiceApiTest extends TestCase
         $api->topics();
         $p = $this->lastDataPacket($transport);
         self::assertSame('topics', $p['data']['action']);
-        self::assertSame(array(), $p['data']['params']);
+        self::assertSame([], $p['data']['params']);
     }
 
     public function testNotifyBuildsValueMsgIdOfflineMode()

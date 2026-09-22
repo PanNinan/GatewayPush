@@ -14,7 +14,7 @@ use GatewayPush\Client\Transport\TransportInterface;
 final class FakeTransport implements TransportInterface
 {
     /** @var array[] 已发出的解码报文 */
-    public $sentPackets = array();
+    public $sentPackets = [];
 
     public $connectCalls = 0;
 
@@ -33,7 +33,7 @@ final class FakeTransport implements TransportInterface
     public function send($frame)
     {
         $packet = json_decode((string)$frame, true);
-        $this->sentPackets[] = is_array($packet) ? $packet : array();
+        $this->sentPackets[] = is_array($packet) ? $packet : [];
     }
 
     public function close()

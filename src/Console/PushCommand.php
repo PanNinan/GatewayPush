@@ -57,7 +57,7 @@ final class PushCommand
         Push::init(
             $appConfig['push'],
             $businessConfig['push_queue'],
-            isset($gatewayConfig['udp']['out_queue']) ? $gatewayConfig['udp']['out_queue'] : array()
+            isset($gatewayConfig['udp']['out_queue']) ? $gatewayConfig['udp']['out_queue'] : []
         );
 
         $exitCode = 0;
@@ -74,7 +74,7 @@ final class PushCommand
                 fwrite(STDERR, "[FATAL] 入队操作超时，请检查 Redis 连通性\n");
                 $exitCode = 1;
                 Worker::stopAll();
-            }, array(), false);
+            }, [], false);
 
             Push::enqueue($targetType, $target, $payload, array(
                 'msg_id'       => $msgId,

@@ -55,7 +55,7 @@ $state = array(
     'acked'      => 0,
     'retransmit' => false,
 );
-$failMsg = array();
+$failMsg = [];
 
 $worker = new Worker();
 
@@ -154,9 +154,9 @@ $worker->onWorkerStart = function () use ($udpUrl, $secret, $uid, $device, &$sta
                 'value'  => array('hello' => 'udp-push'),
                 'msg_id' => 'p3-notify-' . bin2hex(random_bytes(4)),
             ), function ($ok, $packet) {
-                echo "[7] <- notify 受理：" . ($ok ? 'ok' : json_encode(isset($packet['data']) ? $packet['data'] : array(), JSON_UNESCAPED_UNICODE)) . "\n";
+                echo "[7] <- notify 受理：" . ($ok ? 'ok' : json_encode(isset($packet['data']) ? $packet['data'] : [], JSON_UNESCAPED_UNICODE)) . "\n";
             });
-        }, array(), false);
+        }, [], false);
     });
 
     $session->connect(); // auto_auth：onOpen 抢发 auth（传输层预热缓冲，0.2s 后补发）
@@ -174,7 +174,7 @@ $worker->onWorkerStart = function () use ($udpUrl, $secret, $uid, $device, &$sta
         });
         $dead->connect();
         $dead->send('{"cmd":"probe"}'); // 0.2s 预热 + 0.3s×2 重传后放弃（首发+重传共 3 次）
-    }, array(), false);
+    }, [], false);
 
     /* ---------- 汇总 ---------- */
 
@@ -206,7 +206,7 @@ $worker->onWorkerStart = function () use ($udpUrl, $secret, $uid, $device, &$sta
         echo str_repeat('=', 60) . "\n";
         echo $pass ? "P3 UDP 实测结论：全部通过\n" : "P3 UDP 实测结论：存在失败项\n";
         exit($pass ? 0 : 1);
-    }, array(), false);
+    }, [], false);
 };
 
 Worker::runAll();

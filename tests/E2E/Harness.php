@@ -67,7 +67,7 @@ final class Harness
      *
      * @var array
      */
-    public $appConfig = array();
+    public $appConfig = [];
 
     /**
      * WS 网关地址（面向客户端，已替换回环地址）
@@ -117,14 +117,14 @@ final class Harness
      *
      * @var array
      */
-    public $state = array();
+    public $state = [];
 
     /**
      * 各用例上下文：uid / device_id / token / topic / msg_id / seq
      *
      * @var array
      */
-    public $ctx = array();
+    public $ctx = [];
 
     /**
      * 构造（请使用 boot()）
@@ -245,7 +245,7 @@ final class Harness
         $this->ctx['D'] = array('uid' => $uid, 'device_id' => $deviceId);
 
         // B 的越权探测使用固定字面量，无独立身份
-        $this->ctx['B'] = array();
+        $this->ctx['B'] = [];
 
         // H 使用基准 uid 的 -H 后缀，身份在用例内即时签发
         $this->ctx['H'] = array('uid' => $uid . '-H');
@@ -287,7 +287,7 @@ final class Harness
      */
     public function ctx($case)
     {
-        return isset($this->ctx[$case]) ? $this->ctx[$case] : array();
+        return isset($this->ctx[$case]) ? $this->ctx[$case] : [];
     }
 
     /* ---------------------------------------------------------------------
@@ -369,7 +369,7 @@ final class Harness
                 echo "  {$key}: " . ($this->state[$key] === 'pending' ? '未完成' : var_export($this->state[$key], true)) . "\n";
             }
             exit(1);
-        }, array(), false);
+        }, [], false);
     }
 
     /* ---------------------------------------------------------------------
@@ -393,7 +393,7 @@ final class Harness
             'uid'       => '',
             'device_id' => '',
             'token'     => '',
-            'data'      => array(),
+            'data'      => [],
         );
         foreach ($extra as $key => $value) {
             $packet[$key] = $value;
@@ -448,13 +448,13 @@ final class Harness
 
             \Workerman\Timer::add($interval, function () use ($n, &$attempt) {
                 $attempt($n + 1);
-            }, array(), false);
+            }, [], false);
         };
 
         // 延迟首包，规避 socket 就绪竞态
         \Workerman\Timer::add(0.2, function () use (&$attempt) {
             $attempt(1);
-        }, array(), false);
+        }, [], false);
     }
 
     /* ---------------------------------------------------------------------
@@ -475,7 +475,7 @@ final class Harness
      *                        （API_ACTION_WAIT_MS + 动作超时余量）。
      * @return array ['ok' => bool, 'status' => int, 'body' => string, 'json' => array|null, 'error' => string]
      */
-    public static function httpRequest($method, $url, array $headers = array(), $body = '', $timeout = 3)
+    public static function httpRequest($method, $url, array $headers = [], $body = '', $timeout = 3)
     {
         $parts = parse_url($url);
         $host  = isset($parts['host']) ? $parts['host'] : '127.0.0.1';

@@ -41,7 +41,7 @@ final class Commands
      */
     public static function roles(array $gatewayConfig, array $businessConfig, array $appConfig)
     {
-        $items = array();
+        $items = [];
         foreach (RoleCatalog::build(
             $gatewayConfig,
             $businessConfig,
@@ -115,7 +115,7 @@ final class Commands
             return 1;
         }
 
-        $patched = array();
+        $patched = [];
         foreach ($secretKeys as $key) {
             $pattern = '/^[ \t]*' . preg_quote($key, '/') . '[ \t]*=[ \t]*$/m';
             if (preg_match($pattern, $current) === 1) {
@@ -147,7 +147,7 @@ final class Commands
     public static function usage()
     {
         $isLinux = DIRECTORY_SEPARATOR === '/';
-        $text    = array();
+        $text    = [];
         $text[]  = 'GatewayPush 实时数据推送服务（WebSocket + UDP 双协议）';
         $text[]  = str_repeat('=', 70);
         $text[]  = '用法：php start.php <command> [--role=<role>]';

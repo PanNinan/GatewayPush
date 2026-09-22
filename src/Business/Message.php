@@ -142,7 +142,7 @@ class Message
             'device_id' => '',
             'token'     => '',
             'sign'      => '',
-            'data'      => array(),
+            'data'      => [],
         );
         if (!is_array($packet['data'])) {
             $packet['data'] = array('value' => $packet['data']);
@@ -164,7 +164,7 @@ class Message
      * @param array  $extra 附加/覆盖字段
      * @return array
      */
-    public static function packet($cmd, $data = array(), array $extra = array())
+    public static function packet($cmd, $data = [], array $extra = array())
     {
         $packet = array(
             'cmd'  => (string)$cmd,

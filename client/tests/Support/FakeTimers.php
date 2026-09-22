@@ -11,7 +11,7 @@ namespace GatewayPush\Client\Tests\Support;
 trait FakeTimers
 {
     /** @var array[] */
-    protected $timers = array();
+    protected $timers = [];
 
     /** @var callable */
     protected $timerAdd;
@@ -48,7 +48,7 @@ trait FakeTimers
 
     protected function persistentTimers()
     {
-        $out = array();
+        $out = [];
         foreach ($this->timers as $t) {
             if ($t['persistent'] && !$t['deleted']) {
                 $out[] = $t;
@@ -60,7 +60,7 @@ trait FakeTimers
 
     protected function nonPersistentTimers()
     {
-        $out = array();
+        $out = [];
         foreach ($this->timers as $t) {
             if (!$t['persistent'] && !$t['deleted']) {
                 $out[] = $t;

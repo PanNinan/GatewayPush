@@ -52,7 +52,7 @@ final class Codec
      * @param array  $extra 附加/覆盖字段
      * @return array
      */
-    public static function packet($cmd, array $data = array(), array $extra = array())
+    public static function packet($cmd, array $data = [], array $extra = array())
     {
         return Message::packet($cmd, $data, $extra);
     }
@@ -128,12 +128,12 @@ final class Codec
     public static function paramsOf(array $packet)
     {
         if (!isset($packet['data']) || !is_array($packet['data'])) {
-            return array();
+            return [];
         }
 
         return isset($packet['data']['params']) && is_array($packet['data']['params'])
             ? $packet['data']['params']
-            : array();
+            : [];
     }
 
     /**

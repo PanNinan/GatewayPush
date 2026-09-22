@@ -64,7 +64,7 @@ class Bootstrap
      *
      * @var array
      */
-    protected static $appConfig = array();
+    protected static $appConfig = [];
 
     /**
      * 页面模板缓存
@@ -178,7 +178,7 @@ class Bootstrap
     protected static function handleMetrics($connection)
     {
         Monitor::snapshot(function ($snapshot) use ($connection) {
-            $monitor = self::$appConfig['monitor'] ?? array();
+            $monitor = self::$appConfig['monitor'] ?? [];
 
             $snapshot['meta'] = array(
                 'now'      => time(),

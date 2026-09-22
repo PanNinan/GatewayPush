@@ -28,7 +28,7 @@ final class UdpTransportTest extends TestCase
     /** @var FakeUdpConnection */
     private $fake;
 
-    private function makeTransport(array $options = array(), &$fake = null)
+    private function makeTransport(array $options = [], &$fake = null)
     {
         $this->makeTimers();
 
@@ -58,7 +58,7 @@ final class UdpTransportTest extends TestCase
     {
         $this->makeTimers();
         try {
-            new UdpTransport('ws://127.0.0.1:8283', array(), null, $this->timerAdd, $this->timerDel);
+            new UdpTransport('ws://127.0.0.1:8283', [], null, $this->timerAdd, $this->timerDel);
             self::fail('非 udp:// 的地址必须抛 ClientException');
         } catch (ClientException $e) {
             self::assertSame(ErrorCode::CLIENT_CONFIG, $e->getCode());
@@ -67,7 +67,7 @@ final class UdpTransportTest extends TestCase
 
     public function testConnectFiresOpenSynchronously()
     {
-        $transport = $this->makeTransport(array(), $fake);
+        $transport = $this->makeTransport([], $fake);
         $opened    = false;
         $transport->onOpen(function () use (&$opened) {
             $opened = true;
@@ -82,7 +82,7 @@ final class UdpTransportTest extends TestCase
 
     public function testConnectIsIdempotent()
     {
-        $transport = $this->makeTransport(array(), $fake);
+        $transport = $this->makeTransport([], $fake);
         $transport->connect();
         $transport->connect();
 
@@ -91,7 +91,7 @@ final class UdpTransportTest extends TestCase
 
     public function testSendDuringWarmupIsQueuedAndFlushed()
     {
-        $transport = $this->makeTransport(array(), $fake);
+        $transport = $this->makeTransport([], $fake);
         $sentInOpen = 0;
         $transport->onOpen(function () use ($transport, &$sentInOpen) {
             $transport->send('{"cmd":"auth"}'); // onConnect 同步回调内的发送（硬约束⑩ 场景）
@@ -113,7 +113,7 @@ final class UdpTransportTest extends TestCase
 
     public function testSendAfterWarmupGoesOutImmediately()
     {
-        $transport = $this->makeTransport(array(), $fake);
+        $transport = $this->makeTransport([], $fake);
         $this->connectAndWarmup($transport);
 
         $transport->send('frame-1');
@@ -124,7 +124,7 @@ final class UdpTransportTest extends TestCase
 
     public function testSendBeforeConnectThrowsState()
     {
-        $transport = $this->makeTransport(array(), $fake);
+        $transport = $this->makeTransport([], $fake);
 
         try {
             $transport->send('frame-1');
@@ -136,8 +136,8 @@ final class UdpTransportTest extends TestCase
 
     public function testInboundConfirmsOldestInflightAndStopsRetransmit()
     {
-        $transport = $this->makeTransport(array(), $fake);
-        $frames    = array();
+        $transport = $this->makeTransport([], $fake);
+        $frames    = [];
         $transport->onMessage(function ($frame) use (&$frames) {
             $frames[] = $frame;
         });
@@ -166,7 +166,7 @@ final class UdpTransportTest extends TestCase
 
     public function testRetransmitResendsInflightUntilAcked()
     {
-        $transport = $this->makeTransport(array(), $fake);
+        $transport = $this->makeTransport([], $fake);
         $this->connectAndWarmup($transport);
 
         $transport->send('frame-1');
@@ -215,7 +215,7 @@ final class UdpTransportTest extends TestCase
 
     public function testCloseFiresOnCloseAndDiscardsConnection()
     {
-        $transport = $this->makeTransport(array(), $fake);
+        $transport = $this->makeTransport([], $fake);
         $closed    = false;
         $transport->onClose(function () use (&$closed) {
             $closed = true;
@@ -243,7 +243,7 @@ final class UdpTransportTest extends TestCase
 
     public function testCloseCancelsPendingTimers()
     {
-        $transport = $this->makeTransport(array(), $fake);
+        $transport = $this->makeTransport([], $fake);
         $transport->connect();
         $transport->send('frame-1'); // 此时在预热窗口内，有 warmup 定时器挂起
 
@@ -256,7 +256,7 @@ final class UdpTransportTest extends TestCase
 
     public function testWarmupFlushDropsFramesIfClosedInBetween()
     {
-        $transport = $this->makeTransport(array(), $fake);
+        $transport = $this->makeTransport([], $fake);
         $transport->connect();
         $transport->send('frame-1'); // 入队
 

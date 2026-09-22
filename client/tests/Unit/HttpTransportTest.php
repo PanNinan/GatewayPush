@@ -75,7 +75,7 @@ final class HttpTransportTest extends TestCase
     public function testPostRequestShape()
     {
         $transport = $this->makeTransport($fake);
-        $transport->request('POST', '/push', '{"k":"v"}', array(), function () {
+        $transport->request('POST', '/push', '{"k":"v"}', [], function () {
         });
 
         $raw = $fake->sentRaw[0];
@@ -89,7 +89,7 @@ final class HttpTransportTest extends TestCase
     {
         $transport = $this->makeTransport($fake);
         $done      = null;
-        $transport->request('GET', '/stats', '', array(), function ($r) use (&$done) {
+        $transport->request('GET', '/stats', '', [], function ($r) use (&$done) {
             $done = $r;
         });
 
@@ -110,7 +110,7 @@ final class HttpTransportTest extends TestCase
     {
         $transport = $this->makeTransport($fake);
         $done      = null;
-        $transport->request('GET', '/stats', '', array(), function ($r) use (&$done) {
+        $transport->request('GET', '/stats', '', [], function ($r) use (&$done) {
             $done = $r;
         });
 
@@ -129,7 +129,7 @@ final class HttpTransportTest extends TestCase
     {
         $transport = $this->makeTransport($fake);
         $done      = null;
-        $transport->request('GET', '/health', '', array(), function ($r) use (&$done) {
+        $transport->request('GET', '/health', '', [], function ($r) use (&$done) {
             $done = $r;
         });
 
@@ -145,7 +145,7 @@ final class HttpTransportTest extends TestCase
     {
         $transport = $this->makeTransport($fake);
         $done      = null;
-        $transport->request('GET', '/stats', '', array(), function ($r) use (&$done) {
+        $transport->request('GET', '/stats', '', [], function ($r) use (&$done) {
             $done = $r;
         });
 
@@ -161,7 +161,7 @@ final class HttpTransportTest extends TestCase
     {
         $transport = $this->makeTransport($fake);
         $done      = null;
-        $transport->request('GET', '/stats', '', array(), function ($r) use (&$done) {
+        $transport->request('GET', '/stats', '', [], function ($r) use (&$done) {
             $done = $r;
         });
 
@@ -176,7 +176,7 @@ final class HttpTransportTest extends TestCase
     {
         $transport = $this->makeTransport($fake);
         $count     = 0;
-        $transport->request('GET', '/health', '', array(), function () use (&$count) {
+        $transport->request('GET', '/health', '', [], function () use (&$count) {
             $count++;
         });
 

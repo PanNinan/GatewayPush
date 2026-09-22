@@ -62,7 +62,7 @@ class ParamValidatorTest extends TestCase
 
     public function testEmptyRulesDropEverything(): void
     {
-        self::assertSame(array(), $this->validate(array(), array('a' => 1, 'b' => 2)));
+        self::assertSame([], $this->validate([], array('a' => 1, 'b' => 2)));
         self::assertSame('', $this->error);
     }
 
@@ -89,7 +89,7 @@ class ParamValidatorTest extends TestCase
     {
         self::assertSame(array('count' => 7), $this->validate(
             array('count' => array('type' => 'int', 'default' => 7)),
-            array()
+            []
         ));
     }
 
@@ -98,7 +98,7 @@ class ParamValidatorTest extends TestCase
         // default 原样写入、不做类型转换：配置写错时保持可见，而不是被静默修正
         self::assertSame(array('count' => '7'), $this->validate(
             array('count' => array('type' => 'int', 'default' => '7')),
-            array()
+            []
         ));
     }
 

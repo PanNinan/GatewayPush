@@ -71,7 +71,7 @@ class Session
      * @param callable|null $cb
      * @return void
      */
-    public static function bind($clientId, array $identity, $protocol, array $connInfo = array(), callable $cb = null)
+    public static function bind($clientId, array $identity, $protocol, array $connInfo = [], callable $cb = null)
     {
         $ttl      = (int)self::$config['ttl'];
         $now      = time();
@@ -349,7 +349,7 @@ class Session
             }
 
             $clientIds = array_values($members);
-            $keys      = array();
+            $keys      = [];
             foreach ($clientIds as $clientId) {
                 $keys[] = RedisClient::key(RedisKeys::heartbeat($clientId));
             }
@@ -396,7 +396,7 @@ class Session
             }
 
             $clientIds = array_values($members);
-            $keys      = array();
+            $keys      = [];
             foreach ($clientIds as $clientId) {
                 $keys[] = RedisClient::key(RedisKeys::session($clientId));
             }
@@ -405,7 +405,7 @@ class Session
                 if (!is_array($values)) {
                     return;
                 }
-                $stale = array();
+                $stale = [];
                 foreach ($clientIds as $index => $clientId) {
                     $value = isset($values[$index]) ? $values[$index] : false;
                     if ($value === false || $value === null || $value === '') {

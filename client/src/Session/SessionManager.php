@@ -76,7 +76,7 @@ class SessionManager
      *
      * @var array
      */
-    private $pending = array();
+    private $pending = [];
 
     /**
      * 最近一次成功结算的往返耗时（秒）
@@ -192,7 +192,7 @@ class SessionManager
         $this->timerAdd = $timerAdd !== null
             ? $timerAdd
             : function ($interval, $persistent, $fn) {
-                return Timer::add($interval, $fn, array(), $persistent);
+                return Timer::add($interval, $fn, [], $persistent);
             };
         $this->timerDel = $timerDel !== null
             ? $timerDel
@@ -288,7 +288,7 @@ class SessionManager
     {
         $this->assertReady();
 
-        $packet = Message::packet(Message::CMD_PING, array(), array('seq' => $this->newSeq()));
+        $packet = Message::packet(Message::CMD_PING, [], array('seq' => $this->newSeq()));
         $this->registerPending($packet['seq'], 'ping', (float)$this->config['timeout'], $cb);
         $this->sendPacket($packet);
     }
@@ -303,7 +303,7 @@ class SessionManager
      * @return string 本请求 seq
      * @throws ClientException 未就绪
      */
-    public function request($action, array $params = array(), $cb = null, $timeout = null)
+    public function request($action, array $params = [], $cb = null, $timeout = null)
     {
         $this->assertReady();
 
@@ -529,7 +529,7 @@ class SessionManager
         switch ($packet['cmd']) {
             case Message::CMD_PING:
                 // 服务端反向心跳必须应答：网关 25s/次、漏 2 次判定死亡并断开
-                $this->sendPacket(Message::packet(Message::CMD_PONG, array(), array(
+                $this->sendPacket(Message::packet(Message::CMD_PONG, [], array(
                     'seq' => $packet['seq'],
                 )));
                 return;
@@ -681,7 +681,7 @@ class SessionManager
                 call_user_func($req->onReply, false, array('reason' => $reason));
             }
         }
-        $this->pending = array();
+        $this->pending = [];
     }
 
     /* ---------------------------------------------------------------------

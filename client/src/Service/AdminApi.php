@@ -61,7 +61,7 @@ final class AdminApi
      * @param callable|null $cb      function (bool $ok, array $data, ?array $error): void
      * @return void
      */
-    public function push($targetType, $target, array $payload, array $opts = array(), $cb = null)
+    public function push($targetType, $target, array $payload, array $opts = [], $cb = null)
     {
         $job = array(
             'target_type' => (string)$targetType,
@@ -129,7 +129,7 @@ final class AdminApi
             }
 
             if ($response['error'] !== '' || $response['status'] === 0) {
-                call_user_func($cb, false, array(), array(
+                call_user_func($cb, false, [], array(
                     'status' => 0,
                     'code'   => ErrorCode::CLIENT_TRANSPORT,
                     'msg'    => $response['error'] !== '' ? $response['error'] : '传输失败',
@@ -139,7 +139,7 @@ final class AdminApi
 
             $json = $response['json'];
             if (!is_array($json)) {
-                call_user_func($cb, false, array(), array(
+                call_user_func($cb, false, [], array(
                     'status' => $response['status'],
                     'code'   => ErrorCode::HTTP_SERVER_ERROR,
                     'msg'    => '响应不是合法 JSON（HTTP ' . $response['status'] . '）',

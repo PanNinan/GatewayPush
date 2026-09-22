@@ -57,7 +57,7 @@ class Env
     protected static $loaded = false;
 
     /** 实际读取到的文件（按优先级从高到低） */
-    protected static $files = array();
+    protected static $files = [];
 
     /** 当前环境标识 */
     protected static $envName = self::DEFAULT_ENV;
@@ -91,7 +91,7 @@ class Env
         self::$envName = self::detectEnvName(self::$basePath);
 
         // 收集真实存在的文件，保持「低优先级在前」的加载顺序
-        $files = array();
+        $files = [];
         foreach (self::FILE_SLOTS as $slot) {
             $name = str_replace('{env}', self::$envName, $slot);
             if (is_file(self::$basePath . '/' . $name)) {
@@ -307,7 +307,7 @@ class Env
             return (array)$default;
         }
 
-        $items = array();
+        $items = [];
         foreach (explode(',', $value) as $item) {
             $item = trim($item);
             if ($item !== '') {

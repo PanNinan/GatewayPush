@@ -67,14 +67,14 @@ class ActionRunner
      *
      * @var array
      */
-    protected static $declarations = array();
+    protected static $declarations = [];
 
     /**
      * 处理器实例缓存（处理器无状态，可复用）
      *
      * @var array
      */
-    protected static $instances = array();
+    protected static $instances = [];
 
     /**
      * 是否已装载
@@ -97,8 +97,8 @@ class ActionRunner
      */
     public static function load(array $config)
     {
-        self::$declarations = array();
-        self::$instances    = array();
+        self::$declarations = [];
+        self::$instances    = [];
         self::$loaded       = true;
 
         $defaults = array(
@@ -109,14 +109,14 @@ class ActionRunner
                 ActionContext::CHANNEL_HTTP => ActionContext::REPLY_SYNC,
             ),
             'timeout' => self::DEFAULT_TIMEOUT,
-            'params'  => array(),
+            'params'  => [],
             'http'    => false,                                         // 是否开放 HTTP 通道（默认关闭）
         );
         if (isset($config['defaults']) && is_array($config['defaults'])) {
             $defaults = array_merge($defaults, $config['defaults']);
         }
 
-        $actions = isset($config['actions']) && is_array($config['actions']) ? $config['actions'] : array();
+        $actions = isset($config['actions']) && is_array($config['actions']) ? $config['actions'] : [];
         foreach ($actions as $name => $decl) {
             $name = (string)$name;
             if ($name === '' || !is_array($decl)) {
@@ -152,7 +152,7 @@ class ActionRunner
             $item['description'] = isset($item['description']) ? (string)$item['description'] : '';
             // 动作私有配置：由声明携带、经 ActionContext::option() 读取，
             // 使「参数规则之外的少量行为参数」不必下沉到全局 config
-            $item['options']     = isset($item['options']) && is_array($item['options']) ? $item['options'] : array();
+            $item['options']     = isset($item['options']) && is_array($item['options']) ? $item['options'] : [];
 
             self::$declarations[$name] = $item;
         }
@@ -195,7 +195,7 @@ class ActionRunner
      */
     public static function declarations()
     {
-        $out = array();
+        $out = [];
         foreach (self::$declarations as $name => $decl) {
             $out[$name] = array(
                 'description' => $decl['description'],
@@ -244,7 +244,7 @@ class ActionRunner
      */
     public static function httpActions()
     {
-        $names = array();
+        $names = [];
         foreach (self::$declarations as $name => $decl) {
             if (!empty($decl['http'])) {
                 $names[] = $name;
@@ -331,7 +331,7 @@ class ActionRunner
         // 参数校验：规则外的一律丢弃，处理器拿到的一定是归一化参数
         $raw = isset($packet['data']['params']) && is_array($packet['data']['params'])
             ? $packet['data']['params']
-            : array();
+            : [];
 
         if ($decl['params'] === self::PARAMS_PASSTHROUGH) {
             $params = $raw;
@@ -390,7 +390,7 @@ class ActionRunner
                     'timeout'   => $timeout,
                 ));
                 $ctx->replyError(Message::CODE_SERVER_ERROR, '动作处理超时');
-            }, array(), false);
+            }, [], false);
         }
 
         try {
@@ -547,7 +547,7 @@ class ActionRunner
         if ($params === self::PARAMS_PASSTHROUGH) {
             return self::PARAMS_PASSTHROUGH;
         }
-        return is_array($params) ? $params : array();
+        return is_array($params) ? $params : [];
     }
 
     /**

@@ -18,7 +18,7 @@ class CliParserTest extends TestCase
 
         self::assertSame('echo', $parsed['command']);
         self::assertSame(array('{"a":1}', 'extra'), $parsed['args']);
-        self::assertSame(array(), $parsed['options']);
+        self::assertSame([], $parsed['options']);
     }
 
     public function testParsesLongOptionWithEqualsAndSpace()
@@ -27,7 +27,7 @@ class CliParserTest extends TestCase
 
         self::assertSame('u1', $parsed['options']['uid']);
         self::assertSame('d1', $parsed['options']['device']);
-        self::assertSame(array(), $parsed['args']);
+        self::assertSame([], $parsed['args']);
     }
 
     public function testFlagWithoutValueBecomesTrue()
@@ -52,7 +52,7 @@ class CliParserTest extends TestCase
 
         self::assertSame('echo', $parsed['command']);
         self::assertSame(array('--not-an-option'), $parsed['args']);
-        self::assertSame(array(), $parsed['options']);
+        self::assertSame([], $parsed['options']);
     }
 
     public function testEmptyArgsYieldsEmptyCommand()

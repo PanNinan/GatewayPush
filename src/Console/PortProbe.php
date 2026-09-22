@@ -23,7 +23,7 @@ final class PortProbe
      *
      * @var array<string,array<int,bool>>
      */
-    private static $netstatCache = array();
+    private static $netstatCache = [];
 
     /**
      * 判断监听地址对应的端口是否已被占用
@@ -80,8 +80,8 @@ final class PortProbe
             return self::$netstatCache[$protocol];
         }
 
-        $ports = array();
-        $lines = array();
+        $ports = [];
+        $lines = [];
         @exec('netstat -a -n -p ' . strtoupper($protocol), $lines);
 
         foreach ($lines as $line) {

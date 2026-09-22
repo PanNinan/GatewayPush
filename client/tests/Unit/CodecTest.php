@@ -83,7 +83,7 @@ class CodecTest extends TestCase
         self::assertSame('', $packet['device_id']);
         self::assertSame('', $packet['token']);
         self::assertSame('', $packet['sign']);
-        self::assertSame(array(), $packet['data']);
+        self::assertSame([], $packet['data']);
     }
 
     public function testDecodeWrapsScalarData(): void
@@ -152,7 +152,7 @@ class CodecTest extends TestCase
 
     public function testPacketAppliesExtraFields(): void
     {
-        $packet = Codec::packet('auth', array(), array('uid' => 'u1', 'ts' => 123));
+        $packet = Codec::packet('auth', [], array('uid' => 'u1', 'ts' => 123));
 
         self::assertSame('u1', $packet['uid']);
         self::assertSame(123, $packet['ts']);
@@ -217,9 +217,9 @@ class CodecTest extends TestCase
 
     public function testParamsOfReturnsEmptyOnMalformedInput(): void
     {
-        self::assertSame(array(), Codec::paramsOf(array()));
-        self::assertSame(array(), Codec::paramsOf(array('data' => array('action' => 'echo'))));
-        self::assertSame(array(), Codec::paramsOf(array('data' => array('params' => 'raw'))));
+        self::assertSame([], Codec::paramsOf(array()));
+        self::assertSame([], Codec::paramsOf(array('data' => array('action' => 'echo'))));
+        self::assertSame([], Codec::paramsOf(array('data' => array('params' => 'raw'))));
     }
 
     /* ---------------------------------------------------------------------

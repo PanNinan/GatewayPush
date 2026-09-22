@@ -53,7 +53,7 @@ class Monitor
         'enable'   => true,
         'interval' => 60,
         'ttl'      => 600,
-        'metrics'  => array(),
+        'metrics'  => [],
     );
 
     /**
@@ -61,14 +61,14 @@ class Monitor
      *
      * @var array
      */
-    protected static $counters = array();
+    protected static $counters = [];
 
     /**
      * 进程内瞬时值
      *
      * @var array
      */
-    protected static $gauges = array();
+    protected static $gauges = [];
 
     /**
      * 初始化
@@ -184,8 +184,8 @@ class Monitor
         RedisClient::hGetAll(RedisKeys::METRICS_GAUGE, function ($gauge) use ($cb) {
             RedisClient::hGetAll(RedisKeys::metricsCounter(), function ($counter) use ($gauge, $cb) {
                 $cb(array(
-                    'gauge'   => is_array($gauge) ? $gauge : array(),
-                    'counter' => is_array($counter) ? $counter : array(),
+                    'gauge'   => is_array($gauge) ? $gauge : [],
+                    'counter' => is_array($counter) ? $counter : [],
                     'task'    => Task::stats(),
                 ));
             });
@@ -217,7 +217,7 @@ class Monitor
     protected static function flushCounters()
     {
         $counters = self::$counters;
-        self::$counters = array();
+        self::$counters = [];
         if (!$counters) {
             return;
         }
@@ -343,11 +343,11 @@ class Monitor
     public static function staleFields(array $gauge, $ttl, $now)
     {
         if ($ttl <= 0 || !$gauge) {
-            return array();
+            return [];
         }
 
         $deadline = $now - $ttl;
-        $fields   = array();
+        $fields   = [];
 
         foreach ($gauge as $field => $value) {
             if (strpos($field, self::FIELD_PID_AT) !== 0) {

@@ -51,7 +51,7 @@ class Debugger
     private $receiver;
 
     /** @var array<string,object> 已装配的业务 API */
-    private $apis = array();
+    private $apis = [];
 
     /** @var bool REPL 模式（输出需保护输入行） */
     private $repl = false;
@@ -395,7 +395,7 @@ class Debugger
                     }
                     Timer::add(2.0, function () use ($ok) {
                         exit($ok ? 0 : 1);
-                    }, array(), false);
+                    }, [], false);
                 });
                 return;
 
@@ -482,7 +482,7 @@ class Debugger
         $targetType = CommandParser::str($parsed['options'], 'to-type', 'uid');
         $target     = CommandParser::str($parsed['options'], 'to', (string)$this->config['uid']);
         $payload    = $this->jsonArg($parsed['args'], 0, array());
-        $pushOpts   = array();
+        $pushOpts   = [];
         $msgId      = CommandParser::str($parsed['options'], 'msg-id', '');
         if ($msgId !== '') {
             $pushOpts['msg_id'] = $msgId;
@@ -587,8 +587,8 @@ class Debugger
     private function readLine($stdin)
     {
         $read   = array($stdin);
-        $write  = array();
-        $except = array();
+        $write  = [];
+        $except = [];
         $ready  = @stream_select($read, $write, $except, 0);
 
         if ($ready === false) {

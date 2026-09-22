@@ -36,7 +36,7 @@ final class EnvChecker
     public static function check(array $appConfig, array $gatewayConfig, array $businessConfig, array $actionConfig = array())
     {
         $runtime = $appConfig['runtime'];
-        $lines   = array();
+        $lines   = [];
         $ok      = true;
         $isLinux = DIRECTORY_SEPARATOR === '/';
 
@@ -242,8 +242,8 @@ final class EnvChecker
             $rateConf = $appConfig['rate_limit'];
             $dims     = array('conn' => '连接', 'uid' => '用户', 'ip' => 'IP', 'ping' => '心跳');
             $active   = 0;
-            $desc     = array();
-            $badBurst = array();
+            $desc     = [];
+            $badBurst = [];
 
             foreach ($dims as $dim => $label) {
                 $rate  = (int)$rateConf[$dim]['rate'];
@@ -289,16 +289,16 @@ final class EnvChecker
         // 业务动作清单（config/actions.php）
         $actionList = isset($actionConfig['actions']) && is_array($actionConfig['actions'])
             ? $actionConfig['actions']
-            : array();
+            : [];
 
         if (!$actionList) {
             $lines[] = '[FAIL] 业务动作清单为空（config/actions.php 的 actions 段未配置任何动作）';
             $ok      = false;
         } else {
-            $invalid   = array();
-            $silent    = array();
-            $noAuth    = array();
-            $noTimeout = array();
+            $invalid   = [];
+            $silent    = [];
+            $noAuth    = [];
+            $noTimeout = [];
 
             foreach ($actionList as $name => $decl) {
                 $handler = is_array($decl) && isset($decl['handler']) ? (string)$decl['handler'] : '';
@@ -364,7 +364,7 @@ final class EnvChecker
         }
 
         // 端口占用探测（仅提示，不阻断：restart 场景下端口被自身占用属正常）
-        $ports = array();
+        $ports = [];
         if (!empty($gatewayConfig['websocket']['enable'])) {
             $ports['WebSocket'] = $gatewayConfig['websocket']['listen'];
         }

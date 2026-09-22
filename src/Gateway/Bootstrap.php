@@ -35,14 +35,14 @@ class Bootstrap
      *
      * @var array
      */
-    protected static $config = array();
+    protected static $config = [];
 
     /**
      * app.php 配置
      *
      * @var array
      */
-    protected static $appConfig = array();
+    protected static $appConfig = [];
 
     /**
      * 初始化网关层 Worker
@@ -120,7 +120,7 @@ class Bootstrap
             return;
         }
 
-        $context = array();
+        $context = [];
         $sslOn   = !empty($conf['ssl']['enable']);
         if ($sslOn) {
             $context['ssl'] = array(
@@ -211,7 +211,7 @@ class Bootstrap
             Monitor::init(self::$appConfig['monitor']);
             RateLimiter::init(isset(self::$appConfig['rate_limit']) ? self::$appConfig['rate_limit'] : array());
 
-            $out       = isset($conf['out_queue']) ? $conf['out_queue'] : array();
+            $out       = isset($conf['out_queue']) ? $conf['out_queue'] : [];
             $outOn     = !empty($out['enable']);
             $outPeriod = $outOn ? max(0.01, (float)$out['interval']) : 0;
 
@@ -221,7 +221,7 @@ class Bootstrap
             if ($outOn) {
                 Timer::add($outPeriod, function () use ($worker, $out) {
                     self::consumeUdpOutQueue($worker, $out);
-                }, array(), true);
+                }, [], true);
             }
 
             // 指标上报：网关进程只产出站维度指标，跳过在线数采集（其归属业务进程）
@@ -297,7 +297,7 @@ class Bootstrap
             }
 
             // 2. 投递业务队列，交由 BusinessWorker 处理
-            $queueConf = isset(self::$config['udp']['queue']) ? self::$config['udp']['queue'] : array();
+            $queueConf = isset(self::$config['udp']['queue']) ? self::$config['udp']['queue'] : [];
             if (!empty($queueConf['enable'])) {
                 self::pushToBusinessQueue($connection, $packet, $queueConf);
             }

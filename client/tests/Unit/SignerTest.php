@@ -174,7 +174,7 @@ class SignerTest extends TestCase
         // uid 不在签名基串内 —— 报文字段 uid 可被篡改，身份只能取自 token 载荷
         $packet = array(
             'cmd' => 'data', 'seq' => 's1', 'ts' => 1690000000,
-            'device_id' => 'dev1', 'token' => 'tk', 'data' => array(),
+            'device_id' => 'dev1', 'token' => 'tk', 'data' => [],
         );
 
         $alice = $packet + array('uid' => 'alice');

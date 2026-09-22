@@ -104,7 +104,7 @@ class RedisClient
      *
      * @var Client[]
      */
-    protected static $pool = array();
+    protected static $pool = [];
 
     /**
      * 轮询游标
@@ -127,7 +127,7 @@ class RedisClient
      *
      * @var array
      */
-    protected static $primed = array();
+    protected static $primed = [];
 
     /**
      * 初始化连接配置
@@ -324,7 +324,7 @@ class RedisClient
      */
     protected static function prefixKeys(array $keys)
     {
-        $result = array();
+        $result = [];
         foreach ($keys as $key) {
             $result[] = self::key($key);
         }
@@ -581,9 +581,9 @@ class RedisClient
             function ($result, $client = null) use ($key, $cb) {
                 if ($client && method_exists($client, 'error') && $client->error() !== '') {
                     Logger::error('Redis 批量弹出失败', array('key' => $key, 'error' => $client->error()));
-                    $result = array();
+                    $result = [];
                 }
-                $items = is_array($result) ? $result : array();
+                $items = is_array($result) ? $result : [];
                 if ($cb) {
                     call_user_func($cb, $items);
                 }
@@ -644,9 +644,9 @@ class RedisClient
         }
 
         $cost  = max(1, (int)$cost);
-        $keys  = array();
-        $rates = array();
-        $sizes = array();
+        $keys  = [];
+        $rates = [];
+        $sizes = [];
 
         foreach ($buckets as $bucket) {
             $rate  = max(1, (int)(isset($bucket['rate']) ? $bucket['rate'] : 1));
@@ -707,7 +707,7 @@ class RedisClient
      * @param callable|null $cb      function(mixed $result, Client $client = null)
      * @return mixed
      */
-    public static function eval($script, array $args = array(), $numKeys = 0, callable $cb = null)
+    public static function eval($script, array $args = [], $numKeys = 0, callable $cb = null)
     {
         $flat = array_merge(array((int)$numKeys), array_values($args));
 
@@ -753,8 +753,8 @@ class RedisClient
                 $client->close();
             }
         }
-        self::$pool   = array();
+        self::$pool   = [];
         self::$cursor = 0;
-        self::$primed = array();
+        self::$primed = [];
     }
 }

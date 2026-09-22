@@ -82,7 +82,7 @@ final class CaseRateLimit
                     echo "[L] 限流统计：放行 {$lAck} 条，拒绝 {$lLimit} 条\n";
                     $con->close();
                     $h->finish();
-                }, array(), false);
+                }, [], false);
                 return;
             }
 

@@ -25,7 +25,7 @@ $secret = (require BASE_PATH . '/config/app.php')['auth']['secret'];
 
 echo "P5 设备绑定首胜验证 uid={$uid}\n";
 
-$result = array();
+$result = [];
 
 $worker = new Worker();
 
@@ -73,7 +73,7 @@ $worker->onWorkerStart = function () use ($uid, $secret, &$result) {
             if ($new === SessionManager::STATE_DISCONNECTED && $old !== SessionManager::STATE_DISCONNECTED) {
                 \Workerman\Timer::add(0.5, function () use ($finish) {
                     $finish(false, -1, '连接被服务端关闭（鉴权失败断连）');
-                }, array(), false);
+                }, [], false);
             }
         });
 

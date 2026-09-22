@@ -106,9 +106,9 @@ class ActionRunnerTest extends TestCase
     public function testMalformedConfigLoadsNothing(): void
     {
         // actions 缺失 / 非数组时不得抛异常，应退化为空表
-        $this->assertSame(array(), ActionRunner::load(array()));
-        $this->assertSame(array(), ActionRunner::load(array('actions' => 'bogus')));
-        $this->assertSame(array(), ActionRunner::registered());
+        $this->assertSame([], ActionRunner::load(array()));
+        $this->assertSame([], ActionRunner::load(array('actions' => 'bogus')));
+        $this->assertSame([], ActionRunner::registered());
     }
 
     /* ---------------------------------------------------------------------
@@ -159,9 +159,9 @@ class ActionRunnerTest extends TestCase
             $decl['reply']
         );
         $this->assertSame(ActionRunner::DEFAULT_TIMEOUT, $decl['timeout']);
-        $this->assertSame(array(), $decl['params']);
+        $this->assertSame([], $decl['params']);
         $this->assertSame('', $decl['description']);
-        $this->assertSame(array(), $decl['options']);
+        $this->assertSame([], $decl['options']);
         $this->assertFalse($decl['http'], 'HTTP 通道默认关闭（白名单则否）');
     }
 
@@ -296,8 +296,8 @@ class ActionRunnerTest extends TestCase
         $this->load(array('a' => array('handler' => StubAction::class, 'params' => 'bogus')));
 
         // 非法值退化为空规则 = 拒绝一切入参，而非透传
-        $this->assertSame(array(), ActionRunner::declaration('a')['params']);
-        $this->assertSame(array(), ActionRunner::declarations()['a']['params']);
+        $this->assertSame([], ActionRunner::declaration('a')['params']);
+        $this->assertSame([], ActionRunner::declarations()['a']['params']);
     }
 
     /* ---------------------------------------------------------------------
@@ -309,7 +309,7 @@ class ActionRunnerTest extends TestCase
         $this->load(array('a' => array('handler' => StubAction::class)));
 
         $this->assertFalse(ActionRunner::httpExposed('a'));
-        $this->assertSame(array(), ActionRunner::httpActions());
+        $this->assertSame([], ActionRunner::httpActions());
     }
 
     public function testHttpWhitelistIsOptInPerAction(): void

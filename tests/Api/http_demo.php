@@ -98,7 +98,7 @@ echo "动作等待窗: {$actionWaitMs} ms（客户端超时取 {$httpTimeout}s�
 echo '演示身份  : uid=' . $uid . ' device_id=' . $deviceId . "\n";
 echo str_repeat('=', 70) . "\n\n";
 
-$results = array();
+$results = [];
 
 /**
  * @param bool $skip 免签模式下不适用的断言：既不算通过也不算失败，显式标记
@@ -121,7 +121,7 @@ $check = function (string $name, bool $ok, string $detail = '', bool $skip = fal
  ===================================================================== */
 
 echo "[0] 探测验签模式 —— 不带签名请求 /stats\n";
-$probe = httpCall('GET', $baseUrl . '/stats', array(), '', $httpTimeout);
+$probe = httpCall('GET', $baseUrl . '/stats', [], '', $httpTimeout);
 if (!$probe['ok']) {
     fwrite(STDERR, '[FATAL] 接口不可达：' . $probe['error'] . "\n");
     fwrite(STDERR, "       请确认 api 角色已启动，且地址为 {$baseUrl}\n");
@@ -148,7 +148,7 @@ if ($secret === '' && !$freeMode) {
  ===================================================================== */
 
 echo "[1] GET /health —— 免鉴权存活探测\n";
-$res = httpCall('GET', $baseUrl . '/health', array(), '', $httpTimeout);
+$res = httpCall('GET', $baseUrl . '/health', [], '', $httpTimeout);
 if (!$res['ok']) {
     fwrite(STDERR, '[FATAL] 接口不可达：' . $res['error'] . "\n");
     fwrite(STDERR, "       请确认 api 角色已启动，且地址为 {$baseUrl}\n");
@@ -236,7 +236,7 @@ $res = callAction($baseUrl, $secret, array(
 
 $requestId = (string)($res['json']['data']['request_id'] ?? '');
 $result    = isset($res['json']['data']['result']) && is_array($res['json']['data']['result'])
-    ? $res['json']['data']['result'] : array();
+    ? $res['json']['data']['result'] : [];
 
 $check('HTTP 200 / code 0 / status=done', $res['status'] === 200
     && (int)$res['json']['code'] === 0
@@ -287,7 +287,7 @@ $check('subscribe 成功', $sub['status'] === 200 && (int)$sub['json']['code'] =
     'HTTP ' . $sub['status'] . ' / code ' . json_encode($sub['json']['code'] ?? null));
 
 $list = callAction($baseUrl, $secret, array('action' => 'topics', 'uid' => $uid), $httpTimeout);
-$topics = $list['json']['data']['result']['topics'] ?? array();
+$topics = $list['json']['data']['result']['topics'] ?? [];
 $check('topics 查得到刚订阅的主题', is_array($topics) && in_array($topic, $topics, true),
     'topics=' . json_encode($topics, JSON_UNESCAPED_UNICODE));
 
@@ -297,7 +297,7 @@ $unsub = callAction($baseUrl, $secret, array(
 $check('unsubscribe 成功', $unsub['status'] === 200 && (int)$unsub['json']['code'] === 0);
 
 $list2  = callAction($baseUrl, $secret, array('action' => 'topics', 'uid' => $uid), $httpTimeout);
-$topics2 = $list2['json']['data']['result']['topics'] ?? array();
+$topics2 = $list2['json']['data']['result']['topics'] ?? [];
 $check('取消后主题已移除', is_array($topics2) && !in_array($topic, $topics2, true),
     'topics=' . json_encode($topics2, JSON_UNESCAPED_UNICODE));
 echo "\n";
@@ -313,7 +313,7 @@ $res = callAction($baseUrl, $secret, array(
     'uid'    => $uid,
     'params' => array('value' => array('hello' => 'world'), 'msg_id' => $msgId),
 ), $httpTimeout);
-$notifyResult = $res['json']['data']['result'] ?? array();
+$notifyResult = $res['json']['data']['result'] ?? [];
 $check(
     'HTTP 200 且推送任务已入队',
     $res['status'] === 200 && (int)$res['json']['code'] === 0 && (int)($notifyResult['queued'] ?? 0) === 1,
@@ -431,7 +431,7 @@ exit($fail === 0 ? 0 : 1);
  */
 function loadEnv(string $path): array
 {
-    $out = array();
+    $out = [];
     if (!is_file($path)) {
         return $out;
     }
@@ -513,7 +513,7 @@ function httpCall(string $method, string $url, array $headers, string $body, int
             'ok'     => false,
             'status' => $code,
             'body'   => '',
-            'json'   => array(),
+            'json'   => [],
             'error'  => $err !== '' ? $err : 'curl error #' . $errNo,
         );
     }
@@ -524,7 +524,7 @@ function httpCall(string $method, string $url, array $headers, string $body, int
         'ok'     => true,
         'status' => $code,
         'body'   => (string)$raw,
-        'json'   => is_array($decoded) ? $decoded : array(),
+        'json'   => is_array($decoded) ? $decoded : [],
         'error'  => '',
     );
 }

@@ -28,7 +28,7 @@ class ActionContextTest extends TestCase
      *
      * @var array
      */
-    private $sent = array();
+    private $sent = [];
 
     /**
      * 回执钩子被调用的次数
@@ -39,7 +39,7 @@ class ActionContextTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->sent      = array();
+        $this->sent      = [];
         $this->hookCalls = 0;
     }
 
@@ -57,11 +57,11 @@ class ActionContextTest extends TestCase
      */
     private function context(
         $action = 'echo',
-        array $packet = array(),
-        array $params = array(),
+        array $packet = [],
+        array $params = [],
         $channel = ActionContext::CHANNEL_WS,
         $replyMode = ActionContext::REPLY_SYNC,
-        array $options = array(),
+        array $options = [],
         $protocol = 'ws'
     ) {
         return new ActionContext(
@@ -89,7 +89,7 @@ class ActionContextTest extends TestCase
 
     public function testIdentityGetters(): void
     {
-        $ctx = $this->context('report', array(), array(), ActionContext::CHANNEL_UDP, ActionContext::REPLY_SYNC, array(), 'udp');
+        $ctx = $this->context('report', [], [], ActionContext::CHANNEL_UDP, ActionContext::REPLY_SYNC, [], 'udp');
 
         $this->assertSame('report', $ctx->action());
         $this->assertSame('1234567890123456789', $ctx->clientId());
@@ -103,9 +103,9 @@ class ActionContextTest extends TestCase
     {
         $ctx = new ActionContext(
             'echo',
-            array(),
-            array(),
-            array(),
+            [],
+            [],
+            [],
             ActionContext::CHANNEL_WS,
             ActionContext::REPLY_SYNC,
             function (array $p) {
@@ -141,7 +141,7 @@ class ActionContextTest extends TestCase
 
     public function testParamsExposeValidatedValues(): void
     {
-        $ctx = $this->context('report', array(), array('topic' => 'a/b', 'count' => 5));
+        $ctx = $this->context('report', [], array('topic' => 'a/b', 'count' => 5));
 
         $this->assertSame(array('topic' => 'a/b', 'count' => 5), $ctx->params());
         $this->assertSame('a/b', $ctx->param('topic'));
@@ -150,7 +150,7 @@ class ActionContextTest extends TestCase
 
     public function testParamFallsBackToDefaultOnlyWhenKeyAbsent(): void
     {
-        $ctx = $this->context('report', array(), array('flag' => null, 'zero' => 0));
+        $ctx = $this->context('report', [], array('flag' => null, 'zero' => 0));
 
         // 键存在即使是 null / 0 也应原样返回，不回落默认值
         $this->assertNull($ctx->param('flag', 'fallback'));
@@ -160,7 +160,7 @@ class ActionContextTest extends TestCase
 
     public function testOptionsAreReadableWithDefault(): void
     {
-        $ctx = $this->context('report', array(), array(), ActionContext::CHANNEL_WS, ActionContext::REPLY_SYNC, array('ttl' => 3600));
+        $ctx = $this->context('report', [], [], ActionContext::CHANNEL_WS, ActionContext::REPLY_SYNC, array('ttl' => 3600));
 
         $this->assertSame(array('ttl' => 3600), $ctx->options());
         $this->assertSame(3600, $ctx->option('ttl'));
@@ -173,7 +173,7 @@ class ActionContextTest extends TestCase
 
     public function testReplyModeDefaultsToSyncOnUnknownValue(): void
     {
-        $ctx = $this->context('echo', array(), array(), ActionContext::CHANNEL_WS, 'bogus');
+        $ctx = $this->context('echo', [], [], ActionContext::CHANNEL_WS, 'bogus');
 
         $this->assertSame(ActionContext::REPLY_SYNC, $ctx->replyMode());
     }
@@ -229,27 +229,27 @@ class ActionContextTest extends TestCase
 
     public function testReplyNoneSuppressesSendButMarksReplied(): void
     {
-        $ctx = $this->context('report', array('seq' => 'sp-12'), array(), ActionContext::CHANNEL_UDP, ActionContext::REPLY_NONE);
+        $ctx = $this->context('report', array('seq' => 'sp-12'), [], ActionContext::CHANNEL_UDP, ActionContext::REPLY_NONE);
 
         $sent = $ctx->reply(array('count' => 3));
 
         $this->assertFalse($sent, 'reply=none 时不应真正下发');
-        $this->assertSame(array(), $this->sent, '下发器不得被调用');
+        $this->assertSame([], $this->sent, '下发器不得被调用');
         $this->assertTrue($ctx->isReplied(), '静默回执仍须标记已回执，否则超时保护会误报');
     }
 
     public function testReplyErrorIsAlsoSuppressedWhenReplyNone(): void
     {
-        $ctx = $this->context('report', array('seq' => 'sp-13'), array(), ActionContext::CHANNEL_UDP, ActionContext::REPLY_NONE);
+        $ctx = $this->context('report', array('seq' => 'sp-13'), [], ActionContext::CHANNEL_UDP, ActionContext::REPLY_NONE);
 
         $this->assertFalse($ctx->replyError(Message::CODE_SERVER_ERROR));
-        $this->assertSame(array(), $this->sent);
+        $this->assertSame([], $this->sent);
         $this->assertTrue($ctx->isReplied());
     }
 
     public function testReplyHookFiresOnSuppressedReplyToo(): void
     {
-        $ctx = $this->context('report', array(), array(), ActionContext::CHANNEL_UDP, ActionContext::REPLY_NONE);
+        $ctx = $this->context('report', [], [], ActionContext::CHANNEL_UDP, ActionContext::REPLY_NONE);
         $ctx->setReplyHook(function () {
             $this->hookCalls++;
         });

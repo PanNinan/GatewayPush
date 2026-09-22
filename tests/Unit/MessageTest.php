@@ -89,7 +89,7 @@ class MessageTest extends TestCase
             'ts'        => 1690000000,
             'device_id' => 'dev1',
             'token'     => 'tk',
-            'data'      => array(),
+            'data'      => [],
         );
 
         $noUid  = $base;
@@ -104,7 +104,7 @@ class MessageTest extends TestCase
     {
         $packet = array(
             'cmd' => 'ping', 'seq' => '1', 'ts' => 1,
-            'device_id' => 'd', 'token' => 't', 'data' => array(),
+            'device_id' => 'd', 'token' => 't', 'data' => [],
         );
 
         self::assertSame(Message::sign($packet, 'a'), Message::sign($packet, 'a'));
@@ -181,7 +181,7 @@ class MessageTest extends TestCase
         self::assertSame('', $packet['device_id']);
         self::assertSame('', $packet['token']);
         self::assertSame('', $packet['sign']);
-        self::assertSame(array(), $packet['data']);
+        self::assertSame([], $packet['data']);
     }
 
     public function testDecodeWrapsScalarData(): void
@@ -236,7 +236,7 @@ class MessageTest extends TestCase
         $config = array('sign_enable' => true, 'secret' => 'sec', 'clock_skew' => 300);
         $packet = array(
             'cmd' => 'data', 'seq' => '1', 'ts' => time(),
-            'device_id' => 'd', 'token' => 't', 'data' => array(),
+            'device_id' => 'd', 'token' => 't', 'data' => [],
         );
         $packet['sign'] = Message::sign($packet, 'sec');
 
@@ -248,7 +248,7 @@ class MessageTest extends TestCase
         $config = array('sign_enable' => true, 'secret' => 'sec', 'clock_skew' => 300);
         $packet = array(
             'cmd' => 'data', 'seq' => '1', 'ts' => time(),
-            'device_id' => 'd', 'token' => 't', 'data' => array(),
+            'device_id' => 'd', 'token' => 't', 'data' => [],
         );
         $packet['sign'] = Message::sign($packet, 'sec');
 
@@ -266,7 +266,7 @@ class MessageTest extends TestCase
         $config = array('sign_enable' => true, 'secret' => 'sec', 'clock_skew' => 10);
         $packet = array(
             'cmd' => 'data', 'seq' => '1', 'ts' => time() - 1000,
-            'device_id' => 'd', 'token' => 't', 'data' => array(),
+            'device_id' => 'd', 'token' => 't', 'data' => [],
         );
         $packet['sign'] = Message::sign($packet, 'sec');
 

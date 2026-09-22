@@ -39,7 +39,7 @@ $state = array(
     'offlinePush'   => false,   // 收到 offline=1 补投
     'acked'         => 0,
 );
-$failMsg = array();
+$failMsg = [];
 
 $worker = new Worker();
 

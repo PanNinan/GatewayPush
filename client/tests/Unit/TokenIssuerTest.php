@@ -212,7 +212,7 @@ class TokenIssuerTest extends TestCase
 
     public function testClaimsReturnsEmptyArrayOnFailure(): void
     {
-        self::assertSame(array(), (new TokenIssuer(self::SECRET))->claims('garbage'));
+        self::assertSame([], (new TokenIssuer(self::SECRET))->claims('garbage'));
     }
 
     /* ---------------------------------------------------------------------
@@ -235,11 +235,11 @@ class TokenIssuerTest extends TestCase
     {
         $issuer = new TokenIssuer(self::SECRET);
 
-        self::assertSame(array(), $issuer->peek(''));
-        self::assertSame(array(), $issuer->peek('not-a-token'));
-        self::assertSame(array(), $issuer->peek('a.b.c'));
-        self::assertSame(array(), $issuer->peek('!!!.sig'));
-        self::assertSame(array(), $issuer->peek('aGVsbG8.sig'));
+        self::assertSame([], $issuer->peek(''));
+        self::assertSame([], $issuer->peek('not-a-token'));
+        self::assertSame([], $issuer->peek('a.b.c'));
+        self::assertSame([], $issuer->peek('!!!.sig'));
+        self::assertSame([], $issuer->peek('aGVsbG8.sig'));
     }
 
     /* ---------------------------------------------------------------------

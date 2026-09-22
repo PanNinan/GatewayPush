@@ -31,14 +31,14 @@ class Bootstrap
      *
      * @var array
      */
-    protected static $config = array();
+    protected static $config = [];
 
     /**
      * app.php 配置
      *
      * @var array
      */
-    protected static $appConfig = array();
+    protected static $appConfig = [];
 
     /**
      * 已通过鉴权的连接：clientId => uid（进程内，随连接生命周期）
@@ -48,14 +48,14 @@ class Bootstrap
      *
      * @var array
      */
-    protected static $authed = array();
+    protected static $authed = [];
 
     /**
      * 鉴权超时定时器
      *
      * @var array
      */
-    protected static $authTimers = array();
+    protected static $authTimers = [];
 
     /**
      * 指令路由表是否已注册
@@ -69,7 +69,7 @@ class Bootstrap
      *
      * @var array
      */
-    protected static $closingClients = array();
+    protected static $closingClients = [];
 
     /**
      * 下发错误报文后延迟关闭连接的间隔（秒）
@@ -93,7 +93,7 @@ class Bootstrap
      * @param array $actionConfig   config/actions.php（业务动作清单）
      * @return void
      */
-    public static function init(array $businessConfig, array $appConfig, array $gatewayConfig = array(), array $actionConfig = array())
+    public static function init(array $businessConfig, array $appConfig, array $gatewayConfig = [], array $actionConfig = array())
     {
         if (!self::roleEnabled('business')) {
             return;
@@ -119,7 +119,7 @@ class Bootstrap
         Push::init(
             $appConfig['push'],
             $businessConfig['push_queue'],
-            isset($gatewayConfig['udp']['out_queue']) ? $gatewayConfig['udp']['out_queue'] : array()
+            isset($gatewayConfig['udp']['out_queue']) ? $gatewayConfig['udp']['out_queue'] : []
         );
 
         // 注册指令路由表（一级 cmd + 二级 data.action）
@@ -207,7 +207,7 @@ class Bootstrap
             ));
             Monitor::incr('auth_fail');
             self::closeClient($clientId, Message::CODE_UNAUTHORIZED, '鉴权超时');
-        }, array(), false);
+        }, [], false);
     }
 
     /**
@@ -404,7 +404,7 @@ class Bootstrap
     {
         Logger::debug('WebSocket 握手完成', array(
             'client_id' => $clientId,
-            'get'       => isset($data['get']) ? $data['get'] : array(),
+            'get'       => isset($data['get']) ? $data['get'] : [],
         ));
         // P1 扩展点：可从握手 URL 的 query 中提取 token，实现「握手即鉴权」以省去一次往返
     }
@@ -625,7 +625,7 @@ class Bootstrap
         if (self::isAuthed($clientId)) {
             Session::touch($clientId);
         }
-        self::send($clientId, Message::packet(Message::CMD_PONG, array(), array('seq' => $packet['seq'])));
+        self::send($clientId, Message::packet(Message::CMD_PONG, [], array('seq' => $packet['seq'])));
     }
 
     /**
@@ -1035,7 +1035,7 @@ class Bootstrap
         //   ack  —— 客户端对下行推送的确认
         // 其余指令在此不重复处理：auth 所需的会话绑定已在上方完成，
         // ping 已由 UDP 网关在收包时即时回执，再走一遍会造成重复回执与重复补投。
-        $packet = isset($job['packet']) && is_array($job['packet']) ? $job['packet'] : array();
+        $packet = isset($job['packet']) && is_array($job['packet']) ? $job['packet'] : [];
         $cmd    = isset($packet['cmd']) ? (string)$packet['cmd'] : '';
 
         if ($cmd !== Message::CMD_DATA && $cmd !== Message::CMD_ACK) {
@@ -1190,7 +1190,7 @@ class Bootstrap
                 } catch (\Throwable $e) {
                     Logger::exception($e, 'business.close:' . $clientId);
                 }
-            }, array(), false);
+            }, [], false);
         } catch (\Throwable $e) {
             Logger::exception($e, 'business.close:' . $clientId);
         }

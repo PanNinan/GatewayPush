@@ -89,7 +89,7 @@ return array(
         'session' => array(
             'handler'     => SessionAction::class,
             'description' => '查询当前连接的会话摘要',
-            'params'      => array(),
+            'params'      => [],
             // 刻意不开放 HTTP：本动作的语义锚点是「当前连接」，HTTP 通道下
             // 没有连接实体（clientId 为 http:{request_id}），调用无意义。
             // 需要按 uid 查会话请走 handleAuth 落库的会话键或新增专用动作。
@@ -145,7 +145,7 @@ return array(
         'topics' => array(
             'handler'     => TopicsAction::class,
             'description' => '查询本人已订阅的主题列表',
-            'params'      => array(),
+            'params'      => [],
             'http'        => true,
         ),
 

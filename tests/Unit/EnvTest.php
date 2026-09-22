@@ -26,14 +26,14 @@ class EnvTest extends TestCase
      *
      * @var array
      */
-    private $injected = array();
+    private $injected = [];
 
     protected function tearDown(): void
     {
         foreach ($this->injected as $key) {
             unset($_ENV[$key], $_SERVER[$key]);
         }
-        $this->injected = array();
+        $this->injected = [];
     }
 
     /**

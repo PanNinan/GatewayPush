@@ -25,7 +25,7 @@ final class FakeTcpConnection
     public $onError;
 
     /** @var string[] 已发送的帧 */
-    public $sent = array();
+    public $sent = [];
 
     /** @var int */
     public $connectCalls = 0;

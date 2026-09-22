@@ -23,7 +23,7 @@ final class CaseHttpApi
      */
     public static function run(Harness $h)
     {
-        $hErrors = array();
+        $hErrors = [];
 
         $health = Harness::httpRequest('GET', $h->apiAddress . '/health');
         if (!$health['ok']) {

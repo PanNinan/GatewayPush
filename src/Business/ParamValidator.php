@@ -49,7 +49,7 @@ class ParamValidator
     public static function validate(array $rules, array $input, &$error = null)
     {
         $error = '';
-        $out   = array();
+        $out   = [];
 
         foreach ($rules as $name => $rule) {
             $name = (string)$name;

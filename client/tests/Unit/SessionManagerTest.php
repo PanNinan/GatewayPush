@@ -25,7 +25,7 @@ final class SessionManagerTest extends TestCase
 {
     use FakeTimers;
 
-    private function makeSession(array $overrides = array(), FakeTransport &$transport = null)
+    private function makeSession(array $overrides = [], FakeTransport &$transport = null)
     {
         $this->makeTimers();
 
@@ -94,7 +94,7 @@ final class SessionManagerTest extends TestCase
 
     public function testConnectTwiceThrowsState()
     {
-        $session   = $this->makeSession(array(), $transport);
+        $session   = $this->makeSession([], $transport);
         $session->connect();
 
         try {
@@ -107,7 +107,7 @@ final class SessionManagerTest extends TestCase
 
     public function testRequestBeforeReadyThrowsState()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
 
         try {
             $session->request('echo');
@@ -123,7 +123,7 @@ final class SessionManagerTest extends TestCase
 
     public function testAutoAuthSendsAuthPacketOnOpen()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
         $session->connect();
         $transport->open();
 
@@ -144,8 +144,8 @@ final class SessionManagerTest extends TestCase
 
     public function testAuthAckEntersReadyAndSchedulesHeartbeat()
     {
-        $states   = array();
-        $session  = $this->makeSession(array(), $transport);
+        $states   = [];
+        $session  = $this->makeSession([], $transport);
         $session->onStateChange(function ($new, $old) use (&$states) {
             $states[] = $new;
         });
@@ -187,7 +187,7 @@ final class SessionManagerTest extends TestCase
 
     public function testAuthErrorRejectsPendingAndFiresError()
     {
-        $session   = $this->makeSession(array(), $transport);
+        $session   = $this->makeSession([], $transport);
         $errorCode = null;
         $cbResult  = null;
         $session->onError(function (ClientException $e) use (&$errorCode) {
@@ -217,7 +217,7 @@ final class SessionManagerTest extends TestCase
 
     public function testPingPongSetsRtt()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
         $this->connectAndReady($session, $transport);
 
         $result = null;
@@ -232,7 +232,7 @@ final class SessionManagerTest extends TestCase
             'cmd'  => Message::CMD_PONG,
             'seq'  => $ping['seq'],
             'ts'   => time(),
-            'data' => array(),
+            'data' => [],
         ));
 
         self::assertTrue($result[0]);
@@ -242,7 +242,7 @@ final class SessionManagerTest extends TestCase
 
     public function testServerReversePingIsAnsweredWithPong()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
         $this->connectAndReady($session, $transport);
         $sentBefore = count($transport->sentPackets);
 
@@ -258,7 +258,7 @@ final class SessionManagerTest extends TestCase
 
     public function testRequestBuildsDataPacketAndSettlesOnAck()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
         $this->connectAndReady($session, $transport);
 
         $result = null;
@@ -289,7 +289,7 @@ final class SessionManagerTest extends TestCase
 
     public function testUnsolicitedAckIsIgnored()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
         $this->connectAndReady($session, $transport);
 
         // 服务端推送回执等无主 ack 不应触发任何 pending 或异常
@@ -301,7 +301,7 @@ final class SessionManagerTest extends TestCase
 
     public function testInvalidFrameFiresBadPacketError()
     {
-        $session   = $this->makeSession(array(), $transport);
+        $session   = $this->makeSession([], $transport);
         $errorCode = null;
         $session->onError(function (ClientException $e) use (&$errorCode) {
             $errorCode = $e->getCode();
@@ -316,7 +316,7 @@ final class SessionManagerTest extends TestCase
 
     public function testPushIsForwardedToCallback()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
         $pushed  = null;
         $session->onPush(function (array $packet) use (&$pushed) {
             $pushed = $packet;
@@ -355,7 +355,7 @@ final class SessionManagerTest extends TestCase
             'cmd'  => Message::CMD_ACK,
             'seq'  => $auth['seq'],
             'ts'   => time(),
-            'data' => array(),
+            'data' => [],
         ));
         self::assertTrue($session->isReady(), '传输层 ack 应结算 auth');
 
@@ -368,7 +368,7 @@ final class SessionManagerTest extends TestCase
             'cmd'  => Message::CMD_ACK,
             'seq'  => $seq,
             'ts'   => time(),
-            'data' => array(),
+            'data' => [],
         ));
         self::assertNull($settled, '传输层 ack 不得结算业务请求（硬约束⑳）');
         self::assertSame(1, $session->pendingCount());
@@ -388,7 +388,7 @@ final class SessionManagerTest extends TestCase
         $session = $this->makeSession(array('heartbeat' => 0, 'attach_token' => true), $transport);
         $this->connectAndReady($session, $transport);
 
-        $session->request('echo', array(), null);
+        $session->request('echo', [], null);
         $req = $transport->lastPacket();
 
         self::assertNotSame('', $req['token'], 'attach_token 开启时业务报文必须携带 Token（硬约束⑲）');
@@ -411,7 +411,7 @@ final class SessionManagerTest extends TestCase
         $session = $this->makeSession(array('heartbeat' => 0), $transport);
         $this->connectAndReady($session, $transport);
 
-        $session->request('echo', array(), null);
+        $session->request('echo', [], null);
         $req = $transport->lastPacket();
 
         self::assertArrayNotHasKey('token', $req, '默认（WS）路径不应附加 Token');
@@ -432,7 +432,7 @@ final class SessionManagerTest extends TestCase
         $this->connectAndReady($session, $transport);
 
         $result = null;
-        $session->request('echo', array(), function ($ok, $data) use (&$result) {
+        $session->request('echo', [], function ($ok, $data) use (&$result) {
             $result = array($ok, $data);
         });
 
@@ -479,11 +479,11 @@ final class SessionManagerTest extends TestCase
 
     public function testDisconnectFailsPendingAndSchedulesReconnect()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
         $this->connectAndReady($session, $transport);
 
         $result = null;
-        $session->request('echo', array(), function ($ok, $data) use (&$result) {
+        $session->request('echo', [], function ($ok, $data) use (&$result) {
             $result = array($ok, $data);
         });
 
@@ -501,7 +501,7 @@ final class SessionManagerTest extends TestCase
 
     public function testReconnectBackoffIsExponential()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
         $this->connectAndReady($session, $transport);
 
         // 第一轮：退避 1s
@@ -521,7 +521,7 @@ final class SessionManagerTest extends TestCase
 
     public function testReconnectSuccessResetsAttempts()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
         $this->connectAndReady($session, $transport);
 
         $transport->drop();
@@ -542,7 +542,7 @@ final class SessionManagerTest extends TestCase
     public function testReconnectDisabledGoesDisconnected()
     {
         $session = $this->makeSession(array('reconnect' => false), $transport);
-        $errors  = array();
+        $errors  = [];
         $session->onError(function (ClientException $e) use (&$errors) {
             $errors[] = $e;
         });
@@ -558,7 +558,7 @@ final class SessionManagerTest extends TestCase
 
     public function testUserCloseDoesNotReconnect()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
         $this->connectAndReady($session, $transport);
 
         $session->close();
@@ -571,7 +571,7 @@ final class SessionManagerTest extends TestCase
 
     public function testUserCloseDuringReconnectCancelsReconnectTimer()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
         $this->connectAndReady($session, $transport);
 
         $transport->drop(); // → reconnecting，重连定时器挂起
@@ -589,7 +589,7 @@ final class SessionManagerTest extends TestCase
 
     public function testStatsSnapshotShape()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
         $stats   = $session->stats();
 
         self::assertSame('disconnected', $stats['state']);

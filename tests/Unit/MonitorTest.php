@@ -63,15 +63,15 @@ class MonitorTest extends TestCase
 
     public function testReturnsEmptyWhenGaugeIsEmpty()
     {
-        $this->assertSame(array(), Monitor::staleFields(array(), self::TTL, 1000000));
+        $this->assertSame([], Monitor::staleFields([], self::TTL, 1000000));
     }
 
     public function testReturnsEmptyWhenTtlDisabled()
     {
         // ttl <= 0 视为「不清理」—— 配置成 0 时不能反过来变成「全都删」
         $gauge = $this->gauge(array(123 => 1));
-        $this->assertSame(array(), Monitor::staleFields($gauge, 0, 1000000));
-        $this->assertSame(array(), Monitor::staleFields($gauge, -1, 1000000));
+        $this->assertSame([], Monitor::staleFields($gauge, 0, 1000000));
+        $this->assertSame([], Monitor::staleFields($gauge, -1, 1000000));
     }
 
     /* -----------------------------------------------------------------
@@ -82,7 +82,7 @@ class MonitorTest extends TestCase
     {
         $now   = 1000000;
         $gauge = $this->gauge(array(123 => $now - 1));
-        $this->assertSame(array(), Monitor::staleFields($gauge, self::TTL, $now));
+        $this->assertSame([], Monitor::staleFields($gauge, self::TTL, $now));
     }
 
     public function testKeepsProcessExactlyAtDeadline()
@@ -91,7 +91,7 @@ class MonitorTest extends TestCase
         // 若哪天被改成 >，这条会红 —— 那意味着宽限期被悄悄缩短了 1s 且语义不清。
         $now   = 1000000;
         $gauge = $this->gauge(array(123 => $now - self::TTL));
-        $this->assertSame(array(), Monitor::staleFields($gauge, self::TTL, $now));
+        $this->assertSame([], Monitor::staleFields($gauge, self::TTL, $now));
     }
 
     public function testPurgesProcessOneSecondPastDeadline()
@@ -175,7 +175,7 @@ class MonitorTest extends TestCase
             'tasks:222'        => '{"worker_id":0,"jobs":[]}',
             'memory_bytes:222' => '4194304',
         );
-        $this->assertSame(array(), Monitor::staleFields($gauge, self::TTL, 1000000));
+        $this->assertSame([], Monitor::staleFields($gauge, self::TTL, 1000000));
     }
 
     public function testIgnoresNonNumericPidSuffix()
@@ -187,7 +187,7 @@ class MonitorTest extends TestCase
             'pid_at:'    => '1',
             'pid_at: 7'  => '1',
         );
-        $this->assertSame(array(), Monitor::staleFields($gauge, self::TTL, 1000000));
+        $this->assertSame([], Monitor::staleFields($gauge, self::TTL, 1000000));
     }
 
     public function testIgnoresMissingOrCorruptTimestamp()
@@ -198,7 +198,7 @@ class MonitorTest extends TestCase
             'pid_at:444' => '',
             'pid_at:555' => 'abc',
         );
-        $this->assertSame(array(), Monitor::staleFields($gauge, self::TTL, 1000000));
+        $this->assertSame([], Monitor::staleFields($gauge, self::TTL, 1000000));
     }
 
     /* -----------------------------------------------------------------

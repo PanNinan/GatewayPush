@@ -33,7 +33,7 @@ final class Banner
      * @param string $modeLabel      启动模式标签（DAEMON / DEBUG），空串则不显示该行
      * @return string
      */
-    public static function render(array $appConfig, array $gatewayConfig, array $businessConfig, array $roles = array(), $withProbe = false, $modeLabel = '')
+    public static function render(array $appConfig, array $gatewayConfig, array $businessConfig, array $roles = [], $withProbe = false, $modeLabel = '')
     {
         $isLinux = DIRECTORY_SEPARATOR === '/';
         // 入口变量 BASE_PATH 指向项目根；兜底值按本类所在层级（src/Console）回退两级
@@ -56,7 +56,7 @@ final class Banner
             ? implode(' -> ', array_map($relative, $envFiles))
             : '（未找到，全部使用代码内默认值）';
 
-        $lines   = array();
+        $lines   = [];
         $lines[] = 'GatewayPush 实时数据推送服务 - 启动信息';
         $lines[] = str_repeat('=', 70);
         $lines[] = 'PHP 版本  : ' . PHP_VERSION . ' (' . PHP_SAPI . ') / ' . PHP_OS_FAMILY
@@ -70,9 +70,9 @@ final class Banner
         // 接口验签状态。免签是安全相关状态，必须在启动时就可见 —— 它不像日志级别
         // 那样只影响可观测性，而是直接影响接口的对外开放程度。
         if (!empty($appConfig['api']['enable'])) {
-            $apiSignOn = empty($appConfig['api']['sign_enable'])
-                ? !Bootstrap::isLoopbackHost((string)$appConfig['api']['listen'])
-                : true;
+            $apiSignOn = ! empty($appConfig['api']['sign_enable']) || ! Bootstrap::isLoopbackHost(
+                    (string)$appConfig['api']['listen']
+                );
             $lines[] = '接口验签  : ' . ($apiSignOn
                 ? '已开启'
                 : '已关闭（本地调试免签，仅回环监听生效）');

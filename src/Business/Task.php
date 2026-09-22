@@ -28,7 +28,7 @@ class Task
      *
      * @var array
      */
-    protected static $jobs = array();
+    protected static $jobs = [];
 
     /**
      * 当前 worker 进程 id
@@ -129,7 +129,7 @@ class Task
 
         $timerId = Timer::add($interval, function () use ($name) {
             self::execute($name);
-        }, array(), $persistent);
+        }, [], $persistent);
 
         self::$jobs[$name]['timer'] = $timerId;
 
@@ -169,7 +169,7 @@ class Task
      */
     public static function stats()
     {
-        $stats = array();
+        $stats = [];
         foreach (self::$jobs as $name => $job) {
             $stats[$name] = array(
                 'interval'   => $job['interval'],

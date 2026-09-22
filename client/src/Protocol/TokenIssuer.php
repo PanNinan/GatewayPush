@@ -156,7 +156,7 @@ final class TokenIssuer
 
         return !empty($result['ok']) && isset($result['claims']) && is_array($result['claims'])
             ? $result['claims']
-            : array();
+            : [];
     }
 
     /**
@@ -172,13 +172,13 @@ final class TokenIssuer
     {
         $parts = explode('.', (string)$token);
         if (count($parts) !== 2) {
-            return array();
+            return [];
         }
 
         $json  = self::base64UrlDecode($parts[0]);
         $claim = $json === '' ? null : json_decode($json, true);
 
-        return is_array($claim) ? $claim : array();
+        return is_array($claim) ? $claim : [];
     }
 
     /* ---------------------------------------------------------------------

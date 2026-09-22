@@ -58,12 +58,12 @@ final class CaseActionUdp
 
                 Timer::add(1.2, function () use ($n, &$attempt) {
                     $attempt($n + 1);
-                }, array(), false);
+                }, [], false);
             };
 
             Timer::add(0.2, function () use (&$attempt) {
                 $attempt(1);
-            }, array(), false);
+            }, [], false);
         };
 
         $udpN->onMessage = function ($con, $raw) use ($h, $c, &$nEcho1Acked) {
@@ -73,7 +73,7 @@ final class CaseActionUdp
             }
 
             $seq  = isset($packet['seq']) ? (string)$packet['seq'] : '';
-            $data = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : array();
+            $data = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : [];
 
             // 两层回执的判别依据：业务层回执必带 action 字段
             $isActionReply = isset($data['action']);
@@ -131,7 +131,7 @@ final class CaseActionUdp
                         'data'      => array('action' => 'echo', 'params' => array('phase' => 2)),
                     ))));
                     echo "[N] -> data/action=echo#2（此刻前若收到 report 回执即为失败）\n";
-                }, array(), false);
+                }, [], false);
                 return;
             }
 
@@ -171,7 +171,7 @@ final class CaseActionUdp
 
                         Timer::add(0.4, function () use (&$check, $attempt) {
                             $check($attempt + 1);
-                        }, array(), false);
+                        }, [], false);
                     });
                 };
                 $check(1);

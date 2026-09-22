@@ -193,7 +193,7 @@ class ErrorCodeTest extends TestCase
         self::assertStringContainsString('data.echo', $e->getMessage());
         self::assertStringContainsString('seq-7', $e->getMessage());
         self::assertStringContainsString('1.23s', $e->getMessage());
-        self::assertSame(array(), $e->packet());
+        self::assertSame([], $e->packet());
     }
 
     public function testTimeoutWithoutContext(): void

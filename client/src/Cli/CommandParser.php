@@ -24,8 +24,8 @@ class CommandParser
     public static function parse(array $args)
     {
         $command = '';
-        $posArgs = array();
-        $options = array();
+        $posArgs = [];
+        $options = [];
         $literal = false; // `--` 之后进入字面量模式
 
         $count = count($args);

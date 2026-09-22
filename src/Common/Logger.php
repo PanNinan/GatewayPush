@@ -345,7 +345,7 @@ class Logger
      */
     protected static function shortTrace(Throwable $e)
     {
-        $frames = array();
+        $frames = [];
         $trace  = $e->getTrace();
         foreach (array_slice($trace, 0, 5) as $frame) {
             $frames[] = (isset($frame['class']) ? $frame['class'] . ($frame['type'] ?? '::') : '')

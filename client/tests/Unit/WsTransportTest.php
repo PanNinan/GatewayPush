@@ -48,7 +48,7 @@ final class WsTransportTest extends TestCase
     {
         $transport = $this->makeTransport($fake);
         $opened    = false;
-        $frames    = array();
+        $frames    = [];
         $transport->onOpen(function () use (&$opened) {
             $opened = true;
         });
@@ -67,7 +67,7 @@ final class WsTransportTest extends TestCase
     public function testConnectFailureEmitsErrorThenCloseSignal()
     {
         $transport = $this->makeTransport($fake);
-        $errors    = array();
+        $errors    = [];
         $closed    = false;
         $transport->onError(function ($code, $msg) use (&$errors) {
             $errors[] = array($code, $msg);

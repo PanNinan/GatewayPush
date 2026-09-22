@@ -18,6 +18,6 @@ final class SessionApi extends AbstractApi
      */
     public function get($cb = null)
     {
-        return $this->call('session', array(), $cb);
+        return $this->call('session', [], $cb);
     }
 }

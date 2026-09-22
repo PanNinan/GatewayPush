@@ -243,7 +243,7 @@ final class RoleCatalogTest extends TestCase
      */
     private function byRole(array $env = array())
     {
-        $byRole = array();
+        $byRole = [];
         foreach ($this->roles($env)['roles'] as $item) {
             $byRole[$item['role']] = $item;
         }
@@ -271,7 +271,7 @@ final class RoleCatalogTest extends TestCase
      */
     private function configSwitchNames()
     {
-        $keys = array();
+        $keys = [];
         foreach (array('config/gateway.php', 'config/app.php') as $file) {
             $code = (string)file_get_contents($this->root($file));
             preg_match_all("/Env::bool\('([A-Z][A-Z0-9_]*_ENABLE)'/", $code, $matches);

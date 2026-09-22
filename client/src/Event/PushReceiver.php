@@ -86,7 +86,7 @@ final class PushReceiver
             'ts'        => isset($packet['ts']) ? (int)$packet['ts'] : 0,
         );
 
-        $payload = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : array();
+        $payload = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : [];
 
         if ($this->onPushCb !== null) {
             call_user_func($this->onPushCb, $payload, $meta);

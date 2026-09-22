@@ -45,6 +45,6 @@ final class SubscribeApi extends AbstractApi
      */
     public function topics($cb = null)
     {
-        return $this->call('topics', array(), $cb);
+        return $this->call('topics', [], $cb);
     }
 }

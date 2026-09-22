@@ -63,7 +63,7 @@ final class AdminApiTest extends TestCase
 
         $lines   = explode("\r\n", $head);
         $reqLine = array_shift($lines);
-        $headers = array();
+        $headers = [];
         foreach ($lines as $line) {
             $pos = strpos($line, ':');
             if ($pos !== false) {
@@ -160,7 +160,7 @@ final class AdminApiTest extends TestCase
     {
         $api = $this->makeApi($fake);
         $out = null;
-        $api->push('uid', 'nobody', array(), array(), function ($ok, $data, $error) use (&$out) {
+        $api->push('uid', 'nobody', [], [], function ($ok, $data, $error) use (&$out) {
             $out = array($ok, $data, $error);
         });
 

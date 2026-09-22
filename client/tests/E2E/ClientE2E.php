@@ -45,9 +45,9 @@ $prefix = isset($argv[1]) ? (string)$argv[1] : ('ce2e-' . substr(md5((string)mic
 echo "客户端 SDK 端到端对齐（uid 前缀 {$prefix}）\n";
 echo "ws={$wsUrl} udp={$udpUrl} api={$apiUrl}\n";
 
-$results = array();
-$pushes  = array();
-$queue   = array();
+$results = [];
+$pushes  = [];
+$queue   = [];
 
 /**
  * 取报文错误码：服务端 error 报文的 code 位于 data 内；本地超时 packet 为空（记 10001）
@@ -105,7 +105,7 @@ $newSession = function ($uid, $device, $proto, $sec, array $extra = array()) use
  * @return PushReceiver
  */
 $attach = function ($key, SessionManager $session) use (&$pushes) {
-    $pushes[$key] = array();
+    $pushes[$key] = [];
     $receiver     = new PushReceiver($session);
     $receiver->onPush(function (array $payload, array $meta) use ($key, &$pushes) {
         $pushes[$key][] = array('payload' => $payload, 'meta' => $meta);
@@ -293,7 +293,7 @@ $worker->onWorkerStart = function () use (
             $record('B', '未鉴权越权拦截 4003', false, '等待回执超时');
             $transport->close();
             call_user_func($next);
-        }, array(), false);
+        }, [], false);
     };
 
     /* [C] UDP 正常链路 */
@@ -358,7 +358,7 @@ $worker->onWorkerStart = function () use (
 
         Timer::add(6.0, function () use ($finish) {
             call_user_func($finish, false, '等待回执超时（UDP 错误多为静默，查服务端日志）');
-        }, array(), false);
+        }, [], false);
     };
 
     /* [E] 在线定向推送 */
@@ -403,7 +403,7 @@ $worker->onWorkerStart = function () use (
                         // 补投发生在鉴权成功后，留 4s 观察窗口
                         Timer::add(4.0, function () use ($s2, $record, $next, $msgId) {
                             $hit  = false;
-                            $seen = array();
+                            $seen = [];
                             foreach ($GLOBALS['pushes']['f'] as $p) {
                                 $seen[] = $p['meta']['msg_id'] . '/offline=' . $p['meta']['offline'];
                                 if ($p['meta']['msg_id'] === $msgId && (int)$p['meta']['offline'] === 1) {
@@ -414,11 +414,11 @@ $worker->onWorkerStart = function () use (
                                 'msg_id=' . $msgId . ' 实收[' . implode(' ', $seen) . ']');
                             $s2->close();
                             call_user_func($next);
-                        }, array(), false);
+                        }, [], false);
                     });
-                    }, array(), false);
+                    }, [], false);
                 });
-            }, array(), false);
+            }, [], false);
         });
     };
 
@@ -438,7 +438,7 @@ $worker->onWorkerStart = function () use (
                     }
                     $record('G', '推送幂等（同 msg_id 仅一次）', $count === 1, '收到 ' . $count . ' 次');
                     call_user_func($next);
-                }, array(), false);
+                }, [], false);
             });
         });
     };
@@ -449,7 +449,7 @@ $worker->onWorkerStart = function () use (
         $api->health(function ($ok) use ($api, $apiUrl, $record, $next) {
             $api->stats(function ($ok2) use ($apiUrl, $record, $next, $ok) {
                 $bad = new AdminApi($apiUrl, 'bad-secret-for-negative-test', 5.0);
-                $bad->push('uid', 'nobody', array('case' => 'H'), array(), function ($ok3, $data, $error) use ($record, $next, $ok, $ok2) {
+                $bad->push('uid', 'nobody', array('case' => 'H'), [], function ($ok3, $data, $error) use ($record, $next, $ok, $ok2) {
                     $status = is_array($error) && isset($error['status']) ? (int)$error['status'] : 0;
                     $pass   = $ok && $ok2 && !$ok3 && $status === 401;
                     $record('H', 'HTTP health/stats + 验签拒绝 401', $pass, 'health=' . var_export($ok, true)
@@ -487,8 +487,8 @@ $worker->onWorkerStart = function () use (
     $queue[] = function ($next) use (&$ws, $record) {
         $session = $ws;
         $session->request('echo', array('j' => 1), function ($ok) use ($session, $record, $next) {
-            $session->request('session', array(), function ($ok2) use ($session, $record, $next, $ok) {
-                $session->request('__unknown_action__', array(), function ($ok3, $packet) use ($record, $next, $ok, $ok2) {
+            $session->request('session', [], function ($ok2) use ($session, $record, $next, $ok) {
+                $session->request('__unknown_action__', [], function ($ok3, $packet) use ($record, $next, $ok, $ok2) {
                     $code = ce2e_code($packet);
                     $pass = $ok && $ok2 && !$ok3 && $code === 4006;
                     $record('J', '路由表 echo/session + 未知动作 4006', $pass, 'unknown code=' . $code);
@@ -525,7 +525,7 @@ $worker->onWorkerStart = function () use (
                     $s->close();
                     call_user_func($next);
                 });
-            }, array(), false);
+            }, [], false);
         });
     };
 
@@ -536,7 +536,7 @@ $worker->onWorkerStart = function () use (
         $session->connect();
 
         $waitState($session, SessionManager::STATE_READY, function () use ($session, $record, $next) {
-            $codes = array();
+            $codes = [];
             $left  = 100;
             $maybe = function () use (&$left, &$codes, $session, $record, $next) {
                 $left--;
@@ -592,8 +592,8 @@ $worker->onWorkerStart = function () use (
     $queue[] = function ($next) use (&$ws, $record) {
         $topic = 'ce2e-topic-' . bin2hex(random_bytes(2));
         $ws->request('subscribe', array('topic' => $topic), function ($ok) use ($ws, $topic, $record, $next) {
-            $ws->request('topics', array(), function ($ok2, $packet) use ($ws, $topic, $record, $next, $ok) {
-                $list  = isset($packet['data']['topics']) ? (array)$packet['data']['topics'] : array();
+            $ws->request('topics', [], function ($ok2, $packet) use ($ws, $topic, $record, $next, $ok) {
+                $list  = isset($packet['data']['topics']) ? (array)$packet['data']['topics'] : [];
                 $hasIt = in_array($topic, $list, true);
                 $ws->request('unsubscribe', array('topic' => $topic), function ($ok3) use ($record, $next, $ok, $ok2, $hasIt) {
                     $record('O', '订阅闭环 subscribe/topics/unsubscribe', $ok && $ok2 && $hasIt && $ok3,

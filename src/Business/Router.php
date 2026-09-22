@@ -40,14 +40,14 @@ class Router
      *
      * @var array
      */
-    protected static $commands = array();
+    protected static $commands = [];
 
     /**
      * 二级路由表：action => callable
      *
      * @var array
      */
-    protected static $actions = array();
+    protected static $actions = [];
 
     /* ---------------------------------------------------------------------
      | 注册

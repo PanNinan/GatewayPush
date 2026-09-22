@@ -44,7 +44,7 @@ final class CaseSubscribe
                 return;
             }
 
-            $data = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : array();
+            $data = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : [];
             $act  = isset($data['action']) ? (string)$data['action'] : '';
 
             $fail = function ($msg) use ($h, $con) {
@@ -100,7 +100,7 @@ final class CaseSubscribe
                     return;
 
                 case 3:
-                    $topics = isset($data['topics']) && is_array($data['topics']) ? $data['topics'] : array();
+                    $topics = isset($data['topics']) && is_array($data['topics']) ? $data['topics'] : [];
                     if ($packet['cmd'] !== Message::CMD_ACK || $act !== 'topics'
                         || !in_array($c['topic'], $topics, true)) {
                         $fail('订阅列表未包含 ' . $c['topic'] . '：' . substr((string)$raw, 0, 120));
@@ -122,7 +122,7 @@ final class CaseSubscribe
                     return;
 
                 case 5:
-                    $topics = isset($data['topics']) && is_array($data['topics']) ? $data['topics'] : array();
+                    $topics = isset($data['topics']) && is_array($data['topics']) ? $data['topics'] : [];
                     if (in_array($c['topic'], $topics, true)) {
                         $fail('取消订阅后主题仍在列表中');
                         return;

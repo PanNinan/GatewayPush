@@ -298,7 +298,7 @@ class RedisKeysTest extends TestCase
      */
     public function testKeysUseRestrictedCharset(): void
     {
-        $keys = array();
+        $keys = [];
         foreach ($this->staticKeyProvider() as $row) {
             $keys[$row[0]] = constant(RedisKeys::class . '::' . $row[0]);
         }

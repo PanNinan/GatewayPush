@@ -78,7 +78,7 @@ final class CaseActionRouting
 
                 case 1:   // 期望 echo 回显
                     $action = isset($packet['data']['action']) ? (string)$packet['data']['action'] : '';
-                    $params = isset($packet['data']['params']) ? $packet['data']['params'] : array();
+                    $params = isset($packet['data']['params']) ? $packet['data']['params'] : [];
                     if ($packet['cmd'] !== Message::CMD_ACK
                         || $action !== 'echo'
                         || !is_array($params)
@@ -190,7 +190,7 @@ final class CaseActionRouting
                 return;
             }
 
-            $data = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : array();
+            $data = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : [];
             $code = isset($data['code']) ? (int)$data['code'] : -1;
             $act  = isset($data['action']) ? (string)$data['action'] : '';
 

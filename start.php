@@ -46,7 +46,7 @@
  * 兼容 PHP 8.1 ~ 8.5
  */
 
-define('BASE_PATH', __DIR__);
+const BASE_PATH = __DIR__;
 define('START_AT', microtime(true));
 
 /* ---------------------------------------------------------------------
@@ -71,12 +71,12 @@ use Workerman\Worker;
 /* ---------------------------------------------------------------------
  | 2. 命令与角色解析
  --------------------------------------------------------------------- */
-$argvList = $argv ?? array();
+$argvList = $argv ?? [];
 $command  = $argvList[1] ?? 'help';
 $role     = 'all';
 
 // 提取 --role=xxx 并从 argv 中剔除，避免干扰 workerman 自身的命令解析
-$cleanArgv = array();
+$cleanArgv = [];
 foreach ($argvList as $item) {
     if (str_starts_with($item, '--role=')) {
         $role = substr($item, 7);
@@ -177,7 +177,7 @@ if ($command === 'check') {
 if ($command === 'info') {
     // 可选参数为逗号分隔的角色列表，供管理脚本按实际启动范围过滤；
     // 非角色名一律忽略而非报错 —— 该命令是只读展示，不应因参数写法失败。
-    $infoRoles = array();
+    $infoRoles = [];
     if (isset($cleanArgv[2]) && trim((string)$cleanArgv[2]) !== '') {
         foreach (explode(',', strtolower((string)$cleanArgv[2])) as $infoItem) {
             $infoItem = trim($infoItem);
@@ -256,7 +256,7 @@ if (in_array($command, array('start', 'restart'), true) && !in_array('-q', $clea
         $appConfig,
         $gatewayConfig,
         $businessConfig,
-        $role === 'all' ? array() : array($role),
+        $role === 'all' ? [] : array($role),
         false,
         in_array('-d', $cleanArgv, true) ? 'DAEMON' : 'DEBUG'
     );

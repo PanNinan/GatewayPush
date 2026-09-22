@@ -48,7 +48,7 @@ abstract class AbstractApi
                 return;
             }
 
-            $data = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : array();
+            $data = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : [];
 
             if ($ok) {
                 call_user_func($cb, true, $data, null);

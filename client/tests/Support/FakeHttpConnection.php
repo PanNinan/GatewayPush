@@ -24,7 +24,7 @@ final class FakeHttpConnection
     public $onError;
 
     /** @var string[] 已发送的原始报文 */
-    public $sentRaw = array();
+    public $sentRaw = [];
 
     /** @var int */
     public $connectCalls = 0;

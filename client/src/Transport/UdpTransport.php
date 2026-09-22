@@ -87,14 +87,14 @@ final class UdpTransport implements TransportInterface
      *
      * @var array
      */
-    private $queue = array();
+    private $queue = [];
 
     /**
      * 在途报文：frame => 已发送次数（收到下行即确认最旧一笔）
      *
      * @var array
      */
-    private $inflight = array();
+    private $inflight = [];
 
     /**
      * 累计放弃的报文数（重传耗尽）
@@ -137,7 +137,7 @@ final class UdpTransport implements TransportInterface
      */
     public function __construct(
         $url,
-        array $options = array(),
+        array $options = [],
         callable $connFactory = null,
         callable $timerAdd = null,
         callable $timerDel = null
@@ -167,7 +167,7 @@ final class UdpTransport implements TransportInterface
         $this->timerAdd = $timerAdd !== null
             ? $timerAdd
             : function ($interval, $persistent, $fn) {
-                return Timer::add($interval, $fn, array(), $persistent);
+                return Timer::add($interval, $fn, [], $persistent);
             };
         $this->timerDel = $timerDel !== null
             ? $timerDel
@@ -211,8 +211,8 @@ final class UdpTransport implements TransportInterface
         // AsyncUdpConnection 无 onError 回调（UDP 无连接级错误事件），保留接口占位
 
         $this->conn     = $conn;
-        $this->inflight = array();
-        $this->queue    = array();
+        $this->inflight = [];
+        $this->queue    = [];
         // 预热标记必须先于 connect() 置位：onConnect 同步回调里 SessionManager
         // 会立即发 auth，该报文须入队等待窗口结束补发（硬约束⑩）
         $this->warmup   = true;
@@ -382,7 +382,7 @@ final class UdpTransport implements TransportInterface
         $this->warmupTimerId = null;
 
         $queued = $this->queue;
-        $this->queue = array();
+        $this->queue = [];
         foreach ($queued as $frame) {
             $this->doSend($frame);
         }

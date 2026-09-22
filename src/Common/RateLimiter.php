@@ -86,14 +86,14 @@ class RateLimiter
      *
      * @var array
      */
-    protected static $buckets = array();
+    protected static $buckets = [];
 
     /**
      * 超限日志采样时间戳：{ dim => float(秒) }
      *
      * @var array
      */
-    protected static $logAt = array();
+    protected static $logAt = [];
 
     /**
      * 初始化
@@ -148,7 +148,7 @@ class RateLimiter
     {
         $spec = isset(self::$config[$dim]) && is_array(self::$config[$dim])
             ? self::$config[$dim]
-            : array();
+            : [];
 
         $rate  = isset($spec['rate']) ? (int)$spec['rate'] : 0;
         $burst = isset($spec['burst']) ? (int)$spec['burst'] : 0;
@@ -266,7 +266,7 @@ class RateLimiter
     {
         $spec = self::spec($dim);
         if ($spec['rate'] <= 0 || (string)$id === '') {
-            return array();
+            return [];
         }
 
         return array(
@@ -286,7 +286,7 @@ class RateLimiter
      */
     public static function acquire(array $buckets, $cost, callable $cb)
     {
-        $valid = array();
+        $valid = [];
         foreach ($buckets as $bucket) {
             if (is_array($bucket) && !empty($bucket['key'])) {
                 $valid[] = $bucket;
@@ -346,8 +346,8 @@ class RateLimiter
      */
     public static function reset()
     {
-        self::$buckets = array();
-        self::$logAt   = array();
+        self::$buckets = [];
+        self::$logAt   = [];
     }
 
     /**

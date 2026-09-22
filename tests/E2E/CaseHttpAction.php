@@ -46,7 +46,7 @@ final class CaseHttpAction
      */
     public static function run(Harness $h)
     {
-        $errors = array();
+        $errors = [];
         $ctx    = $h->ctx('P');
 
         self::checkEcho($h, $ctx, $errors);
@@ -96,8 +96,8 @@ final class CaseHttpAction
             return;
         }
 
-        $data   = isset($res['json']['data']) ? $res['json']['data'] : array();
-        $result = isset($data['result']) && is_array($data['result']) ? $data['result'] : array();
+        $data   = isset($res['json']['data']) ? $res['json']['data'] : [];
+        $result = isset($data['result']) && is_array($data['result']) ? $data['result'] : [];
 
         if (!isset($data['status']) || $data['status'] !== 'done') {
             $errors[] = 'echo 响应缺少 status=done';

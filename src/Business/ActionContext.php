@@ -131,7 +131,7 @@ class ActionContext
      *
      * @var array
      */
-    protected $options = array();
+    protected $options = [];
 
     /**
      * @param string   $action    动作名

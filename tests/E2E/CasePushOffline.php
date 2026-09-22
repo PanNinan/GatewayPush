@@ -97,7 +97,7 @@ final class CasePushOffline
         // 稍晚建连，确保离线任务已先入队
         Timer::add(0.3, function () use ($connF) {
             $connF->connect();
-        }, array(), false);
+        }, [], false);
     }
 
     /**
@@ -144,7 +144,7 @@ final class CasePushOffline
                 if (!$kReported) {
                     $sendReportK();
                 }
-            }, array(), false);
+            }, [], false);
         };
 
         $udpK->onConnect = function ($con) use ($h, $sendReportK) {
@@ -152,7 +152,7 @@ final class CasePushOffline
 
             // 延迟上报：先留出时间让业务进程把首个推送任务写入离线列表；
             // 若会话先建立，任务会走在线直投（offline=0），用例即失去意义。
-            Timer::add(1.5, $sendReportK, array(), false);
+            Timer::add(1.5, $sendReportK, [], false);
 
             Timer::add(9.0, function () use ($h) {
                 if ($h->state['K'] === 'pending') {
@@ -160,7 +160,7 @@ final class CasePushOffline
                     $h->state['K_msg'] = 'UDP 离线补投未在 9 秒内到达客户端';
                     $h->finish();
                 }
-            }, array(), false);
+            }, [], false);
         };
 
         $udpK->onMessage = function ($con, $raw) use ($h, $c, &$kReported) {

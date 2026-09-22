@@ -85,7 +85,7 @@ final class HttpTransport
         $this->timerAdd = $timerAdd !== null
             ? $timerAdd
             : function ($interval, $persistent, $fn) {
-                return Timer::add($interval, $fn, array(), $persistent);
+                return Timer::add($interval, $fn, [], $persistent);
             };
         $this->timerDel = $timerDel !== null
             ? $timerDel

@@ -139,7 +139,7 @@ final class CasePushOnline
                     }
                     $con->close();
                     $h->finish();
-                }, array(), false);
+                }, [], false);
                 return;
             }
 
@@ -197,12 +197,12 @@ final class CasePushOnline
                 if (!$iReported) {
                     $sendReport();
                 }
-            }, array(), false);
+            }, [], false);
         };
 
         $udpI->onConnect = function ($con) use ($h, $sendReport) {
             echo "[I] UDP 通道已就绪\n";
-            Timer::add(0.2, $sendReport, array(), false);
+            Timer::add(0.2, $sendReport, [], false);
 
             // 内部超时：UDP 允许丢包，但本地回环下不应丢失，超时即判定失败
             Timer::add(6.0, function () use ($h) {
@@ -211,7 +211,7 @@ final class CasePushOnline
                     $h->state['I_msg'] = 'UDP 出站推送未在 6 秒内到达客户端';
                     $h->finish();
                 }
-            }, array(), false);
+            }, [], false);
         };
 
         $udpI->onMessage = function ($con, $raw) use ($h, $c, &$iReported) {
@@ -236,7 +236,7 @@ final class CasePushOnline
                         'source'       => 'e2e',
                     ));
                     echo "[I] -> 推送任务已提交（uid 目标，期望经 UDP 出站通道下发）\n";
-                }, array(), false);
+                }, [], false);
                 return;
             }
 

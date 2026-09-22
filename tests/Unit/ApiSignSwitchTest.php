@@ -32,7 +32,7 @@ final class ApiSignSwitchTest extends TestCase
      *
      * @var array
      */
-    private $configSnapshot = array();
+    private $configSnapshot = [];
 
     protected function setUp(): void
     {

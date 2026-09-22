@@ -37,7 +37,7 @@ $state = array(
     'badsign' => false,
     'expired' => false,
 );
-$failMsg = array();
+$failMsg = [];
 
 $worker = new Worker();
 
@@ -117,7 +117,7 @@ $worker->onWorkerStart = function () use ($apiUrl, $secret, &$state, &$failMsg) 
         echo str_repeat('=', 60) . "\n";
         echo $pass ? "P4 实测结论：全部通过\n" : "P4 实测结论：存在失败项\n";
         exit($pass ? 0 : 1);
-    }, array(), false);
+    }, [], false);
 };
 
 Worker::runAll();

@@ -115,14 +115,14 @@ class Bootstrap
      *
      * @var array
      */
-    protected static $appConfig = array();
+    protected static $appConfig = [];
 
     /**
      * business.php 配置（动作队列）
      *
      * @var array
      */
-    protected static $businessConfig = array();
+    protected static $businessConfig = [];
 
     /**
      * 已开放 HTTP 通道的动作中最长的回执超时（秒）
@@ -312,7 +312,7 @@ class Bootstrap
 
         $targetType = isset($job['target_type']) ? strtolower(trim((string)$job['target_type'])) : '';
         $target     = isset($job['target']) ? trim((string)$job['target']) : '';
-        $payload    = $job['payload'] ?? array();
+        $payload    = $job['payload'] ?? [];
 
         if (!in_array($targetType, array(Push::TARGET_UID, Push::TARGET_DEVICE, Push::TARGET_CLIENT), true)) {
             $connection->send(self::json(400, self::CODE_BAD_PARAM, 'target_type 必须是 uid / device / client 之一'));
@@ -424,7 +424,7 @@ class Bootstrap
             return;
         }
 
-        $params = isset($job['params']) ? $job['params'] : array();
+        $params = isset($job['params']) ? $job['params'] : [];
         if (!is_array($params)) {
             $connection->send(self::json(400, self::CODE_BAD_PARAM, 'params 必须是 JSON 对象'));
             return;
@@ -498,7 +498,7 @@ class Bootstrap
      */
     protected static function admitAction($requestId, array $packet, callable $cb)
     {
-        $conf = isset(self::$businessConfig['action_queue']) ? self::$businessConfig['action_queue'] : array();
+        $conf = isset(self::$businessConfig['action_queue']) ? self::$businessConfig['action_queue'] : [];
 
         if (empty($conf['enable'])) {
             call_user_func($cb, self::CODE_SERVER_ERROR, '动作队列未启用（ACTION_QUEUE_ENABLE=false）');
@@ -631,7 +631,7 @@ class Bootstrap
                 // 退避：5 次以内的密集轮询足以覆盖「处理器同步回执」的常见路径，
                 // 之后逐步放宽，避免长尾请求持续打满 Redis
                 $interval = min(self::POLL_MAX_MS, (int)ceil($interval * 1.5));
-                $timerId  = Timer::add($interval / 1000, $poll, array(), false);
+                $timerId  = Timer::add($interval / 1000, $poll, [], false);
             });
         };
 
@@ -651,7 +651,7 @@ class Bootstrap
     protected static function actionResponse($requestId, array $packet)
     {
         $cmd  = isset($packet['cmd']) ? (string)$packet['cmd'] : '';
-        $data = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : array();
+        $data = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : [];
 
         if ($cmd === Message::CMD_ACK) {
             return self::json(200, self::CODE_OK, 'ok', array(
@@ -855,7 +855,7 @@ class Bootstrap
         $key = RedisKeys::rateApi($ip);
 
         // 同步语义：单进程内用静态计数兜底，避免依赖异步回调造成误判
-        static $local = array();
+        static $local = [];
         if (!isset($local[$key])) {
             $local[$key] = 0;
         }
