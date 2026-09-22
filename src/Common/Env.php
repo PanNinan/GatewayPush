@@ -335,8 +335,8 @@ class Env
     /**
      * 读取逗号分隔的列表
      *
-     * @param string $key
-     * @param array<int|string, mixed>  $default
+     * @param string                   $key
+     * @param array<int|string, mixed> $default
      *
      * @return array<int|string, mixed>
      */

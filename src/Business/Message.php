@@ -172,9 +172,9 @@ class Message
     /**
      * 构造标准报文
      *
-     * @param string $cmd
-     * @param array<string, mixed>  $data
-     * @param array<string, mixed>  $extra 附加/覆盖字段
+     * @param string               $cmd
+     * @param array<string, mixed> $data
+     * @param array<string, mixed> $extra 附加/覆盖字段
      *
      * @return array<string, mixed>
      */
@@ -196,8 +196,8 @@ class Message
     /**
      * 构造回执报文
      *
-     * @param string $seq
-     * @param array<string, mixed>  $data
+     * @param string               $seq
+     * @param array<string, mixed> $data
      *
      * @return array<string, mixed>
      */
@@ -266,8 +266,8 @@ class Message
     /**
      * 生成报文签名
      *
-     * @param array<string, mixed>  $packet
-     * @param string $secret
+     * @param array<string, mixed> $packet
+     * @param string               $secret
      *
      * @return string
      */

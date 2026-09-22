@@ -140,14 +140,14 @@ class ActionContext
     protected $options = [];
 
     /**
-     * @param string   $action    动作名
-     * @param array<string, mixed>    $packet    原始报文
-     * @param array<string, mixed>    $params    已校验参数
-     * @param array<string, mixed>    $identity  ['client_id','uid','device_id','protocol']
-     * @param string   $channel   ws | udp | http
-     * @param string   $replyMode sync | none
-     * @param callable $sender    function (array $packet): void
-     * @param array<string, mixed>    $options   动作私有配置
+     * @param string               $action    动作名
+     * @param array<string, mixed> $packet    原始报文
+     * @param array<string, mixed> $params    已校验参数
+     * @param array<string, mixed> $identity  ['client_id','uid','device_id','protocol']
+     * @param string               $channel   ws | udp | http
+     * @param string               $replyMode sync | none
+     * @param callable             $sender    function (array $packet): void
+     * @param array<string, mixed> $options   动作私有配置
      */
     public function __construct($action, array $packet, array $params, array $identity, $channel, $replyMode, callable $sender, array $options = [])
     {

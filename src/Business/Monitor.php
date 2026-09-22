@@ -226,8 +226,8 @@ class Monitor
      * 全局字段）一律不动 —— 它们不属于任何进程，没有「退出」概念。
      *
      * @param array<string, mixed> $gauge HGETALL 结果
-     * @param int   $ttl   存活宽限（秒），<=0 时视为不清理
-     * @param int   $now   当前时间戳
+     * @param int                  $ttl   存活宽限（秒），<=0 时视为不清理
+     * @param int                  $now   当前时间戳
      *
      * @return array<int|string, mixed> 待删除的 field 列表；无需清理时为空数组
      */

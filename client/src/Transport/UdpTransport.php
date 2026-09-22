@@ -134,11 +134,11 @@ final class UdpTransport implements TransportInterface
     private $onErrorCb;
 
     /**
-     * @param string        $url         udp://host:port
-     * @param array<string, mixed>         $options     first_send_delay / retransmit_interval / max_attempts
-     * @param null|callable $connFactory 连接工厂（单测注入假连接），缺省创建 AsyncUdpConnection
-     * @param null|callable $timerAdd    计时器创建（单测注入假计时器）
-     * @param null|callable $timerDel    计时器删除
+     * @param string               $url         udp://host:port
+     * @param array<string, mixed> $options     first_send_delay / retransmit_interval / max_attempts
+     * @param null|callable        $connFactory 连接工厂（单测注入假连接），缺省创建 AsyncUdpConnection
+     * @param null|callable        $timerAdd    计时器创建（单测注入假计时器）
+     * @param null|callable        $timerDel    计时器删除
      *
      * @throws ClientException URL 非法
      */

@@ -96,7 +96,7 @@ final class TokenIssuer
      * 签发 Token
      *
      * @param array<string, mixed> $claims 至少包含非空 uid，可选 device_id
-     * @param int   $ttl    有效期（秒），<=0 取默认值
+     * @param int                  $ttl    有效期（秒），<=0 取默认值
      *
      * @return string
      *

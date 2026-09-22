@@ -164,9 +164,9 @@ class ActionReply
      *
      * 首次写入胜出，重复写入静默丢弃。
      *
-     * @param string        $clientId HTTP 通道的虚拟 clientId
-     * @param array<string, mixed>         $packet   已构造的回执报文
-     * @param null|callable $cb       function(bool $first)
+     * @param string               $clientId HTTP 通道的虚拟 clientId
+     * @param array<string, mixed> $packet   已构造的回执报文
+     * @param null|callable        $cb       function(bool $first)
      *
      * @return void
      */

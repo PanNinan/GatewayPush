@@ -70,7 +70,7 @@ class Debugger
 
     /**
      * @param array<string, mixed> $config uid / device_id / secret / proto / ws_url / udp_url / api_url /
-     *                      api_secret / timeout / heartbeat
+     *                                     api_secret / timeout / heartbeat
      */
     public function __construct(array $config = [])
     {
@@ -352,9 +352,9 @@ class Debugger
     /**
      * 执行业务命令
      *
-     * @param string $command
-     * @param array<string, mixed>  $parsed
-     * @param bool   $exitAfter 完成后是否退出进程
+     * @param string               $command
+     * @param array<string, mixed> $parsed
+     * @param bool                 $exitAfter 完成后是否退出进程
      *
      * @return void
      */
@@ -444,10 +444,10 @@ class Debugger
     /**
      * 主题族命令串行执行（订阅多个主题时逐个下发，避免乱序）
      *
-     * @param string $action    subscribe|unsubscribe
-     * @param array<int|string, mixed>  $args
-     * @param int    $index
-     * @param bool   $exitAfter
+     * @param string                   $action    subscribe|unsubscribe
+     * @param array<int|string, mixed> $args
+     * @param int                      $index
+     * @param bool                     $exitAfter
      *
      * @return void
      */
@@ -488,8 +488,8 @@ class Debugger
     /**
      * HTTP 管理端命令（/push /stats /health）
      *
-     * @param string $command
-     * @param array<string, mixed>  $parsed
+     * @param string               $command
+     * @param array<string, mixed> $parsed
      *
      * @return void
      */
@@ -770,11 +770,11 @@ class Debugger
     /**
      * 统一结果呈现
      *
-     * @param string     $label
-     * @param bool       $ok
+     * @param string                    $label
+     * @param bool                      $ok
      * @param null|array<string, mixed> $data
      * @param null|array<string, mixed> $error
-     * @param bool       $exitAfter
+     * @param bool                      $exitAfter
      *
      * @return void
      */
@@ -834,8 +834,8 @@ class Debugger
      * 解析 JSON 位置参数
      *
      * @param array<int|string, mixed> $args
-     * @param int   $index
-     * @param mixed $default
+     * @param int                      $index
+     * @param mixed                    $default
      *
      * @return mixed
      */

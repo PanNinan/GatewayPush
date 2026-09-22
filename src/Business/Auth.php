@@ -119,7 +119,7 @@ class Auth
      * 本方法主要用于联调自测与内部服务调用。
      *
      * @param array<string, mixed> $claims 至少包含 uid，可选 device_id
-     * @param int   $ttl    有效期（秒），0 取配置默认值
+     * @param int                  $ttl    有效期（秒），0 取配置默认值
      *
      * @return string
      *

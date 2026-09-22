@@ -71,9 +71,9 @@ class Task
     /**
      * 批量注册任务
      *
-     * @param array<string, mixed>  $jobConfigs config/business.php 的 tasks 配置
-     * @param int    $workerId
-     * @param string $workerName
+     * @param array<string, mixed> $jobConfigs config/business.php 的 tasks 配置
+     * @param int                  $workerId
+     * @param string               $workerName
      *
      * @return void
      */

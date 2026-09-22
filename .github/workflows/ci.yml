@@ -1,0 +1,288 @@
+# =====================================================================
+# GitHub Actions —— 构建 + 质量门禁 + 端到端链路
+# =====================================================================
+# 核心原则：**CI 不发明第二套口径**。
+#
+# 下面所有门禁都直接调用 composer.json 里已有的 script
+# （analyse / test / lint / lint:self / cs:check / test:client-e2e / demo:http），
+# 而不是在 YAML 里重写一遍 php vendor/bin/...。理由：
+#   一旦 CI 与本地用不同命令，出现「本地绿、CI 红」时就无从对照 ——
+#   到底是环境差异还是命令差异，无法区分。
+#
+# 三个作业的划分依据是**依赖不同**，不是「快慢」：
+#   static  不连任何外部服务（PHPStan / PHPCS / fixer 都是纯静态）
+#   test    不连任何外部服务（phpunit.xml 明确只覆盖「纯函数 / 无 IO」组件）
+#   e2e     需要 Redis + 6 个角色真实监听端口，故单列并带 service container
+#
+# 触发器同时覆盖 main 与 master，这不是「多写一个保险」：
+# 本仓 GitHub 默认分支是 main（origin/HEAD -> origin/main），但活跃开发实际推送
+# 在 master（master 领先 origin/main 9 个提交）。只挂 main 会导致 CI 永不触发，
+# PR 也默认指向 main —— 两个分支都挂才能覆盖真实的推送与合并路径。
+# =====================================================================
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+# 最小权限：本 workflow 只读代码，不需要写 token
+permissions:
+  contents: read
+
+# 同一分支连续推送时取消上一次未跑完的运行，避免排队堆积
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  COMPOSER_NO_INTERACTION: '1'
+  COMPOSER_PROCESS_TIMEOUT: '600'
+
+jobs:
+  # =====================================================================
+  # 门禁 1：静态分析 + 风格审计
+  #
+  # 固定单一 PHP 版本：这三类工具的输出与运行它们的 PHP 版本无关 ——
+  # phpstan.neon 已用 phpVersion: 80100 锚定「按 8.1 语义分析」，
+  # phpcs / php-cs-fixer 只看语法树。跑 5 份矩阵只是重复消耗配额。
+  # =====================================================================
+  static:
+    name: 静态分析 / 风格审计
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+
+      - name: 安装 PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          # composer.json 的 require 里有 ext-json / ext-openssl / ext-sockets，
+          # 少任何一个 composer install 会直接失败（platform 校验）。
+          # mbstring 是 ParamValidator 多字节长度分支所需：该处有 strlen 回退，
+          # 不装不会报错，但会让「CI 的长度校验」与本地行为不一致 —— 属于
+          # 静默的行为漂移，比直接失败更麻烦，故显式装上。
+          extensions: json, openssl, sockets, mbstring
+          coverage: none
+          tools: composer:v2
+          cache: composer
+
+      - name: 校验 composer.json / composer.lock 一致性
+        # --no-check-publish：本包 type=project 且未声明 authors/support，
+        # 发布态校验会报与门禁无关的元信息缺失。
+        run: composer validate --strict --no-check-publish
+
+      - name: 安装依赖
+        run: composer install --prefer-dist --no-progress
+
+      - name: 准备运行时目录
+        # runtime/ 被 .gitignore 排除，全新检出时并不存在。
+        # phpstan.neon 的 tmpDir = runtime/phpstan，日志落在 runtime/logs。
+        # 工具自身多数会递归建目录，但不值得把「会不会自动创建」当前提。
+        run: mkdir -p runtime/phpstan runtime/logs
+
+      - name: PHPStan 静态分析（level 6 + baseline 冻结）
+        run: composer analyse
+
+      - name: PHPCS 审计（注释 / 命名 / 业务红线）
+        run: composer lint
+
+      - name: 自定义嗅探器自检（防 RedisKeys 常量漂移）
+        run: composer lint:self
+
+      - name: php-cs-fixer 排版核对
+        # Linux 检出是 LF（git 索引侧本就是 LF），此处应恒为「0 文件待排版」。
+        # 注意与本地现象区分：本机 core.autocrlf=true 会让工作区变 CRLF，
+        # 从而报 40 个「待排版」——那是工作区行尾假象，不是排版问题。
+        # 反过来说，这一步在 CI 上是有真实判别力的：它一红就说明确实有排版违规。
+        run: composer cs:check
+
+  # =====================================================================
+  # 门禁 2：单元测试（PHP 版本矩阵）
+  #
+  # 依赖下限由 composer.json 的 php: >=8.1 与 workerman 5.x 的 require 共同决定。
+  # 单元测试刻意只覆盖「纯函数 / 无 IO」组件（见 phpunit.xml 的测试边界注释），
+  # 因此**不需要 Redis**，可以在矩阵里裸跑。
+  # =====================================================================
+  test:
+    name: 单元测试 (PHP ${{ matrix.php }})
+    runs-on: ubuntu-24.04
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      # 一个版本失败不掐掉其余版本 —— 需要的是完整的版本兼容画像，
+      # 不是「第一个红点」。
+      fail-fast: false
+      matrix:
+        # 用纯 include 展开，而不是「基矩阵 + include 补丁」：
+        # 后者当 include 的键与基矩阵同名时，行为取决于 GitHub 的合并规则
+        # （是覆盖还是新增），写出来的组合容易与预期不符且难以自查。
+        include:
+          - { php: '8.1', experimental: false }
+          - { php: '8.2', experimental: false }
+          - { php: '8.3', experimental: false }
+          - { php: '8.4', experimental: false }
+          # 8.5 先挂「实验性」：phpunit 锁在 9.6（见 phpunit.xml 的版本说明），
+          # 而 phpunit.xml 同时开了 failOnWarning / failOnRisky —— 8.5 上若冒出
+          # 新的弃用告警会被直接判为失败。跑绿一段时间后再把 experimental
+          # 改成 false 即可（不要删这个键，留着才是显式决定）。
+          - { php: '8.5', experimental: true }
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+
+      - name: 安装 PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: json, openssl, sockets, mbstring
+          coverage: none
+          tools: composer:v2
+          cache: composer
+
+      - name: 安装依赖
+        run: composer install --prefer-dist --no-progress
+
+      - name: 准备运行时目录
+        run: mkdir -p runtime/phpstan runtime/logs
+
+      - name: 运行单元测试
+        run: composer test
+
+  # =====================================================================
+  # 门禁 3：端到端链路
+  #
+  # 覆盖三个**无法用单元测试表达**的校验脚本（它们都不在 PHPUnit 套件内，
+  # 因为需要真实进程与端口，见 tests/Manual/README.md）：
+  #   tests/e2e_check.php            16 用例 A~P（WS / UDP / 推送 / 动作 / 限流 / 订阅 / HTTP）
+  #   client/tests/E2E/ClientE2E.php 客户端 SDK 走真实协议的端到端
+  #   tests/Api/api_sign_check.js    HTTP 验签与动作分支 8 形态（Node）
+  #   tests/Api/http_demo.php        HTTP 接口调用示例 13 场景 / 19 断言
+  # =====================================================================
+  e2e:
+    name: 端到端链路 (Redis + 全角色)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # 只依赖 static，**刻意不依赖 test**：矩阵里 8.5 带 continue-on-error，
+    # 而 needs 判定看的是作业状态而非「是否影响整体结论」—— 带上它会让 e2e
+    # 在 8.5 变红时被静默 skip，反而丢掉了最重的一条门禁。
+    needs: static
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      # 真实环境变量优先级最高（见 .env.example 的「加载优先级」说明），
+      # 会盖掉 .env 内的同名项，因此无需改写 .env 文件本身。
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: '6379'
+      # 固定 DB 0：service container 每次都是全新的 Redis 实例，
+      # 不存在本机那种「DB0 有历史残留 gwpush:* 键」的问题（本机才用 DB 9）。
+      REDIS_DB: '0'
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v5
+
+      - name: 安装 PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          # curl 是 tests/Api/http_demo.php 的前置（该脚本声明只依赖
+          # ext-curl + ext-json，故它不在 composer.json 的 require 里）。
+          extensions: json, openssl, sockets, mbstring, curl
+          coverage: none
+          tools: composer:v2
+          cache: composer
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+        # api_sign_check.js 只用 fs / path / crypto / http 四个内置模块，
+        # 无需 npm install，因此不配 cache、也没有依赖安装步骤。
+
+      - name: 安装依赖
+        run: composer install --prefer-dist --no-progress
+
+      - name: 准备运行时目录
+        run: mkdir -p runtime/phpstan runtime/logs runtime/pid
+
+      - name: 生成 .env
+        # 非交互：文件不存在时从 .env.example 复制并注入 AUTH_SECRET /
+        # INTERNAL_SECRET 的随机值（见 Console\Commands::envInit）。
+        run: php start.php env:init
+
+      - name: 启动全部角色
+        # Linux 下不带角色 = 全部组件，且以守护模式（-d）启动；
+        # 脚本内部会做 preflight（PHP 版本 / vendor 存在性）与 pid 就绪轮询。
+        # 不要改用 bin/dev/boot_all.sh —— 那个是开发期编排，末尾 wait 常驻，
+        # 在 CI 里会占住步骤直至 timeout。
+        run: bash bin/start.sh start
+
+      - name: 等待端口就绪
+        # start.sh 只轮询 pid 文件，pid 出现 ≠ 端口已 bind 完成。
+        # e2e 会立刻建连，所以必须补一次端口级确认。
+        run: |
+          set -euo pipefail
+          echo '--- 等待 TCP 端口 ---'
+          for port in 1238 8282 8290 8291; do
+            for i in $(seq 1 30); do
+              if timeout 1 bash -c "</dev/tcp/127.0.0.1/${port}" 2>/dev/null; then
+                echo "tcp ${port} 就绪"
+                break
+              fi
+              if [ "$i" -eq 30 ]; then
+                echo "tcp ${port} 30 秒内未就绪" >&2
+                exit 1
+              fi
+              sleep 1
+            done
+          done
+
+          echo '--- 等待 UDP 端口 ---'
+          # UDP 没有 TCP 监听，/dev/tcp 探不到，只能查 socket 表
+          for i in $(seq 1 30); do
+            if ss -lun 2>/dev/null | grep -q ':8283'; then
+              echo 'udp 8283 就绪'
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo 'udp 8283 30 秒内未就绪' >&2
+              exit 1
+            fi
+            sleep 1
+          done
+
+      - name: 端到端自检（用例 A~P）
+        # 传入「每次运行都不同」的 uid：UDP 无断连事件，其会话不会因客户端退出
+        # 而在 Redis 中失效 —— 复用同一 uid 会让上一轮的残留会话被判成在线，
+        # 从而污染离线补投用例（见 tests/e2e_check.php 头注）。
+        run: php tests/e2e_check.php "e2e-${{ github.run_id }}-${{ github.run_attempt }}"
+
+      - name: 客户端 SDK 端到端
+        run: composer test:client-e2e
+
+      - name: HTTP 验签与动作分支
+        run: node tests/Api/api_sign_check.js
+
+      - name: HTTP 接口调用示例
+        run: composer demo:http
+
+      - name: 失败时导出运行日志
+        # 端到端失败最耗时的环节就是拿日志。直接以 artifact 形式带回，
+        # 省掉「改代码加 echo → 重推 → 再等一轮」的往返。
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: runtime/logs/
+          if-no-files-found: ignore
+          retention-days: 7

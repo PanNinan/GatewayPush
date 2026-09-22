@@ -28,10 +28,10 @@ class ClientException extends \RuntimeException
     protected $packet;
 
     /**
-     * @param int             $code     错误码（报文码或客户端本地码）
-     * @param string          $message  错误描述
-     * @param array<string, mixed>           $packet   原始报文
-     * @param null|\Throwable $previous 上游异常
+     * @param int                  $code     错误码（报文码或客户端本地码）
+     * @param string               $message  错误描述
+     * @param array<string, mixed> $packet   原始报文
+     * @param null|\Throwable      $previous 上游异常
      */
     public function __construct($code, $message, array $packet = [], ?\Throwable $previous = null)
     {

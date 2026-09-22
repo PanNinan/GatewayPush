@@ -54,9 +54,9 @@ final class Codec
     /**
      * 构造标准报文
      *
-     * @param string $cmd
-     * @param array<string, mixed>  $data
-     * @param array<string, mixed>  $extra 附加/覆盖字段
+     * @param string               $cmd
+     * @param array<string, mixed> $data
+     * @param array<string, mixed> $extra 附加/覆盖字段
      *
      * @return array<string, mixed>
      */
@@ -68,8 +68,8 @@ final class Codec
     /**
      * 构造回执报文（`seq` 原样回传）
      *
-     * @param int|string $seq
-     * @param array<string, mixed>      $data
+     * @param int|string           $seq
+     * @param array<string, mixed> $data
      *
      * @return array<string, mixed>
      */
@@ -100,8 +100,8 @@ final class Codec
     /**
      * 构造业务指令报文
      *
-     * @param string $action 动作名（须已在服务端 config/actions.php 登记）
-     * @param array<string, mixed>  $params 动作参数
+     * @param string               $action 动作名（须已在服务端 config/actions.php 登记）
+     * @param array<string, mixed> $params 动作参数
      *
      * @return array<string, mixed>
      */

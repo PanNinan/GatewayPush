@@ -289,11 +289,11 @@ class ActionRunner
      * 通道由 clientId 前缀推断，调用方无需显式传参 —— 这样
      * Bootstrap 的 WS 链路与 UDP 链路可以共用同一次调用。
      *
-     * @param string $clientId
-     * @param array<string, mixed>  $packet   已解码报文（data.action 承载动作名）
-     * @param string $uid
-     * @param string $deviceId
-     * @param string $protocol ws | udp | http
+     * @param string               $clientId
+     * @param array<string, mixed> $packet   已解码报文（data.action 承载动作名）
+     * @param string               $uid
+     * @param string               $deviceId
+     * @param string               $protocol ws | udp | http
      *
      * @return void
      */
@@ -512,8 +512,8 @@ class ActionRunner
     /**
      * 取处理器实例（无状态，惰性创建并缓存）
      *
-     * @param string $action
-     * @param array<string, mixed>  $decl
+     * @param string               $action
+     * @param array<string, mixed> $decl
      *
      * @return ActionInterface
      */
@@ -593,12 +593,12 @@ class ActionRunner
     /**
      * 执行前失败（未知动作 / 参数非法 / 身份缺失）
      *
-     * @param string $clientId
-     * @param array<string, mixed>  $packet
-     * @param string $channel
-     * @param int    $code
-     * @param string $msg
-     * @param string $action
+     * @param string               $clientId
+     * @param array<string, mixed> $packet
+     * @param string               $channel
+     * @param int                  $code
+     * @param string               $msg
+     * @param string               $action
      *
      * @return void
      */
@@ -629,11 +629,11 @@ class ActionRunner
      * 把错误码透出给调用方，这是 HTTP 相对 UDP 的关键差异：调用方在同步等待，
      * 静默会让它一直等到超窗）。
      *
-     * @param string $clientId
-     * @param array<string, mixed>  $packet
-     * @param string $channel
-     * @param int    $code
-     * @param string $msg
+     * @param string               $clientId
+     * @param array<string, mixed> $packet
+     * @param string               $channel
+     * @param int                  $code
+     * @param string               $msg
      *
      * @return void
      */

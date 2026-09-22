@@ -81,8 +81,8 @@ class Bootstrap
      * 仅执行协议层职责：报文级限流 -> 签名与时效校验 -> 投递 Redis 队列 -> 立即回执。
      * 业务处理由 BusinessWorker 异步消费队列完成，网关不感知业务逻辑。
      *
-     * @param ConnectionInterface $connection
-     * @param array<string, mixed>               $packet     已经过 UdpProtocol::decode 归一化
+     * @param ConnectionInterface  $connection
+     * @param array<string, mixed> $packet     已经过 UdpProtocol::decode 归一化
      *
      * @return void
      */
@@ -164,8 +164,8 @@ class Bootstrap
      *   不在 GatewayWorker 的连接表内，因此业务进程的 Gateway::sendToClient 对其无效。
      *   出站改由「业务进程写队列 -> 网关进程 sendto」闭环，与入站的解耦方式对称。
      *
-     * @param Worker $worker
-     * @param array<string, mixed>  $conf   gateway.udp.out_queue
+     * @param Worker               $worker
+     * @param array<string, mixed> $conf   gateway.udp.out_queue
      *
      * @return void
      */
@@ -375,9 +375,9 @@ class Bootstrap
     /**
      * 将 UDP 业务请求写入 Redis 队列
      *
-     * @param ConnectionInterface $connection
-     * @param array<string, mixed>               $packet
-     * @param array<string, mixed>               $queueConf
+     * @param ConnectionInterface  $connection
+     * @param array<string, mixed> $packet
+     * @param array<string, mixed> $queueConf
      *
      * @return void
      */
@@ -422,10 +422,10 @@ class Bootstrap
      * 相比每次新建 AsyncUdpConnection，此方式无建连竞态、无额外 fd 开销，
      * 且与 UdpConnection::send() 的底层实现路径完全一致。
      *
-     * @param Worker $worker
-     * @param string $clientId
-     * @param string $frame
-     * @param array<string, mixed>  $task
+     * @param Worker               $worker
+     * @param string               $clientId
+     * @param string               $frame
+     * @param array<string, mixed> $task
      *
      * @return void
      */

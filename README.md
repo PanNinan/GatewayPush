@@ -212,6 +212,8 @@ GatewayPush/
 │   └── e2e_check.php                 e2e 入口
 ├── postman/
 │   └── GatewayPush.postman_collection.json   可直接导入的 HTTP 接口集合（9 个请求，内置自动签名）
+├── .github/
+│   └── workflows/ci.yml              CI：静态门禁 + PHP 8.1~8.5 单元测试矩阵 + Redis 端到端（见 §13.7）
 ├── AGENTS.md                         AI 协作入口（红线 / 门禁 / 目录速查，供任意 AI 工具对齐）
 ├── start.php                         统一启动入口：命令分发 + 环境自检 + 启动（实现见 src/Console/）
 ├── composer.json                    依赖与脚本
@@ -2247,6 +2249,46 @@ diff <(grep -E '^\[(PASS|FAIL|SKIP)\]' _old_out.txt) \
 
 **验收口径**：汇总段 15 条标签的**顺序与文案**、头部信息、CLI 接口、退出码必须与原脚本一致；  
 逐用例 `[X]` 输出行的**到达顺序本就非确定**（回调调度受网络/定时器影响），不作为重构缺陷依据。
+
+---
+
+### 13.7 CI（GitHub Actions）
+
+配置文件：**`.github/workflows/ci.yml`**（唯一入口）。触发：向 `main` / `master` 推送、面向这两个分支的 PR，以及手动 `workflow_dispatch`。
+
+**设计原则：CI 不发明第二套口径。** workflow 里所有门禁都直接调 `composer.json` 的 script
+（`analyse` / `test` / `lint` / `lint:self` / `cs:check` / `test:client-e2e` / `demo:http`），
+**不在 YAML 里重写** `php vendor/bin/phpstan ...` —— 否则出现「本地绿、CI 红」时，
+无法区分是环境差异还是命令差异。
+
+| 作业 | PHP | 外部依赖 | 内容 |
+| --- | --- | --- | --- |
+| `static` | 8.2（单版本） | 无 | `composer validate --strict` → `analyse` → `lint` → `lint:self` → `cs:check` |
+| `test` | **8.1 ~ 8.5 矩阵** | 无 | `composer test` |
+| `e2e` | 8.2 | **Redis 7 service + 全部 6 个角色** | `tests/e2e_check.php`（用例 A~P）→ `test:client-e2e` → `api_sign_check.js` → `demo:http` |
+
+按**外部依赖**而非耗时划分：`static` 固定单版本是因为静态工具的输出与运行它们的 PHP 版本无关；
+`test` **不需要 Redis**（`phpunit.xml` 只覆盖「纯函数 / 无 IO」组件），所以能在矩阵里裸跑；
+`e2e` 需要真实端口与 Redis，单列并挂 service container。
+
+- **8.5 为「实验性」**（`continue-on-error`）：phpunit 锁 9.6 且 `phpunit.xml` 开了
+  `failOnWarning` / `failOnRisky`，8.5 上的新弃用告警会直接判失败。跑绿后再把
+  `experimental` 改 `false`。
+- **`e2e` 只 `needs: static`**：矩阵里 8.5 带 `continue-on-error`，而 `needs` 看的是**作业状态**，
+  带上 `test` 会让 `e2e` 在 8.5 变红时被静默 skip。
+- **`e2e` 启动用 `bin/start.sh start`**（守护化 + preflight + pid 轮询），
+  **不要用 `bin/dev/boot_all.sh`**（开发期编排，末尾 `wait` 常驻，会占住步骤直至 timeout）；
+  启动后另补一次端口级就绪确认（UDP 8283 无 TCP 监听，需查 `ss -lun`）。
+- **`e2e` 传入 run 级唯一 uid**（`e2e-{run_id}-{run_attempt}`）：UDP 无断连事件，
+  会话不随客户端退出失效，复用同一 uid 会污染离线补投用例（K）。
+
+> ⚠ **CI 上的 `cs:check` 比本地可信**：CI 检出是 LF（git 索引侧本就是 LF），
+> 该步骤**恒应为 0 文件**，一红就是真的排版违规。
+> 而本机因 `core.autocrlf=true` 工作区是 CRLF，同一条命令会混入行尾噪声 ——
+> 本地结果需先统一行尾再解读，详见 `docs/代码质量工具链说明.md` §8.7 / §8.8。
+
+> ℹ `e2e` 作业依赖 Linux 守护化启动与 Redis service，本机（Windows）无法复现，
+> 是**首次运行时最可能需要微调**的部分；`static` / `test` 的命令已逐条本机复跑验证。
 
 ---
 

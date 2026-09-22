@@ -59,11 +59,11 @@ final class AdminApi
     /**
      * 提交定向推送任务
      *
-     * @param string        $targetType uid / device / client
-     * @param string        $target     目标标识
-     * @param array<string, mixed>         $payload    推送载荷
-     * @param array<string, mixed>         $opts       msg_id / offline_mode（可选）
-     * @param null|callable $cb         function (bool $ok, array $data, ?array $error): void
+     * @param string               $targetType uid / device / client
+     * @param string               $target     目标标识
+     * @param array<string, mixed> $payload    推送载荷
+     * @param array<string, mixed> $opts       msg_id / offline_mode（可选）
+     * @param null|callable        $cb         function (bool $ok, array $data, ?array $error): void
      *
      * @return void
      */
@@ -115,10 +115,10 @@ final class AdminApi
     /**
      * 统一请求出口：签名、发送、响应归一化
      *
-     * @param string        $method
-     * @param string        $path
-     * @param null|array<string, mixed>    $job    null 表示无请求体（GET）
-     * @param null|callable $cb
+     * @param string                    $method
+     * @param string                    $path
+     * @param null|array<string, mixed> $job    null 表示无请求体（GET）
+     * @param null|callable             $cb
      *
      * @return void
      */

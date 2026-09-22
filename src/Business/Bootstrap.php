@@ -259,8 +259,8 @@ class Bootstrap
     /**
      * WebSocket 握手完成
      *
-     * @param string $clientId
-     * @param array<string, mixed>  $data     ['get'=>..,'server'=>..,'cookie'=>..]
+     * @param string               $clientId
+     * @param array<string, mixed> $data     ['get'=>..,'server'=>..,'cookie'=>..]
      *
      * @return void
      */
@@ -415,8 +415,8 @@ class Bootstrap
      * 与内部 send() 的区别：本方法为公开 API，允许在外部模块注册
      * Router 处理器时复用统一的回执通道（含指标与异常兜底）。
      *
-     * @param string $clientId
-     * @param array<string, mixed>  $packet   已构造的报文数组
+     * @param string               $clientId
+     * @param array<string, mixed> $packet   已构造的报文数组
      *
      * @return void
      */
@@ -444,8 +444,8 @@ class Bootstrap
     /**
      * 业务分发（限流通过后的主链路）
      *
-     * @param string $clientId
-     * @param array<string, mixed>  $packet
+     * @param string               $clientId
+     * @param array<string, mixed> $packet
      *
      * @return void
      */
@@ -514,9 +514,9 @@ class Bootstrap
      * 两个桶在一次 Redis 往返内原子判定（任一不足即整单拒绝且均不扣减），
      * 避免「连接桶已扣、用户桶拒绝」造成的配额泄漏。
      *
-     * @param string   $clientId
-     * @param array<string, mixed>    $packet
-     * @param callable $next     放行后的后续处理
+     * @param string               $clientId
+     * @param array<string, mixed> $packet
+     * @param callable             $next     放行后的后续处理
      *
      * @return void
      */
@@ -565,8 +565,8 @@ class Bootstrap
      * 默认仅回错误报文、不断开连接：客户端可感知并自行退避，
      * 而断开会在网络抖动时把限流放大成重连风暴。
      *
-     * @param string $clientId
-     * @param array<string, mixed>  $packet
+     * @param string               $clientId
+     * @param array<string, mixed> $packet
      *
      * @return void
      */
@@ -605,8 +605,8 @@ class Bootstrap
      *
      * 校验链路：本地签名与时效 -> Redis 撤销名单 -> uid/设备绑定 -> 写入会话
      *
-     * @param string $clientId
-     * @param array<string, mixed>  $packet
+     * @param string               $clientId
+     * @param array<string, mixed> $packet
      *
      * @return void
      */
@@ -683,10 +683,10 @@ class Bootstrap
     /**
      * 绑定会话并返回鉴权结果
      *
-     * @param string $clientId
-     * @param string $uid
-     * @param string $deviceId
-     * @param array<string, mixed>  $packet
+     * @param string               $clientId
+     * @param string               $uid
+     * @param string               $deviceId
+     * @param array<string, mixed> $packet
      *
      * @return void
      */
@@ -764,8 +764,8 @@ class Bootstrap
     /**
      * 处理心跳指令
      *
-     * @param string $clientId
-     * @param array<string, mixed>  $packet
+     * @param string               $clientId
+     * @param array<string, mixed> $packet
      *
      * @return void
      */
@@ -783,8 +783,8 @@ class Bootstrap
      * 推送采用「至少一次」语义，客户端回执仅用于观测投递质量；
      * 报文中的 seq 即服务端下发的 msg_id，可直接与推送日志对齐排查。
      *
-     * @param string $clientId
-     * @param array<string, mixed>  $packet
+     * @param string               $clientId
+     * @param array<string, mixed> $packet
      *
      * @return void
      */
@@ -812,8 +812,8 @@ class Bootstrap
      * 这样做的直接收益：UDP 侧接入业务动作的路径与本方法完全一致，
      * 不需要为「UDP 上报的业务报文」再维护一套并行的分发逻辑。
      *
-     * @param string $clientId
-     * @param array<string, mixed>  $packet
+     * @param string               $clientId
+     * @param array<string, mixed> $packet
      *
      * @return void
      */
@@ -844,8 +844,8 @@ class Bootstrap
      * Token 不可信时返回空串（不放行），而非回退到报文 uid，避免把伪造身份
      * 当作合法身份使用。仅当鉴权整体关闭、报文确实不带 Token 时才回退。
      *
-     * @param string $clientId
-     * @param array<string, mixed>  $packet
+     * @param string               $clientId
+     * @param array<string, mixed> $packet
      *
      * @return string 解析失败返回空串
      */
@@ -1017,10 +1017,10 @@ class Bootstrap
      * 注意：网关层已按来源 IP 做过一轮内存桶限流（L1），此处是业务层的
      * 第二道防线，用于约束单终端 / 单账号，与前者的 IP 维度互补。
      *
-     * @param string   $clientId
-     * @param string   $uid
-     * @param array<string, mixed>    $packet
-     * @param callable $next
+     * @param string               $clientId
+     * @param string               $uid
+     * @param array<string, mixed> $packet
+     * @param callable             $next
      *
      * @return void
      */
@@ -1064,10 +1064,10 @@ class Bootstrap
     /**
      * UDP 业务处理（限流通过后）
      *
-     * @param array<string, mixed>  $job
-     * @param string $clientId
-     * @param string $uid
-     * @param string $deviceId
+     * @param array<string, mixed> $job
+     * @param string               $clientId
+     * @param string               $uid
+     * @param string               $deviceId
      *
      * @return void
      */
@@ -1151,8 +1151,8 @@ class Bootstrap
      *
      * 传入已序列化的 JSON 字符串，由 Gateway 侧协议层完成帧封装。
      *
-     * @param string $clientId
-     * @param array<string, mixed>  $packet
+     * @param string               $clientId
+     * @param array<string, mixed> $packet
      *
      * @return void
      */

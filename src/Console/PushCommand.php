@@ -33,9 +33,9 @@ final class PushCommand
     /**
      * 执行 push 子命令
      *
-     * @param array<string, mixed> $appConfig      config/app.php
-     * @param array<string, mixed> $gatewayConfig  config/gateway.php
-     * @param array<string, mixed> $businessConfig config/business.php
+     * @param array<string, mixed>     $appConfig      config/app.php
+     * @param array<string, mixed>     $gatewayConfig  config/gateway.php
+     * @param array<string, mixed>     $businessConfig config/business.php
      * @param array<int|string, mixed> $argvList       原始参数列表
      *
      * @return int 退出码

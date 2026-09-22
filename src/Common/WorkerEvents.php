@@ -52,9 +52,9 @@ class WorkerEvents
     /**
      * 为指定 Worker 绑定通用事件
      *
-     * @param object $worker Workerman\Worker 及其子类实例
-     * @param string $name   进程名，用于日志区分来源
-     * @param array<string, mixed>  $opts   ['buffer' => bool] 是否绑定背压事件，默认 true
+     * @param object               $worker Workerman\Worker 及其子类实例
+     * @param string               $name   进程名，用于日志区分来源
+     * @param array<string, mixed> $opts   ['buffer' => bool] 是否绑定背压事件，默认 true
      *
      * @return void
      */

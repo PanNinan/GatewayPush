@@ -254,9 +254,9 @@ class RateLimiter
     /**
      * Redis 多桶判定
      *
-     * @param array<int|string, mixed>    $buckets bucket() 返回的桶定义列表（可含空数组，自动忽略）
-     * @param int      $cost
-     * @param callable $cb      function(bool $allowed)
+     * @param array<int|string, mixed> $buckets bucket() 返回的桶定义列表（可含空数组，自动忽略）
+     * @param int                      $cost
+     * @param callable                 $cb      function(bool $allowed)
      *
      * @return void
      */
@@ -296,9 +296,9 @@ class RateLimiter
      *
      * 被限流的流量本身就是洪水，逐条记录会让日志成为新的瓶颈。
      *
-     * @param string $dim
-     * @param string $id
-     * @param array<string, mixed>  $extra
+     * @param string               $dim
+     * @param string               $id
+     * @param array<string, mixed> $extra
      *
      * @return void
      */

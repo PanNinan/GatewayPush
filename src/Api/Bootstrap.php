@@ -575,9 +575,9 @@ class Bootstrap
      * 先 LLEN 再 RPUSH，两步之间存在微小竞态 —— 这是准入控制的固有代价，
      * 但方向是安全的：并发下最多多放行几条，不会让队列无界增长。
      *
-     * @param string   $requestId
-     * @param array<string, mixed>    $packet
-     * @param callable $cb        function(int $code, string $msg)  0 表示受理成功
+     * @param string               $requestId
+     * @param array<string, mixed> $packet
+     * @param callable             $cb        function(int $code, string $msg)  0 表示受理成功
      *
      * @return void
      */
@@ -737,8 +737,8 @@ class Bootstrap
      * 成功（cmd=ack）→ HTTP 200 / code 0，动作数据体置于 data.result；
      * 失败（cmd=error）→ **HTTP 200** / code 取报文内的业务码，理由见类注释。
      *
-     * @param string $requestId
-     * @param array<string, mixed>  $packet
+     * @param string               $requestId
+     * @param array<string, mixed> $packet
      *
      * @return Response
      */
@@ -974,11 +974,11 @@ class Bootstrap
     /**
      * 构造 JSON 响应
      *
-     * @param int        $status HTTP 状态码
-     * @param int        $code   业务码
-     * @param string     $msg
+     * @param int                       $status HTTP 状态码
+     * @param int                       $code   业务码
+     * @param string                    $msg
      * @param null|array<string, mixed> $data
-     * @param null|int   $http
+     * @param null|int                  $http
      *
      * @return Response
      */

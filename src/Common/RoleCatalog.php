@@ -37,7 +37,7 @@ final class RoleCatalog
      * @param array<string, mixed> $gatewayConfig  config/gateway.php
      * @param array<string, mixed> $businessConfig config/business.php
      * @param array<string, mixed> $appConfig      config/app.php
-     * @param bool  $isLinux        影响进程数口径，见下方 $count 注释
+     * @param bool                 $isLinux        影响进程数口径，见下方 $count 注释
      *
      * @return array<string, mixed> 角色名 => array(name, listen, probe, count, enable, env)
      */

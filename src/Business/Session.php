@@ -70,11 +70,11 @@ class Session
     /**
      * 绑定会话（鉴权成功后调用）
      *
-     * @param string        $clientId
-     * @param array<string, mixed>         $identity ['uid'=>..., 'device_id'=>...]
-     * @param string        $protocol Session::PROTOCOL_WS / PROTOCOL_UDP
-     * @param array<string, mixed>         $connInfo ['client_ip','client_port','gateway','connect_at']
-     * @param null|callable $cb
+     * @param string               $clientId
+     * @param array<string, mixed> $identity ['uid'=>..., 'device_id'=>...]
+     * @param string               $protocol Session::PROTOCOL_WS / PROTOCOL_UDP
+     * @param array<string, mixed> $connInfo ['client_ip','client_port','gateway','connect_at']
+     * @param null|callable        $cb
      *
      * @return void
      */

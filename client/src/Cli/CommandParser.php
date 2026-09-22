@@ -108,9 +108,9 @@ class CommandParser
     /**
      * 取字符串选项
      *
-     * @param array<string, mixed>  $options
-     * @param string $name
-     * @param string $default
+     * @param array<string, mixed> $options
+     * @param string               $name
+     * @param string               $default
      *
      * @return string
      */
@@ -126,9 +126,9 @@ class CommandParser
     /**
      * 取浮点选项
      *
-     * @param array<string, mixed>  $options
-     * @param string $name
-     * @param float  $default
+     * @param array<string, mixed> $options
+     * @param string               $name
+     * @param float                $default
      *
      * @return float
      */
@@ -144,8 +144,8 @@ class CommandParser
     /**
      * 取开关选项
      *
-     * @param array<string, mixed>  $options
-     * @param string $name
+     * @param array<string, mixed> $options
+     * @param string               $name
      *
      * @return bool
      */

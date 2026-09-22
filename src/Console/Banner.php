@@ -30,12 +30,12 @@ final class Banner
     /**
      * 渲染启动信息横幅
      *
-     * @param array<string, mixed>  $appConfig      config/app.php
-     * @param array<string, mixed>  $gatewayConfig  config/gateway.php
-     * @param array<string, mixed>  $businessConfig config/business.php
-     * @param array<int|string, mixed>  $roles          只列这些角色；空数组 = 按配置列出全部相关角色
-     * @param bool   $withProbe      是否探测端口监听状态（启动前端口必然空闲，故仅 info 命令启用）
-     * @param string $modeLabel      启动模式标签（DAEMON / DEBUG），空串则不显示该行
+     * @param array<string, mixed>     $appConfig      config/app.php
+     * @param array<string, mixed>     $gatewayConfig  config/gateway.php
+     * @param array<string, mixed>     $businessConfig config/business.php
+     * @param array<int|string, mixed> $roles          只列这些角色；空数组 = 按配置列出全部相关角色
+     * @param bool                     $withProbe      是否探测端口监听状态（启动前端口必然空闲，故仅 info 命令启用）
+     * @param string                   $modeLabel      启动模式标签（DAEMON / DEBUG），空串则不显示该行
      *
      * @return string
      */

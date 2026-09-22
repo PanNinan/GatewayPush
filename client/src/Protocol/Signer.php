@@ -33,8 +33,8 @@ final class Signer
     /**
      * 生成报文签名
      *
-     * @param array<string, mixed>  $packet
-     * @param string $secret
+     * @param array<string, mixed> $packet
+     * @param string               $secret
      *
      * @return string 64 位十六进制
      */
@@ -87,9 +87,9 @@ final class Signer
      * 复用服务端 `Message::verify()`，等价于「服务端会怎么判我这条报文」的本地预演，
      * 适合在 UDP 链路排障时先自证报文合法，再怀疑网络。
      *
-     * @param array<string, mixed>  $packet
-     * @param string $secret
-     * @param int    $clockSkew 允许的时间戳偏差（秒），<=0 表示不校验
+     * @param array<string, mixed> $packet
+     * @param string               $secret
+     * @param int                  $clockSkew 允许的时间戳偏差（秒），<=0 表示不校验
      *
      * @return array<string, mixed> ['ok'=>bool,'code'=>int,'msg'=>string]
      */

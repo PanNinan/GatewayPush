@@ -46,9 +46,9 @@ class ParamValidator
     /**
      * 校验并归一化参数
      *
-     * @param array<string, mixed>  $rules 规则数组
-     * @param array<string, mixed>  $input 原始入参
-     * @param string $error 输出错误原因
+     * @param array<string, mixed> $rules 规则数组
+     * @param array<string, mixed> $input 原始入参
+     * @param string               $error 输出错误原因
      *
      * @return null|array<string, mixed> 失败返回 null
      */
@@ -211,11 +211,11 @@ class ParamValidator
     /**
      * 范围与枚举约束
      *
-     * @param mixed  $value  已转换的值
-     * @param string $type
-     * @param array<string, mixed>  $rule
-     * @param string $name
-     * @param string $reason
+     * @param mixed                $value  已转换的值
+     * @param string               $type
+     * @param array<string, mixed> $rule
+     * @param string               $name
+     * @param string               $reason
      *
      * @return null|mixed 失败返回 null
      */
