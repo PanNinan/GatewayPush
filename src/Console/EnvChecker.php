@@ -20,6 +20,11 @@ namespace GatewayPush\Console;
 use GatewayPush\Api\Bootstrap;
 use GatewayPush\Common\Env;
 
+/**
+ * 运行环境自检（任何 workerman 命令之前强制执行）
+ *
+ * 输出人读报告 + 布尔结论，自身不做 IO 输出；用于把配置漂移拦在启动前。
+ */
 final class EnvChecker
 {
     /**
@@ -31,12 +36,15 @@ final class EnvChecker
      * @param array $gatewayConfig  config/gateway.php
      * @param array $businessConfig config/business.php
      * @param array $actionConfig   config/actions.php
+     *
      * @return array ['ok' => bool, 'text' => string]
+     *
+     * @throws \RuntimeException 运行时目录无法创建时抛出
      */
-    public static function check(array $appConfig, array $gatewayConfig, array $businessConfig, array $actionConfig = array())
+    public static function check(array $appConfig, array $gatewayConfig, array $businessConfig, array $actionConfig = [])
     {
         $runtime = $appConfig['runtime'];
-        $lines   = array();
+        $lines   = [];
         $ok      = true;
         $isLinux = DIRECTORY_SEPARATOR === '/';
 
@@ -86,10 +94,10 @@ final class EnvChecker
         }
 
         // 运行时目录
-        foreach (array('runtime_path', 'log_path', 'pid_path') as $key) {
+        foreach (['runtime_path', 'log_path', 'pid_path'] as $key) {
             $dir = $runtime[$key];
             if (!is_dir($dir)) {
-                if (! mkdir($dir, 0755, true) && ! is_dir($dir)) {
+                if (!mkdir($dir, 0o755, true) && !is_dir($dir)) {
                     throw new \RuntimeException(sprintf('Directory "%s" was not created', $dir));
                 }
             }
@@ -169,7 +177,7 @@ final class EnvChecker
             $lines[] = '[WARN] 定向推送已关闭（PUSH_ENABLE=false）';
         } else {
             $mode    = (string)$appConfig['push']['offline_mode'];
-            $modeOk  = in_array($mode, array('drop', 'queue'), true);
+            $modeOk  = in_array($mode, ['drop', 'queue'], true);
             $lines[] = sprintf(
                 '[%-4s] 定向推送已开启（离线策略 %s，指令队列 %s）',
                 $modeOk ? 'OK' : 'FAIL',
@@ -178,7 +186,7 @@ final class EnvChecker
             );
             $ok = $ok && $modeOk;
 
-            $outKey = isset($gatewayConfig['udp']['out_queue']['key']) ? $gatewayConfig['udp']['out_queue']['key'] : '';
+            $outKey = $gatewayConfig['udp']['out_queue']['key'] ?? '';
             if (!empty($gatewayConfig['udp']['enable']) && $outKey !== '') {
                 $lines[] = sprintf('[%-4s] UDP 出站队列 %s', 'OK', $outKey);
             }
@@ -240,10 +248,10 @@ final class EnvChecker
             $lines[] = '[WARN] 报文级限流已关闭（RATE_LIMIT_ENABLE=false）';
         } else {
             $rateConf = $appConfig['rate_limit'];
-            $dims     = array('conn' => '连接', 'uid' => '用户', 'ip' => 'IP', 'ping' => '心跳');
+            $dims     = ['conn' => '连接', 'uid' => '用户', 'ip' => 'IP', 'ping' => '心跳'];
             $active   = 0;
-            $desc     = array();
-            $badBurst = array();
+            $desc     = [];
+            $badBurst = [];
 
             foreach ($dims as $dim => $label) {
                 $rate  = (int)$rateConf[$dim]['rate'];
@@ -251,6 +259,7 @@ final class EnvChecker
 
                 if ($rate <= 0) {
                     $desc[] = $label . ' 已关闭';
+
                     continue;
                 }
                 $active++;
@@ -289,22 +298,23 @@ final class EnvChecker
         // 业务动作清单（config/actions.php）
         $actionList = isset($actionConfig['actions']) && is_array($actionConfig['actions'])
             ? $actionConfig['actions']
-            : array();
+            : [];
 
         if (!$actionList) {
             $lines[] = '[FAIL] 业务动作清单为空（config/actions.php 的 actions 段未配置任何动作）';
             $ok      = false;
         } else {
-            $invalid   = array();
-            $silent    = array();
-            $noAuth    = array();
-            $noTimeout = array();
+            $invalid   = [];
+            $silent    = [];
+            $noAuth    = [];
+            $noTimeout = [];
 
             foreach ($actionList as $name => $decl) {
                 $handler = is_array($decl) && isset($decl['handler']) ? (string)$decl['handler'] : '';
                 if ($handler === '' || !class_exists($handler)
-                    || !in_array('GatewayPush\\Business\\ActionInterface', (array)class_implements($handler), true)) {
+                    || !in_array('GatewayPush\Business\ActionInterface', (array)class_implements($handler), true)) {
                     $invalid[] = $name;
+
                     continue;
                 }
 
@@ -364,7 +374,7 @@ final class EnvChecker
         }
 
         // 端口占用探测（仅提示，不阻断：restart 场景下端口被自身占用属正常）
-        $ports = array();
+        $ports = [];
         if (!empty($gatewayConfig['websocket']['enable'])) {
             $ports['WebSocket'] = $gatewayConfig['websocket']['listen'];
         }
@@ -379,14 +389,19 @@ final class EnvChecker
         }
         foreach ($ports as $label => $listen) {
             $probe = PortProbe::isUsed($listen);
-            $lines[] = sprintf('[%-4s] %s 端口 %s%s', $probe ? 'WARN' : 'OK', $label,
-                preg_replace('#^[a-z]+://#i', '', $listen), $probe ? ' 已被占用（若为本服务实例可忽略）' : '');
+            $lines[] = sprintf(
+                '[%-4s] %s 端口 %s%s',
+                $probe ? 'WARN' : 'OK',
+                $label,
+                preg_replace('#^[a-z]+://#i', '', $listen),
+                $probe ? ' 已被占用（若为本服务实例可忽略）' : ''
+            );
         }
 
         $lines[] = str_repeat('=', 70);
         $lines[] = $ok ? '自检结论：通过' : '自检结论：未通过，请修正上述 FAIL 项';
         $lines[] = '';
 
-        return array('ok' => $ok, 'text' => implode("\n", $lines) . "\n");
+        return ['ok' => $ok, 'text' => implode("\n", $lines) . "\n"];
     }
 }

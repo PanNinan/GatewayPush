@@ -22,41 +22,6 @@ use PHPUnit\Framework\TestCase;
 
 class SignerTest extends TestCase
 {
-    /**
-     * 固定 fixture：覆盖键序打乱、嵌套、中文、斜杠、列表、布尔、null
-     *
-     * @return array
-     */
-    private function fixtureData()
-    {
-        return array(
-            'b'      => 2,
-            'a'      => 1,
-            'list'   => array(3, 1, 2),
-            'nested' => array('z' => 1, 'y' => array('k' => '中文', 'p' => 'a/b')),
-            'bool'   => true,
-            'nil'    => null,
-        );
-    }
-
-    /**
-     * 与 fixtureData 对应的固定报文（uid 刻意存在，用于验证其不参与签名）
-     *
-     * @return array
-     */
-    private function fixturePacket()
-    {
-        return array(
-            'cmd'       => 'data',
-            'seq'       => 's1',
-            'ts'        => 1690000000,
-            'uid'       => 'alice',
-            'device_id' => 'dev1',
-            'token'     => 'tk',
-            'data'      => $this->fixtureData(),
-        );
-    }
-
     /* ---------------------------------------------------------------------
      | canonicalize
      --------------------------------------------------------------------- */
@@ -78,16 +43,16 @@ class SignerTest extends TestCase
 
     public function testCanonicalizeSortsKeysRecursively(): void
     {
-        self::assertSame('{"a":1,"z":{"a":1,"b":2}}', Signer::canonicalize(array(
-            'z' => array('b' => 2, 'a' => 1),
+        self::assertSame('{"a":1,"z":{"a":1,"b":2}}', Signer::canonicalize([
+            'z' => ['b' => 2, 'a' => 1],
             'a' => 1,
-        )));
+        ]));
     }
 
     public function testCanonicalizeIsKeyOrderIndependent(): void
     {
-        $one = Signer::canonicalize(array('a' => 1, 'b' => array('x' => 1, 'y' => 2)));
-        $two = Signer::canonicalize(array('b' => array('y' => 2, 'x' => 1), 'a' => 1));
+        $one = Signer::canonicalize(['a' => 1, 'b' => ['x' => 1, 'y' => 2]]);
+        $two = Signer::canonicalize(['b' => ['y' => 2, 'x' => 1], 'a' => 1]);
 
         self::assertSame($one, $two);
     }
@@ -95,18 +60,18 @@ class SignerTest extends TestCase
     public function testCanonicalizeKeepsListOrder(): void
     {
         // 列表键为 0..n，ksort 后顺序不变 —— 顺序信息不会被规范化破坏
-        self::assertSame('[3,1,2]', Signer::canonicalize(array(3, 1, 2)));
+        self::assertSame('[3,1,2]', Signer::canonicalize([3, 1, 2]));
     }
 
     public function testCanonicalizeIsCompactAndKeepsUnicodeAndSlashes(): void
     {
-        self::assertSame('{"k":"中文"}', Signer::canonicalize(array('k' => '中文')));
-        self::assertSame('{"p":"a/b"}', Signer::canonicalize(array('p' => 'a/b')));
+        self::assertSame('{"k":"中文"}', Signer::canonicalize(['k' => '中文']));
+        self::assertSame('{"p":"a/b"}', Signer::canonicalize(['p' => 'a/b']));
     }
 
     public function testCanonicalizeHandlesEmptyArrayAndScalars(): void
     {
-        self::assertSame('[]', Signer::canonicalize(array()));
+        self::assertSame('[]', Signer::canonicalize([]));
         self::assertSame('x', Signer::canonicalize('x'));
         self::assertSame('5', Signer::canonicalize(5));
         // 标量走 (string) 强转，故 true -> '1'、null -> ''。属服务端既有语义，此处钉住。
@@ -139,7 +104,7 @@ class SignerTest extends TestCase
     public function testBaseStringSkipsMissingFields(): void
     {
         // 缺字段按空串占位，不报错 —— 报文可能来自对端，字段未必齐全
-        self::assertSame('ping|||||[]', Signer::baseString(array('cmd' => 'ping')));
+        self::assertSame('ping|||||[]', Signer::baseString(['cmd' => 'ping']));
     }
 
     /* ---------------------------------------------------------------------
@@ -172,13 +137,13 @@ class SignerTest extends TestCase
     public function testSignIgnoresUidAndSignField(): void
     {
         // uid 不在签名基串内 —— 报文字段 uid 可被篡改，身份只能取自 token 载荷
-        $packet = array(
+        $packet = [
             'cmd' => 'data', 'seq' => 's1', 'ts' => 1690000000,
-            'device_id' => 'dev1', 'token' => 'tk', 'data' => array(),
-        );
+            'device_id' => 'dev1', 'token' => 'tk', 'data' => [],
+        ];
 
-        $alice = $packet + array('uid' => 'alice');
-        $bob   = $packet + array('uid' => 'bob', 'sign' => 'whatever');
+        $alice = $packet + ['uid' => 'alice'];
+        $bob   = $packet + ['uid' => 'bob', 'sign' => 'whatever'];
 
         self::assertSame(Signer::sign($packet, 'secret'), Signer::sign($alice, 'secret'));
         self::assertSame(Signer::sign($alice, 'secret'), Signer::sign($bob, 'secret'));
@@ -189,14 +154,14 @@ class SignerTest extends TestCase
         $packet = $this->fixturePacket();
         $base   = Signer::sign($packet, 'secret');
 
-        $mutations = array(
+        $mutations = [
             'cmd'       => 'ack',
             'seq'       => 's2',
             'ts'        => 1690000001,
             'device_id' => 'dev2',
             'token'     => 'tk2',
-            'data'      => array('a' => 1),
-        );
+            'data'      => ['a' => 1],
+        ];
 
         foreach ($mutations as $field => $value) {
             $mutated         = $packet;
@@ -248,7 +213,7 @@ class SignerTest extends TestCase
         $packet['ts']   = time();
         $packet['sign'] = Signer::sign($packet, 'secret');
 
-        $packet['data'] = array('injected' => 1);
+        $packet['data'] = ['injected' => 1];
 
         $result = Signer::verify($packet, 'secret');
 
@@ -301,10 +266,45 @@ class SignerTest extends TestCase
 
     public function testVerifyRejectsEmptySecret(): void
     {
-        $result = Signer::verify(array('cmd' => 'data'), '');
+        $result = Signer::verify(['cmd' => 'data'], '');
 
         self::assertFalse($result['ok']);
         self::assertSame(ErrorCode::BAD_SIGN, $result['code']);
         self::assertSame('服务端未配置签名密钥', $result['msg']);
+    }
+
+    /**
+     * 固定 fixture：覆盖键序打乱、嵌套、中文、斜杠、列表、布尔、null
+     *
+     * @return array
+     */
+    private function fixtureData()
+    {
+        return [
+            'b'      => 2,
+            'a'      => 1,
+            'list'   => [3, 1, 2],
+            'nested' => ['z' => 1, 'y' => ['k' => '中文', 'p' => 'a/b']],
+            'bool'   => true,
+            'nil'    => null,
+        ];
+    }
+
+    /**
+     * 与 fixtureData 对应的固定报文（uid 刻意存在，用于验证其不参与签名）
+     *
+     * @return array
+     */
+    private function fixturePacket()
+    {
+        return [
+            'cmd'       => 'data',
+            'seq'       => 's1',
+            'ts'        => 1690000000,
+            'uid'       => 'alice',
+            'device_id' => 'dev1',
+            'token'     => 'tk',
+            'data'      => $this->fixtureData(),
+        ];
     }
 }

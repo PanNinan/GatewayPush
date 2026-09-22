@@ -32,7 +32,7 @@ final class ApiSignSwitchTest extends TestCase
      *
      * @var array
      */
-    private $configSnapshot = array();
+    private $configSnapshot = [];
 
     protected function setUp(): void
     {
@@ -64,29 +64,29 @@ final class ApiSignSwitchTest extends TestCase
 
     public function listenProvider(): array
     {
-        return array(
+        return [
             // ── 回环：应识别为 true ──
-            'IPv4 回环 + 协议 + 端口' => array('http://127.0.0.1:8290', true, '标准写法'),
-            'IPv4 回环 省略协议'      => array('127.0.0.1:8290', true, 'workerman 允许省略协议'),
-            'IPv4 回环 无端口'        => array('127.0.0.1', true, '无冒号，整串即 host'),
-            '回环段内其他地址'        => array('http://127.5.5.5:8290', true, '127.0.0.0/8 整段都是回环'),
-            'localhost'               => array('http://localhost:8290', true, ''),
-            'localhost 省略协议'      => array('localhost:8290', true, ''),
-            'localhost 大小写'        => array('LOCALHOST:8290', true, 'DNS 名不区分大小写'),
-            'IPv6 回环 带方括号'      => array('http://[::1]:8290', true, 'workerman 的标准 IPv6 写法'),
-            'IPv6 回环 省略协议'      => array('[::1]:8290', true, ''),
-            'IPv6 回环 裸写'          => array('::1', true, 'parse_url 取不到 host，故未采用它'),
+            'IPv4 回环 + 协议 + 端口' => ['http://127.0.0.1:8290', true, '标准写法'],
+            'IPv4 回环 省略协议'      => ['127.0.0.1:8290', true, 'workerman 允许省略协议'],
+            'IPv4 回环 无端口'        => ['127.0.0.1', true, '无冒号，整串即 host'],
+            '回环段内其他地址'        => ['http://127.5.5.5:8290', true, '127.0.0.0/8 整段都是回环'],
+            'localhost'               => ['http://localhost:8290', true, ''],
+            'localhost 省略协议'      => ['localhost:8290', true, ''],
+            'localhost 大小写'        => ['LOCALHOST:8290', true, 'DNS 名不区分大小写'],
+            'IPv6 回环 带方括号'      => ['http://[::1]:8290', true, 'workerman 的标准 IPv6 写法'],
+            'IPv6 回环 省略协议'      => ['[::1]:8290', true, ''],
+            'IPv6 回环 裸写'          => ['::1', true, 'parse_url 取不到 host，故未采用它'],
 
             // ── 非回环：必须保持验签 ──
-            '通配地址'         => array('http://0.0.0.0:8290', false, '对外监听'),
-            '通配地址 省略协议' => array('0.0.0.0:8290', false, ''),
-            '内网 IP'          => array('http://192.168.1.10:8290', false, '局域网内可访问'),
-            '域名'             => array('http://api.example.com:8290', false, ''),
-            'IPv6 非回环'      => array('http://[2001:db8::1]:8290', false, ''),
-            'IPv4 映射的 IPv6' => array('::ffff:127.0.0.1', false, '非 ::1，按非回环处理偏安全'),
-            '空串'             => array('', false, '判定不了时保留验签'),
-            '纯空白'           => array('  ', false, ''),
-        );
+            '通配地址'         => ['http://0.0.0.0:8290', false, '对外监听'],
+            '通配地址 省略协议' => ['0.0.0.0:8290', false, ''],
+            '内网 IP'          => ['http://192.168.1.10:8290', false, '局域网内可访问'],
+            '域名'             => ['http://api.example.com:8290', false, ''],
+            'IPv6 非回环'      => ['http://[2001:db8::1]:8290', false, ''],
+            'IPv4 映射的 IPv6' => ['::ffff:127.0.0.1', false, '非 ::1，按非回环处理偏安全'],
+            '空串'             => ['', false, '判定不了时保留验签'],
+            '纯空白'           => ['  ', false, ''],
+        ];
     }
 
     /* ---------------------------------------------------------------------
@@ -95,20 +95,20 @@ final class ApiSignSwitchTest extends TestCase
 
     public function testEnabledWhenSwitchIsOn(): void
     {
-        $this->withConfig(array('listen' => 'http://127.0.0.1:8290', 'sign_enable' => true));
+        $this->withConfig(['listen' => 'http://127.0.0.1:8290', 'sign_enable' => true]);
         self::assertTrue($this->signEnabled());
     }
 
     public function testEnabledByDefaultWhenKeyAbsent(): void
     {
         // 老 .env 未设置该键时必须按开启处理
-        $this->withConfig(array('listen' => 'http://127.0.0.1:8290'));
+        $this->withConfig(['listen' => 'http://127.0.0.1:8290']);
         self::assertTrue($this->signEnabled(), '缺少 sign_enable 键应回落到「开启」');
     }
 
     public function testDisabledWhenOffAndListeningLoopback(): void
     {
-        $this->withConfig(array('listen' => 'http://127.0.0.1:8290', 'sign_enable' => false));
+        $this->withConfig(['listen' => 'http://127.0.0.1:8290', 'sign_enable' => false]);
         self::assertFalse($this->signEnabled(), '本机回环监听应允许免签（本地调试场景）');
     }
 
@@ -119,16 +119,16 @@ final class ApiSignSwitchTest extends TestCase
      */
     public function testForcedOnWhenOffButListeningExternally(): void
     {
-        $listens = array(
+        $listens = [
             'http://0.0.0.0:8290',
             '0.0.0.0:8290',
             'http://192.168.1.10:8290',
             'http://api.example.com:8290',
             'http://[2001:db8::1]:8290',
-        );
+        ];
 
         foreach ($listens as $listen) {
-            $this->withConfig(array('listen' => $listen, 'sign_enable' => false));
+            $this->withConfig(['listen' => $listen, 'sign_enable' => false]);
             self::assertTrue(
                 $this->signEnabled(),
                 'listen=' . $listen . ' 非回环监听，必须忽略 API_SIGN_ENABLE=false 并强制验签'
@@ -139,10 +139,10 @@ final class ApiSignSwitchTest extends TestCase
     public function testEnabledWhenListenMissingOrEmpty(): void
     {
         // listen 缺失 / 为空 → 无法确认是回环 → 保留验签（出错偏安全侧）
-        $this->withConfig(array('sign_enable' => false));
+        $this->withConfig(['sign_enable' => false]);
         self::assertTrue($this->signEnabled(), 'listen 缺失时应保留验签');
 
-        $this->withConfig(array('listen' => '', 'sign_enable' => false));
+        $this->withConfig(['listen' => '', 'sign_enable' => false]);
         self::assertTrue($this->signEnabled(), 'listen 为空时应保留验签');
     }
 

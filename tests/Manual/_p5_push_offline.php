@@ -8,6 +8,7 @@
  */
 
 define('BASE_PATH', dirname(__DIR__, 2));
+
 require BASE_PATH . '/vendor/autoload.php';
 
 use GatewayPush\Client\Service\AdminApi;
@@ -16,6 +17,7 @@ use Workerman\Worker;
 $uid = isset($argv[1]) ? (string)$argv[1] : '';
 if ($uid === '') {
     echo "用法：php _p5_push_offline.php <uid>\n";
+
     exit(1);
 }
 
@@ -26,15 +28,17 @@ $worker = new Worker();
 
 $worker->onWorkerStart = function () use ($apiUrl, $appConfig, $uid) {
     $api = new AdminApi($apiUrl, (string)$appConfig['auth']['secret'], 5.0);
-    $api->push('uid', $uid, array('title' => 'p5-offline-msg'), array(
+    $api->push('uid', $uid, ['title' => 'p5-offline-msg'], [
         'msg_id'       => 'p5-off-' . bin2hex(random_bytes(4)),
         'offline_mode' => 'queue',
-    ), function ($ok, $data, $error) {
+    ], function ($ok, $data, $error) {
         if ($ok) {
-            echo "[B] 离线消息已受理入队：msg_id=" . (isset($data['msg_id']) ? $data['msg_id'] : '') . "\n";
+            echo '[B] 离线消息已受理入队：msg_id=' . ($data['msg_id'] ?? '') . "\n";
+
             exit(0);
         }
-        echo "[B] 推送受理失败：" . json_encode($error, JSON_UNESCAPED_UNICODE) . "\n";
+        echo '[B] 推送受理失败：' . json_encode($error, JSON_UNESCAPED_UNICODE) . "\n";
+
         exit(1);
     });
 };

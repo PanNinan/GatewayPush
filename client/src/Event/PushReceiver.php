@@ -22,6 +22,11 @@ namespace GatewayPush\Client\Event;
 
 use GatewayPush\Client\Session\SessionManager;
 
+/**
+ * 推送接收器：识别 cmd=push 下行，回调业务并自动回执
+ *
+ * 把报文拆为 payload 与 meta 二元组；meta.offline = 1 表示重连补投。
+ */
 final class PushReceiver
 {
     /**
@@ -30,7 +35,7 @@ final class PushReceiver
     private $session;
 
     /**
-     * @var callable|null function (array $payload, array $meta): void
+     * @var null|callable function (array $payload, array $meta): void
      */
     private $onPushCb;
 
@@ -58,6 +63,7 @@ final class PushReceiver
      * @param callable $cb function (array $payload, array $meta): void
      *                     $payload = 推送载荷（push 报文的 data）
      *                     $meta    = {msg_id, seq, source, offline, pushed_at, ts}
+     *
      * @return void
      */
     public function onPush($cb)
@@ -69,6 +75,7 @@ final class PushReceiver
      * 处理一条推送报文（SessionManager 分发入口）
      *
      * @param array $packet
+     *
      * @return void
      */
     public function handle(array $packet)
@@ -77,19 +84,19 @@ final class PushReceiver
             ? (string)$packet['msg_id']
             : (string)$packet['seq'];
 
-        $meta = array(
+        $meta = [
             'msg_id'    => $msgId,
             'seq'       => isset($packet['seq']) ? (string)$packet['seq'] : '',
             'source'    => isset($packet['source']) ? (string)$packet['source'] : '',
             'offline'   => isset($packet['offline']) ? (int)$packet['offline'] : 0,
             'pushed_at' => isset($packet['pushed_at']) ? (int)$packet['pushed_at'] : 0,
             'ts'        => isset($packet['ts']) ? (int)$packet['ts'] : 0,
-        );
+        ];
 
-        $payload = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : array();
+        $payload = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : [];
 
         if ($this->onPushCb !== null) {
-            call_user_func($this->onPushCb, $payload, $meta);
+            ($this->onPushCb)($payload, $meta);
         }
 
         // 自动回执（至少一次语义；未 ready 时静默跳过，如断线瞬间收到的最后一条）

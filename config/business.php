@@ -20,7 +20,6 @@ $heartbeatInterval   = Env::int('HB_CHECK_INTERVAL', 10);
 $monitorInterval     = Env::int('MONITOR_INTERVAL', 60);
 
 return [
-
     /* ---------------------------------------------------------------
      | 业务进程
      --------------------------------------------------------------- */
@@ -35,7 +34,7 @@ return [
      | 与 config/gateway.php 的 register.listen 同源：默认复用 REGISTER_LISTEN，
      | 集群拆分部署时可用 REGISTER_ADDRESS 单独指向远程注册中心。
      --------------------------------------------------------------- */
-    'register_address' => Env::str('REGISTER_ADDRESS', '') !== ''
+    'register_address' => Env::str('REGISTER_ADDRESS') !== ''
         ? Env::str('REGISTER_ADDRESS')
         : Env::str('REGISTER_LISTEN', '127.0.0.1:1238'),
 
@@ -101,6 +100,12 @@ return [
      | scope = all    : 每个进程都注册（需分进程独立统计的任务）
      | interval       : 秒，支持小数（受事件循环精度限制，实际最小约 10ms）
      | timeout        : 单次执行耗时上限（秒），超出输出 WARN 日志
+     | run_at_start   : 可选，默认 false。true = 注册后延迟 1s 补跑一次首次执行。
+     |                  workerman 的 Timer 是「延迟首跑」，周期长的任务若不开启它，
+     |                  进程活不满一个 interval 就一次都不执行（静默失效）
+     | 数组顺序       : 同为 run_at_start 的任务都在启动后 1s 触发，执行顺序即
+     |                  声明顺序。故日志链路必须「先 log-archive 后 log-cleanup」——
+     |                  颠倒会让超期明文先被删掉，归档再也拿不到内容
      --------------------------------------------------------------- */
     'tasks' => [
         [
@@ -157,14 +162,30 @@ return [
             'timeout'    => 30,
             'scope'      => 'all',
         ],
+        // 归档须排在清理之前（见上方「数组顺序」）：两者都在启动后 1s 补跑，
+        // 顺序颠倒会让刚超期的明文先被 cleanup 删掉、归档拿不到内容。
+        // 未开启 LOG_ARCHIVE_ENABLE 时该任务为空转（首行即 return 0），成本可忽略
         [
-            'name'       => 'log-cleanup',
-            'interval'   => 86400,
-            'class'      => 'GatewayPush\Common\Logger',
-            'method'     => 'cleanup',
-            'persistent' => true,
-            'timeout'    => 60,
-            'scope'      => 'first',
+            'name'         => 'log-archive',
+            'interval'     => 86400,
+            'class'        => 'GatewayPush\Common\Logger',
+            'method'       => 'archive',
+            'persistent'   => true,
+            'timeout'      => 120,
+            'scope'        => 'first',
+            'run_at_start' => true,
+        ],
+        // 周期长达 24h，必须 run_at_start：否则进程活不满一天就永不清理，
+        // 日志无限堆积且没有任何报错（开发机每天重启的场景下即如此）
+        [
+            'name'         => 'log-cleanup',
+            'interval'     => 86400,
+            'class'        => 'GatewayPush\Common\Logger',
+            'method'       => 'cleanup',
+            'persistent'   => true,
+            'timeout'      => 60,
+            'scope'        => 'first',
+            'run_at_start' => true,
         ],
     ],
 ];

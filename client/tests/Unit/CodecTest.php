@@ -29,16 +29,16 @@ class CodecTest extends TestCase
 
     public function testEncodeMatchesGoldenVector(): void
     {
-        self::assertSame('{"k":"中文"}', Codec::encode(array('k' => '中文')));
+        self::assertSame('{"k":"中文"}', Codec::encode(['k' => '中文']));
     }
 
     public function testEncodeDelegatesToServerImplementation(): void
     {
-        $packet = array(
+        $packet = [
             'cmd'  => 'push',
             'seq'  => 'p1',
-            'data' => array('z' => 1, 'a' => array('url' => 'http://a/b', 't' => '中文')),
-        );
+            'data' => ['z' => 1, 'a' => ['url' => 'http://a/b', 't' => '中文']],
+        ];
 
         self::assertSame(Message::encode($packet), Codec::encode($packet));
     }
@@ -47,7 +47,7 @@ class CodecTest extends TestCase
     {
         self::assertSame(
             '{"url":"http://127.0.0.1/a/b","note":"中文/路径"}',
-            Codec::encode(array('url' => 'http://127.0.0.1/a/b', 'note' => '中文/路径'))
+            Codec::encode(['url' => 'http://127.0.0.1/a/b', 'note' => '中文/路径'])
         );
     }
 
@@ -83,14 +83,14 @@ class CodecTest extends TestCase
         self::assertSame('', $packet['device_id']);
         self::assertSame('', $packet['token']);
         self::assertSame('', $packet['sign']);
-        self::assertSame(array(), $packet['data']);
+        self::assertSame([], $packet['data']);
     }
 
     public function testDecodeWrapsScalarData(): void
     {
         $packet = Codec::decode('{"cmd":"data","data":"raw"}');
 
-        self::assertSame(array('value' => 'raw'), $packet['data']);
+        self::assertSame(['value' => 'raw'], $packet['data']);
     }
 
     public function testDecodeRejectsEmptyPacket(): void
@@ -142,17 +142,17 @@ class CodecTest extends TestCase
 
     public function testPacketSetsCmdTsAndEmptySeq(): void
     {
-        $packet = Codec::packet('ping', array('x' => 1));
+        $packet = Codec::packet('ping', ['x' => 1]);
 
         self::assertSame('ping', $packet['cmd']);
         self::assertSame('', $packet['seq']);
-        self::assertSame(array('x' => 1), $packet['data']);
+        self::assertSame(['x' => 1], $packet['data']);
         self::assertGreaterThan(0, $packet['ts']);
     }
 
     public function testPacketAppliesExtraFields(): void
     {
-        $packet = Codec::packet('auth', array(), array('uid' => 'u1', 'ts' => 123));
+        $packet = Codec::packet('auth', [], ['uid' => 'u1', 'ts' => 123]);
 
         self::assertSame('u1', $packet['uid']);
         self::assertSame(123, $packet['ts']);
@@ -160,11 +160,11 @@ class CodecTest extends TestCase
 
     public function testAckCastsSeqToString(): void
     {
-        $ack = Codec::ack(12345, array('ok' => 1));
+        $ack = Codec::ack(12345, ['ok' => 1]);
 
         self::assertSame('ack', $ack['cmd']);
         self::assertSame('12345', $ack['seq']);
-        self::assertSame(array('ok' => 1), $ack['data']);
+        self::assertSame(['ok' => 1], $ack['data']);
     }
 
     public function testErrorUsesDefaultMessageAndCarriesRef(): void
@@ -180,19 +180,19 @@ class CodecTest extends TestCase
 
     public function testDataPacketShape(): void
     {
-        $packet = Codec::dataPacket('echo', array('hello' => 'postman'));
+        $packet = Codec::dataPacket('echo', ['hello' => 'postman']);
 
         self::assertSame('data', $packet['cmd']);
-        self::assertSame(array('action' => 'echo', 'params' => array('hello' => 'postman')), $packet['data']);
+        self::assertSame(['action' => 'echo', 'params' => ['hello' => 'postman']], $packet['data']);
         self::assertSame(
-            array('cmd', 'seq', 'ts', 'data'),
+            ['cmd', 'seq', 'ts', 'data'],
             array_keys($packet)
         );
     }
 
     public function testDataPacketDefaultsParamsToEmptyArray(): void
     {
-        self::assertSame(array('action' => 'session', 'params' => array()), Codec::dataPacket('session')['data']);
+        self::assertSame(['action' => 'session', 'params' => []], Codec::dataPacket('session')['data']);
     }
 
     /* ---------------------------------------------------------------------
@@ -201,25 +201,25 @@ class CodecTest extends TestCase
 
     public function testActionOfAndParamsOf(): void
     {
-        $packet = Codec::dataPacket('subscribe', array('topic' => 't.a'));
+        $packet = Codec::dataPacket('subscribe', ['topic' => 't.a']);
 
         self::assertSame('subscribe', Codec::actionOf($packet));
-        self::assertSame(array('topic' => 't.a'), Codec::paramsOf($packet));
+        self::assertSame(['topic' => 't.a'], Codec::paramsOf($packet));
     }
 
     public function testActionOfReturnsEmptyOnMalformedInput(): void
     {
-        self::assertSame('', Codec::actionOf(array()));
-        self::assertSame('', Codec::actionOf(array('data' => 'raw')));
-        self::assertSame('', Codec::actionOf(array('data' => array())));
-        self::assertSame('', Codec::actionOf(array('data' => array('action' => 123))));
+        self::assertSame('', Codec::actionOf([]));
+        self::assertSame('', Codec::actionOf(['data' => 'raw']));
+        self::assertSame('', Codec::actionOf(['data' => []]));
+        self::assertSame('', Codec::actionOf(['data' => ['action' => 123]]));
     }
 
     public function testParamsOfReturnsEmptyOnMalformedInput(): void
     {
-        self::assertSame(array(), Codec::paramsOf(array()));
-        self::assertSame(array(), Codec::paramsOf(array('data' => array('action' => 'echo'))));
-        self::assertSame(array(), Codec::paramsOf(array('data' => array('params' => 'raw'))));
+        self::assertSame([], Codec::paramsOf([]));
+        self::assertSame([], Codec::paramsOf(['data' => ['action' => 'echo']]));
+        self::assertSame([], Codec::paramsOf(['data' => ['params' => 'raw']]));
     }
 
     /* ---------------------------------------------------------------------
@@ -229,26 +229,26 @@ class CodecTest extends TestCase
     public function testIsTransportAckOnEmptyDataAck(): void
     {
         // 网关收包即回的传输层 ack：data 为空且无 action
-        $ack = array('cmd' => 'ack', 'seq' => '1', 'ts' => 1700000000, 'data' => array());
+        $ack = ['cmd' => 'ack', 'seq' => '1', 'ts' => 1700000000, 'data' => []];
 
         self::assertTrue(Codec::isTransportAck($ack));
     }
 
     public function testIsTransportAckFalseForBusinessReply(): void
     {
-        $reply = array(
+        $reply = [
             'cmd'  => 'ack',
             'seq'  => '1',
             'ts'   => 1700000000,
-            'data' => array('action' => 'echo', 'ok' => true),
-        );
+            'data' => ['action' => 'echo', 'ok' => true],
+        ];
 
         self::assertFalse(Codec::isTransportAck($reply));
     }
 
     public function testIsTransportAckFalseForNonAckPacket(): void
     {
-        self::assertFalse(Codec::isTransportAck(array('cmd' => 'push', 'data' => array())));
-        self::assertFalse(Codec::isTransportAck(array('cmd' => 'error', 'data' => array('code' => 4003))));
+        self::assertFalse(Codec::isTransportAck(['cmd' => 'push', 'data' => []]));
+        self::assertFalse(Codec::isTransportAck(['cmd' => 'error', 'data' => ['code' => 4003]]));
     }
 }

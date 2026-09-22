@@ -47,64 +47,13 @@ class RateLimiterTest extends TestCase
         $this->clearLogs();
     }
 
-    /**
-     * 日志级别设为 ERROR：info / warn 在写盘前即被丢弃，
-     * 既满足 beStrictAboutOutputDuringTests，也不污染临时目录。
-     *
-     * @return void
-     */
-    private function useQuietLogger()
-    {
-        Logger::init(array(
-            'path'   => $this->logDir,
-            'level'  => Logger::ERROR,
-            'role'   => 'test',
-            'stdout' => false,
-        ));
-    }
-
-    /**
-     * 写入限流配置（每次传入完整集合，避免上一个用例的静态残留影响判定）
-     *
-     * @param array $overrides
-     * @return void
-     */
-    private function configure(array $overrides = array())
-    {
-        RateLimiter::init(array_merge(array(
-            'enable'          => true,
-            'conn'            => array('rate' => 20,  'burst' => 40),
-            'uid'             => array('rate' => 50,  'burst' => 100),
-            'ip'              => array('rate' => 200, 'burst' => 400),
-            'ping'            => array('rate' => 5,   'burst' => 10),
-            'close_on_exceed' => false,
-            'notify'          => true,
-            'mem_max_buckets' => 20000,
-        ), $overrides));
-    }
-
-    /**
-     * @return void
-     */
-    private function clearLogs()
-    {
-        $files = glob($this->logDir . DIRECTORY_SEPARATOR . '*.log');
-        if (is_array($files)) {
-            foreach ($files as $file) {
-                @unlink($file);
-            }
-        }
-        // 目录由本用例创建，运行结束一并清掉，避免临时目录累积空壳
-        @rmdir($this->logDir);
-    }
-
     /* ---------------------------------------------------------------------
      | 配置读取
      --------------------------------------------------------------------- */
 
     public function testEnabledShouldCloseAndShouldNotifyFollowConfig(): void
     {
-        $this->configure(array('enable' => false, 'close_on_exceed' => true, 'notify' => false));
+        $this->configure(['enable' => false, 'close_on_exceed' => true, 'notify' => false]);
 
         $this->assertFalse(RateLimiter::enabled());
         $this->assertTrue(RateLimiter::shouldClose());
@@ -113,28 +62,28 @@ class RateLimiterTest extends TestCase
 
     public function testSpecRaisesBurstUpToRate(): void
     {
-        $this->configure(array('conn' => array('rate' => 20, 'burst' => 5)));
+        $this->configure(['conn' => ['rate' => 20, 'burst' => 5]]);
 
         // 容量小于速率会异常收紧瞬时突发，实现强制抬齐
-        $this->assertSame(array('rate' => 20, 'burst' => 20), RateLimiter::spec('conn'));
+        $this->assertSame(['rate' => 20, 'burst' => 20], RateLimiter::spec('conn'));
     }
 
     public function testSpecKeepsBurstWhenAlreadyLarger(): void
     {
-        $this->configure(array('conn' => array('rate' => 20, 'burst' => 40)));
+        $this->configure(['conn' => ['rate' => 20, 'burst' => 40]]);
 
-        $this->assertSame(array('rate' => 20, 'burst' => 40), RateLimiter::spec('conn'));
+        $this->assertSame(['rate' => 20, 'burst' => 40], RateLimiter::spec('conn'));
     }
 
     public function testSpecOfUnknownDimensionMeansUnlimited(): void
     {
-        $this->assertSame(array('rate' => 0, 'burst' => 0), RateLimiter::spec('no_such_dim'));
+        $this->assertSame(['rate' => 0, 'burst' => 0], RateLimiter::spec('no_such_dim'));
         $this->assertTrue(RateLimiter::checkMemory('no_such_dim', 'anything'), 'rate = 0 表示该维度不限流');
     }
 
     public function testCheckMemoryAllowsEverythingWhenDisabled(): void
     {
-        $this->configure(array('enable' => false, 'ip' => array('rate' => 1, 'burst' => 1)));
+        $this->configure(['enable' => false, 'ip' => ['rate' => 1, 'burst' => 1]]);
 
         for ($i = 0; $i < 10; $i++) {
             $this->assertTrue(RateLimiter::checkMemory('ip', '10.0.0.1'));
@@ -147,7 +96,7 @@ class RateLimiterTest extends TestCase
 
     public function testBurstIsConsumedThenRequestsAreRejected(): void
     {
-        $this->configure(array('ip' => array('rate' => 1, 'burst' => 3)));
+        $this->configure(['ip' => ['rate' => 1, 'burst' => 3]]);
 
         $this->assertTrue(RateLimiter::checkMemory('ip', '10.0.0.1'));
         $this->assertTrue(RateLimiter::checkMemory('ip', '10.0.0.1'));
@@ -157,7 +106,7 @@ class RateLimiterTest extends TestCase
 
     public function testTokensAreRefilledOverTime(): void
     {
-        $this->configure(array('ip' => array('rate' => 1000, 'burst' => 2)));
+        $this->configure(['ip' => ['rate' => 1000, 'burst' => 2]]);
 
         $this->assertTrue(RateLimiter::checkMemory('ip', '10.0.0.2'));
         $this->assertTrue(RateLimiter::checkMemory('ip', '10.0.0.2'));
@@ -174,7 +123,7 @@ class RateLimiterTest extends TestCase
 
     public function testCostIsClampedToAtLeastOne(): void
     {
-        $this->configure(array('ip' => array('rate' => 1, 'burst' => 2)));
+        $this->configure(['ip' => ['rate' => 1, 'burst' => 2]]);
 
         // cost = 0 会被归一化为 1，否则可用 0 成本无限调用
         $this->assertTrue(RateLimiter::checkMemory('ip', '10.0.0.3', 0));
@@ -184,7 +133,7 @@ class RateLimiterTest extends TestCase
 
     public function testOverLargeCostIsRejectedWithoutDeductingQuota(): void
     {
-        $this->configure(array('ip' => array('rate' => 1, 'burst' => 5)));
+        $this->configure(['ip' => ['rate' => 1, 'burst' => 5]]);
 
         $this->assertFalse(RateLimiter::checkMemory('ip', '10.0.0.4', 100));
 
@@ -206,7 +155,7 @@ class RateLimiterTest extends TestCase
 
     public function testResetClearsInMemoryState(): void
     {
-        $this->configure(array('ip' => array('rate' => 1, 'burst' => 1)));
+        $this->configure(['ip' => ['rate' => 1, 'burst' => 1]]);
 
         $this->assertTrue(RateLimiter::checkMemory('ip', '10.0.0.7'));
         $this->assertFalse(RateLimiter::checkMemory('ip', '10.0.0.7'));
@@ -224,10 +173,10 @@ class RateLimiterTest extends TestCase
 
     public function testReachingBucketLimitEvictsHalf(): void
     {
-        $this->configure(array(
+        $this->configure([
             'mem_max_buckets' => 100,
-            'ip'              => array('rate' => 1, 'burst' => 1000),
-        ));
+            'ip'              => ['rate' => 1, 'burst' => 1000],
+        ]);
 
         // 第 101 个新桶创建前触发淘汰：100 个桶保留后一半后新增，得 51
         for ($i = 0; $i < 101; $i++) {
@@ -239,10 +188,10 @@ class RateLimiterTest extends TestCase
 
     public function testBucketLimitHasLowerBoundOfOneHundred(): void
     {
-        $this->configure(array(
+        $this->configure([
             'mem_max_buckets' => 5,     // 低于下限，实现按 100 处理
-            'ip'              => array('rate' => 1, 'burst' => 1000),
-        ));
+            'ip'              => ['rate' => 1, 'burst' => 1000],
+        ]);
 
         for ($i = 0; $i < 101; $i++) {
             RateLimiter::checkMemory('ip', 'ip-' . $i);
@@ -253,7 +202,7 @@ class RateLimiterTest extends TestCase
 
     public function testExistingBucketsAreNotEvictedWhileUnderLimit(): void
     {
-        $this->configure(array('ip' => array('rate' => 1, 'burst' => 2)));
+        $this->configure(['ip' => ['rate' => 1, 'burst' => 2]]);
 
         for ($i = 0; $i < 50; $i++) {
             RateLimiter::checkMemory('ip', 'keep-' . $i);
@@ -272,9 +221,9 @@ class RateLimiterTest extends TestCase
     public function testLogRejectSamplesPerDimensionWithinOneSecond(): void
     {
         $this->ensureLogDir();
-        Logger::init(array('path' => $this->logDir, 'level' => Logger::WARN, 'role' => 'test', 'stdout' => false));
+        Logger::init(['path' => $this->logDir, 'level' => Logger::WARN, 'role' => 'test', 'stdout' => false]);
         RateLimiter::reset();
-        $this->configure(array('ip' => array('rate' => 1, 'burst' => 3)));
+        $this->configure(['ip' => ['rate' => 1, 'burst' => 3]]);
 
         RateLimiter::logReject('ip', '10.0.0.11');
         RateLimiter::logReject('ip', '10.0.0.12');   // 同维度、1 秒内 -> 被采样抑制
@@ -289,12 +238,64 @@ class RateLimiterTest extends TestCase
     }
 
     /**
+     * 日志级别设为 ERROR：info / warn 在写盘前即被丢弃，
+     * 既满足 beStrictAboutOutputDuringTests，也不污染临时目录。
+     *
+     * @return void
+     */
+    private function useQuietLogger()
+    {
+        Logger::init([
+            'path'   => $this->logDir,
+            'level'  => Logger::ERROR,
+            'role'   => 'test',
+            'stdout' => false,
+        ]);
+    }
+
+    /**
+     * 写入限流配置（每次传入完整集合，避免上一个用例的静态残留影响判定）
+     *
+     * @param array $overrides
+     *
+     * @return void
+     */
+    private function configure(array $overrides = [])
+    {
+        RateLimiter::init(array_merge([
+            'enable'          => true,
+            'conn'            => ['rate' => 20, 'burst' => 40],
+            'uid'             => ['rate' => 50, 'burst' => 100],
+            'ip'              => ['rate' => 200, 'burst' => 400],
+            'ping'            => ['rate' => 5, 'burst' => 10],
+            'close_on_exceed' => false,
+            'notify'          => true,
+            'mem_max_buckets' => 20000,
+        ], $overrides));
+    }
+
+    /**
+     * @return void
+     */
+    private function clearLogs()
+    {
+        $files = glob($this->logDir . DIRECTORY_SEPARATOR . '*.log');
+        if (is_array($files)) {
+            foreach ($files as $file) {
+                @unlink($file);
+            }
+        }
+        // 目录由本用例创建，运行结束一并清掉，避免临时目录累积空壳
+        @rmdir($this->logDir);
+    }
+
+    /**
      * @return void
      */
     private function ensureLogDir()
     {
         if (!is_dir($this->logDir)) {
-            mkdir($this->logDir, 0777, true);
+            mkdir($this->logDir, 0o777, true);
         }
     }
 }

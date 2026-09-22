@@ -70,16 +70,21 @@ use Workerman\Protocols\Http\Response;
 use Workerman\Timer;
 use Workerman\Worker;
 
+/**
+ * HTTP 接口进程（role=api）：验签 → 参数校验 → 任务入队
+ *
+ * 不持有 Gateway 连接、不感知会话状态，只依赖 Redis；动作类接口同步等待结果。
+ */
 class Bootstrap
 {
     /** 业务返回码 */
-    const CODE_OK           = 0;
-    const CODE_BAD_PARAM    = 4000;
-    const CODE_BAD_SIGN     = 4001;
-    const CODE_EXPIRED      = 4002;
-    const CODE_NOT_FOUND    = 4004;
-    const CODE_RATE_LIMIT   = 4029;
-    const CODE_SERVER_ERROR = 5000;
+    public const CODE_OK           = 0;
+    public const CODE_BAD_PARAM    = 4000;
+    public const CODE_BAD_SIGN     = 4001;
+    public const CODE_EXPIRED      = 4002;
+    public const CODE_NOT_FOUND    = 4004;
+    public const CODE_RATE_LIMIT   = 4029;
+    public const CODE_SERVER_ERROR = 5000;
 
     /**
      * 动作队列积压超限（准入控制）
@@ -87,18 +92,18 @@ class Bootstrap
      * 与 /push 的差异：/push 只入队便返回，积压仅记告警；动作有同步等待的
      * 调用方，每个在途请求占着一条 HTTP 连接，因此积压时必须拒绝而非继续受理。
      */
-    const CODE_OVERLOAD = 5030;
+    public const CODE_OVERLOAD = 5030;
 
     /** 结果轮询的起始 / 上限间隔（毫秒） */
-    const POLL_MIN_MS = 10;
-    const POLL_MAX_MS = 150;
+    public const POLL_MIN_MS = 10;
+    public const POLL_MAX_MS = 150;
 
     /**
      * api 配置（app.api）
      *
      * @var array
      */
-    protected static $config = array(
+    protected static $config = [
         'enable'      => true,
         'listen'      => 'http://127.0.0.1:8290',
         'name'        => 'GW-API',
@@ -108,21 +113,21 @@ class Bootstrap
         'rate'        => 600,
         'body_max'    => 65536,
         'action_wait' => 6000,
-    );
+    ];
 
     /**
      * app.php 配置（Redis 等）
      *
      * @var array
      */
-    protected static $appConfig = array();
+    protected static $appConfig = [];
 
     /**
      * business.php 配置（动作队列）
      *
      * @var array
      */
-    protected static $businessConfig = array();
+    protected static $businessConfig = [];
 
     /**
      * 已开放 HTTP 通道的动作中最长的回执超时（秒）
@@ -139,9 +144,10 @@ class Bootstrap
      * @param array $appConfig      config/app.php
      * @param array $businessConfig config/business.php
      * @param array $actionConfig   config/actions.php（用于 HTTP 白名单与超时校验）
+     *
      * @return void
      */
-    public static function init(array $appConfig, array $businessConfig, array $actionConfig = array())
+    public static function init(array $appConfig, array $businessConfig, array $actionConfig = [])
     {
         if (!self::roleEnabled('api')) {
             return;
@@ -160,7 +166,7 @@ class Bootstrap
         // 动作表在本进程只用于「入队前的白名单校验」，真正的参数校验与执行
         // 仍在业务进程 —— 避免出现第二处执行语义。装载是幂等的，重复装载无副作用。
         ActionRunner::load($actionConfig);
-        ActionReply::init(isset($businessConfig['action_queue']) ? $businessConfig['action_queue'] : array());
+        ActionReply::init($businessConfig['action_queue'] ?? []);
         self::$actionTimeoutMax = self::longestActionTimeout();
 
         $worker = new Worker(self::$config['listen']);
@@ -169,7 +175,7 @@ class Bootstrap
 
         // Worker('http://...') 会自动使用 Workerman\Protocols\Http，
         // onMessage 收到的即为已解析的 Request 对象
-        $worker->onMessage = array(self::class, 'onRequest');
+        $worker->onMessage = [self::class, 'onRequest'];
 
         $worker->onWorkerStart = function ($worker) {
             Logger::useChannel('api');
@@ -181,7 +187,7 @@ class Bootstrap
             $signOn = self::signEnabled();
             $socket = $worker->getSocketName();
 
-            Logger::info('HTTP 接口已启动', array(
+            Logger::info('HTTP 接口已启动', [
                 'listen'       => $socket,
                 'sign_enable'  => $signOn ? 1 : 0,
                 'sign_ttl'     => (int)self::$config['sign_ttl'],
@@ -190,19 +196,19 @@ class Bootstrap
                 'http_actions' => ActionRunner::httpActions(),
                 'action_wait'  => (int)self::$config['action_wait'],
                 'result_ttl'   => ActionReply::ttl(),
-            ));
+            ]);
 
             if (!$signOn) {
-                Logger::warn('接口验签已关闭（本地调试），所有请求无需签名即可调用', array(
+                Logger::warn('接口验签已关闭（本地调试），所有请求无需签名即可调用', [
                     'listen' => $socket,
                     'tip'    => '仅回环监听可关闭验签，请勿用于生产环境',
-                ));
+                ]);
             } elseif (empty(self::$config['sign_enable'])) {
                 // 配置想关但被护栏拦下 —— 必须明确告知，否则调用方会困惑
                 // 「为什么我关了验签还是要签名」
-                Logger::warn('API_SIGN_ENABLE=false 未生效：监听地址非回环，已强制开启验签', array(
+                Logger::warn('API_SIGN_ENABLE=false 未生效：监听地址非回环，已强制开启验签', [
                     'listen' => $socket,
-                ));
+                ]);
             } elseif ($secret === '') {
                 Logger::warn('接口密钥为空，所有请求都会被拒绝。请配置 API_SECRET（留空时会回退复用 AUTH_SECRET）');
             }
@@ -211,16 +217,16 @@ class Bootstrap
             if (self::$actionTimeoutMax > 0) {
                 $waitMs = (int)self::$config['action_wait'];
                 if ($waitMs <= self::$actionTimeoutMax * 1000) {
-                    Logger::warn('API_ACTION_WAIT_MS 不大于动作回执超时，HTTP 动作可能先返回 202', array(
+                    Logger::warn('API_ACTION_WAIT_MS 不大于动作回执超时，HTTP 动作可能先返回 202', [
                         'action_wait_ms'   => $waitMs,
                         'action_timeout_s' => self::$actionTimeoutMax,
-                    ));
+                    ]);
                 }
             }
         };
 
         $worker->onWorkerStop = function ($worker) {
-            Logger::info('HTTP 接口正在停止', array('id' => $worker->id));
+            Logger::info('HTTP 接口正在停止', ['id' => $worker->id]);
             RedisClient::closeAll();
         };
 
@@ -232,7 +238,8 @@ class Bootstrap
      * 请求入口
      *
      * @param mixed $connection
-     * @param mixed $request Workerman\Protocols\Http\Request
+     * @param mixed $request    Workerman\Protocols\Http\Request
+     *
      * @return void
      */
     public static function onRequest($connection, $request)
@@ -240,6 +247,7 @@ class Bootstrap
         try {
             if (!$request instanceof Request) {
                 $connection->send(self::json(500, self::CODE_SERVER_ERROR, '协议解析异常', null, 500));
+
                 return;
             }
 
@@ -248,36 +256,42 @@ class Bootstrap
 
             // 存活探测：免鉴权，供负载均衡 / 容器探针使用
             if ($method === 'GET' && $path === '/health') {
-                $connection->send(self::json(200, self::CODE_OK, 'ok', array(
+                $connection->send(self::json(200, self::CODE_OK, 'ok', [
                     'service' => 'gateway-push-api',
                     'time'    => time(),
-                )));
+                ]));
+
                 return;
             }
 
             $auth = self::authenticate($request);
             if ($auth !== null) {
                 $connection->send($auth);
+
                 return;
             }
 
             if ($method === 'GET' && $path === '/stats') {
                 self::handleStats($connection);
+
                 return;
             }
 
             if ($method === 'POST' && $path === '/push') {
                 self::handlePush($connection, $request);
+
                 return;
             }
 
             if ($method === 'POST' && $path === '/action') {
                 self::handleAction($connection, $request);
+
                 return;
             }
 
             if ($method === 'GET' && str_starts_with($path, '/action/')) {
                 self::handleActionResult($connection, substr($path, strlen('/action/')));
+
                 return;
             }
 
@@ -288,6 +302,55 @@ class Bootstrap
         }
     }
 
+    /**
+     * 判断监听地址是否绑定回环
+     *
+     * 纯函数（不读静态状态），便于单测直接覆盖各类 listen 写法。
+     *
+     * 声明为 public 是为让 start.php 的环境自检与启动横幅复用**同一份**判定 ——
+     * 「能不能免签」这件事一旦出现两套实现，就必然出现"启动提示已关闭、实际仍在验签"
+     * 这类自相矛盾的输出。
+     *
+     * 刻意不用 parse_url()：它对「省略协议」（workerman 允许 0.0.0.0:8290 这类写法）
+     * 与「裸 IPv6」（::1）的解析结果不稳定，前者靠补 scheme 能救、后者直接取不到
+     * host。这是安全相关的判定，可预测性优先于写法上的"标准"，故手工解析。
+     *
+     * @param string $listen 形如 http://127.0.0.1:8290 / 0.0.0.0:8290 / http://[::1]:8290
+     *
+     * @return bool
+     */
+    public static function isLoopbackHost($listen)
+    {
+        $rest = trim((string)$listen);
+        if ($rest === '') {
+            // 判定不了就按「非回环」处理，即保留验签 —— 出错时偏向安全侧
+            return false;
+        }
+
+        // 剥掉协议头，得到 host[:port] / [::1]:port
+        $rest = preg_replace('#^[a-z][a-z0-9+.\-]*://#i', '', $rest);
+        $rest = strtolower(trim((string)$rest));
+
+        if (str_starts_with($rest, '[')) {
+            // IPv6 字面量：方括号内即 host
+            $end  = strpos($rest, ']');
+            $host = $end === false ? substr($rest, 1) : substr($rest, 1, $end - 1);
+        } elseif (substr_count($rest, ':') === 1) {
+            // 有且仅有一个冒号 → host:port
+            $host = substr($rest, 0, (int)strrpos($rest, ':'));
+        } else {
+            // 无端口，或裸 IPv6（冒号不止一个且无方括号）
+            $host = $rest;
+        }
+
+        if ($host === 'localhost' || $host === '::1') {
+            return true;
+        }
+
+        // 127.0.0.0/8 整段都是回环，不止 127.0.0.1
+        return str_starts_with($host, '127.');
+    }
+
     /* ---------------------------------------------------------------------
      | 接口实现
      | --------------------------------------------------------------------- */
@@ -295,10 +358,12 @@ class Bootstrap
     /**
      * 推送任务受理
      *
-     * @param mixed $connection
+     * @param mixed   $connection
      * @param Request $request
+     *
      * @return void
-     * @throws \JsonException
+     *
+     * @throws \JsonException 请求体不是合法 JSON 时抛出
      */
     protected static function handlePush($connection, Request $request)
     {
@@ -307,43 +372,48 @@ class Bootstrap
         $job = json_decode($body, true, 512, JSON_THROW_ON_ERROR);
         if (!is_array($job)) {
             $connection->send(self::json(400, self::CODE_BAD_PARAM, '请求体必须是合法 JSON 对象'));
+
             return;
         }
 
         $targetType = isset($job['target_type']) ? strtolower(trim((string)$job['target_type'])) : '';
         $target     = isset($job['target']) ? trim((string)$job['target']) : '';
-        $payload    = $job['payload'] ?? array();
+        $payload    = $job['payload'] ?? [];
 
-        if (!in_array($targetType, array(Push::TARGET_UID, Push::TARGET_DEVICE, Push::TARGET_CLIENT), true)) {
+        if (!in_array($targetType, [Push::TARGET_UID, Push::TARGET_DEVICE, Push::TARGET_CLIENT], true)) {
             $connection->send(self::json(400, self::CODE_BAD_PARAM, 'target_type 必须是 uid / device / client 之一'));
+
             return;
         }
         if ($target === '') {
             $connection->send(self::json(400, self::CODE_BAD_PARAM, 'target 不能为空'));
+
             return;
         }
         if (!is_array($payload)) {
             $connection->send(self::json(400, self::CODE_BAD_PARAM, 'payload 必须是 JSON 对象或数组'));
+
             return;
         }
 
-        $opts = array(
+        $opts = [
             'msg_id'       => isset($job['msg_id']) ? (string)$job['msg_id'] : '',
             'offline_mode' => isset($job['offline_mode']) ? (string)$job['offline_mode'] : '',
             'source'       => 'http',
-        );
+        ];
 
         Push::enqueue($targetType, $target, $payload, $opts, function ($ok) use ($connection, $targetType, $target, $opts) {
             if (!$ok) {
                 $connection->send(self::json(500, self::CODE_SERVER_ERROR, '推送任务入队失败', null, 500));
+
                 return;
             }
-            $connection->send(self::json(200, self::CODE_OK, 'accepted', array(
+            $connection->send(self::json(200, self::CODE_OK, 'accepted', [
                 'target_type'  => $targetType,
                 'target'       => $target,
                 'msg_id'       => $opts['msg_id'],
                 'offline_mode' => $opts['offline_mode'] !== '' ? $opts['offline_mode'] : Push::offlineMode(),
-            )));
+            ]));
         });
     }
 
@@ -351,6 +421,7 @@ class Bootstrap
      * 指标快照
      *
      * @param mixed $connection
+     *
      * @return void
      */
     protected static function handleStats($connection)
@@ -371,12 +442,14 @@ class Bootstrap
      * 入队前的失败一律给出 4xx/5xx；动作自身的失败以 HTTP 200 + 业务码返回
      * （见类注释「两类接口的差异」）。
      *
-     * @param mixed $connection
+     * @param mixed   $connection
      * @param Request $request
+     *
      * @return void
+     *
      * @throws \Exception random_bytes() 熵源异常
      *                    （8.2+ 抛 Random\RandomException，其为 \Exception 子类；
-     *                      此处标注基类，以兼容项目 PHP 8.1 下限）
+     *                    此处标注基类，以兼容项目 PHP 8.1 下限）
      */
     protected static function handleAction($connection, Request $request)
     {
@@ -386,22 +459,26 @@ class Bootstrap
             $job = json_decode($body, true, 512, JSON_THROW_ON_ERROR);
         } catch (\JsonException $e) {
             $connection->send(self::json(400, self::CODE_BAD_PARAM, '请求体不是合法 JSON：' . $e->getMessage()));
+
             return;
         }
         if (!is_array($job)) {
             $connection->send(self::json(400, self::CODE_BAD_PARAM, '请求体必须是合法 JSON 对象'));
+
             return;
         }
 
         $action = isset($job['action']) ? trim((string)$job['action']) : '';
         if ($action === '') {
             $connection->send(self::json(400, self::CODE_BAD_PARAM, 'action 不能为空'));
+
             return;
         }
 
         // 白名单前置：未知动作 / 未开放 HTTP 的动作都不必进队列
         if (!ActionRunner::has($action)) {
             $connection->send(self::json(400, Message::CODE_UNKNOWN_CMD, '未知业务动作：' . $action));
+
             return;
         }
         if (!ActionRunner::httpExposed($action)) {
@@ -410,6 +487,7 @@ class Bootstrap
                 Message::CODE_UNKNOWN_CMD,
                 '动作未开放 HTTP 通道：' . $action . '（可用：' . implode(' / ', ActionRunner::httpActions()) . '）'
             ));
+
             return;
         }
 
@@ -421,35 +499,38 @@ class Bootstrap
         // 可代表任意 uid 发起动作」，与 /push 同权，不构成提权。
         if (!empty($decl['auth']) && $uid === '') {
             $connection->send(self::json(401, Message::CODE_UNAUTHORIZED, '该动作要求身份，请提供 uid'));
+
             return;
         }
 
-        $params = isset($job['params']) ? $job['params'] : array();
+        $params = $job['params'] ?? [];
         if (!is_array($params)) {
             $connection->send(self::json(400, self::CODE_BAD_PARAM, 'params 必须是 JSON 对象'));
+
             return;
         }
 
-        $packet = Message::packet(Message::CMD_DATA, array(
+        $packet = Message::packet(Message::CMD_DATA, [
             'action' => $action,
             'params' => $params,
-        ), array(
+        ], [
             'uid'       => $uid,
             'device_id' => $deviceId,
-        ));
+        ]);
 
         $requestId = bin2hex(random_bytes(8));
 
         self::admitAction($requestId, $packet, function ($code, $msg) use ($connection, $requestId, $action) {
             if ($code !== self::CODE_OK) {
                 $connection->send(self::json(503, $code, $msg, null, 503));
+
                 return;
             }
 
-            Logger::debug('HTTP 动作已受理', array(
+            Logger::debug('HTTP 动作已受理', [
                 'request_id' => $requestId,
                 'action'     => $action,
-            ));
+            ]);
 
             self::waitForActionResult($connection, $requestId, $action);
         });
@@ -460,6 +541,7 @@ class Bootstrap
      *
      * @param mixed  $connection
      * @param string $requestId
+     *
      * @return void
      */
     protected static function handleActionResult($connection, $requestId)
@@ -468,16 +550,18 @@ class Bootstrap
 
         if (!ActionReply::validRequestId($requestId)) {
             $connection->send(self::json(400, self::CODE_BAD_PARAM, 'request_id 格式非法', null, 400));
+
             return;
         }
 
         ActionReply::fetch($requestId, function ($packet) use ($connection, $requestId) {
             if (!is_array($packet)) {
-                $connection->send(self::json(404, self::CODE_NOT_FOUND, '动作结果不存在或已过期', array(
+                $connection->send(self::json(404, self::CODE_NOT_FOUND, '动作结果不存在或已过期', [
                     'request_id' => $requestId,
                     'status'     => 'pending',
                     'hint'       => '任务可能仍在执行中，或结果已超过 ACTION_RESULT_TTL 被回收',
-                ), 404));
+                ], 404));
+
                 return;
             }
 
@@ -493,15 +577,17 @@ class Bootstrap
      *
      * @param string   $requestId
      * @param array    $packet
-     * @param callable $cb       function(int $code, string $msg)  0 表示受理成功
+     * @param callable $cb        function(int $code, string $msg)  0 表示受理成功
+     *
      * @return void
      */
     protected static function admitAction($requestId, array $packet, callable $cb)
     {
-        $conf = isset(self::$businessConfig['action_queue']) ? self::$businessConfig['action_queue'] : array();
+        $conf = self::$businessConfig['action_queue'] ?? [];
 
         if (empty($conf['enable'])) {
-            call_user_func($cb, self::CODE_SERVER_ERROR, '动作队列未启用（ACTION_QUEUE_ENABLE=false）');
+            $cb(self::CODE_SERVER_ERROR, '动作队列未启用（ACTION_QUEUE_ENABLE=false）');
+
             return;
         }
 
@@ -509,7 +595,7 @@ class Bootstrap
         $maxLen = (int)$conf['max_len'];
 
         $enqueue = function () use ($key, $requestId, $packet, $cb) {
-            $job = array(
+            $job = [
                 'request_id' => $requestId,
                 'packet'     => $packet,
                 'uid'        => isset($packet['uid']) ? (string)$packet['uid'] : '',
@@ -517,38 +603,42 @@ class Bootstrap
                 'source'     => 'http',
                 'channel'    => 'http',
                 'enqueue_at' => microtime(true),
-            );
+            ];
 
             $raw = json_encode($job, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             if ($raw === false) {
-                Logger::error('HTTP 动作任务序列化失败', array('request_id' => $requestId));
-                call_user_func($cb, self::CODE_SERVER_ERROR, '动作任务序列化失败');
+                Logger::error('HTTP 动作任务序列化失败', ['request_id' => $requestId]);
+                $cb(self::CODE_SERVER_ERROR, '动作任务序列化失败');
+
                 return;
             }
 
             RedisClient::rPush($key, $raw, function ($result) use ($requestId, $cb) {
                 if (!is_int($result)) {
-                    Logger::error('HTTP 动作任务入队失败', array('request_id' => $requestId));
-                    call_user_func($cb, self::CODE_SERVER_ERROR, '动作任务入队失败');
+                    Logger::error('HTTP 动作任务入队失败', ['request_id' => $requestId]);
+                    $cb(self::CODE_SERVER_ERROR, '动作任务入队失败');
+
                     return;
                 }
-                call_user_func($cb, self::CODE_OK, '');
+                $cb(self::CODE_OK, '');
             });
         };
 
         if ($maxLen <= 0) {
             $enqueue();
+
             return;
         }
 
         RedisClient::lLen($key, function ($len) use ($maxLen, $enqueue, $cb, $key) {
             if (is_int($len) && $len >= $maxLen) {
-                Logger::warn('动作队列积压超限，请求被拒绝', array(
+                Logger::warn('动作队列积压超限，请求被拒绝', [
                     'queue' => $key,
                     'len'   => $len,
                     'max'   => $maxLen,
-                ));
-                call_user_func($cb, self::CODE_OVERLOAD, '动作队列积压超限，请稍后重试');
+                ]);
+                $cb(self::CODE_OVERLOAD, '动作队列积压超限，请稍后重试');
+
                 return;
             }
             $enqueue();
@@ -568,6 +658,7 @@ class Bootstrap
      * @param mixed  $connection
      * @param string $requestId
      * @param string $action     仅用于日志
+     *
      * @return void
      */
     protected static function waitForActionResult($connection, $requestId, $action)
@@ -578,7 +669,7 @@ class Bootstrap
 
         // $timerId 在下方闭包内被赋值，静态分析无法跨闭包推断其可空性，
         // 故显式声明类型，避免「与 null 比较恒为假」的误报
-        /** @var int|null $timerId */
+        /** @var null|int $timerId */
         $timerId  = null;
         $finished = false;
 
@@ -608,30 +699,32 @@ class Bootstrap
                     $finished = true;
                     $stop();
                     $connection->send(self::actionResponse($requestId, $packet));
+
                     return;
                 }
 
                 if (microtime(true) >= $deadline) {
                     $finished = true;
                     $stop();
-                    Logger::warn('HTTP 动作未在等待窗内完成，降级为 202', array(
+                    Logger::warn('HTTP 动作未在等待窗内完成，降级为 202', [
                         'request_id' => $requestId,
                         'action'     => $action,
                         'waited_ms'  => (int)self::$config['action_wait'],
-                    ));
-                    $connection->send(self::json(202, self::CODE_OK, 'accepted', array(
+                    ]);
+                    $connection->send(self::json(202, self::CODE_OK, 'accepted', [
                         'request_id' => $requestId,
                         'action'     => $action,
                         'status'     => 'pending',
                         'result_url' => '/action/' . $requestId,
-                    ), 202));
+                    ], 202));
+
                     return;
                 }
 
                 // 退避：5 次以内的密集轮询足以覆盖「处理器同步回执」的常见路径，
                 // 之后逐步放宽，避免长尾请求持续打满 Redis
                 $interval = min(self::POLL_MAX_MS, (int)ceil($interval * 1.5));
-                $timerId  = Timer::add($interval / 1000, $poll, array(), false);
+                $timerId  = Timer::add($interval / 1000, $poll, [], false);
             });
         };
 
@@ -646,30 +739,31 @@ class Bootstrap
      *
      * @param string $requestId
      * @param array  $packet
+     *
      * @return Response
      */
     protected static function actionResponse($requestId, array $packet)
     {
         $cmd  = isset($packet['cmd']) ? (string)$packet['cmd'] : '';
-        $data = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : array();
+        $data = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : [];
 
         if ($cmd === Message::CMD_ACK) {
-            return self::json(200, self::CODE_OK, 'ok', array(
+            return self::json(200, self::CODE_OK, 'ok', [
                 'request_id' => $requestId,
                 'status'     => 'done',
                 'result'     => $data,
                 'packet'     => $packet,
-            ));
+            ]);
         }
 
         $code = isset($data['code']) ? (int)$data['code'] : self::CODE_SERVER_ERROR;
         $msg  = isset($data['msg']) ? (string)$data['msg'] : '动作执行失败';
 
-        return self::json(200, $code, $msg, array(
+        return self::json(200, $code, $msg, [
             'request_id' => $requestId,
             'status'     => 'failed',
             'packet'     => $packet,
-        ));
+        ]);
     }
 
     /**
@@ -686,6 +780,7 @@ class Bootstrap
                 $max = (int)$decl['timeout'];
             }
         }
+
         return $max;
     }
 
@@ -697,7 +792,8 @@ class Bootstrap
      * 请求鉴权
      *
      * @param Request $request
-     * @return Response|null 通过校验返回 null，否则返回错误响应
+     *
+     * @return null|Response 通过校验返回 null，否则返回错误响应
      */
     protected static function authenticate(Request $request)
     {
@@ -738,10 +834,11 @@ class Bootstrap
 
         $expect = hash_hmac('sha256', $timestamp . '|' . $request->rawBody(), $secret);
         if (!hash_equals($expect, strtolower($sign))) {
-            Logger::warn('接口验签失败', array(
+            Logger::warn('接口验签失败', [
                 'path' => $request->path(),
                 'ip'   => self::clientIp($request),
-            ));
+            ]);
+
             return self::json(401, self::CODE_BAD_SIGN, '签名校验失败', null, 401);
         }
 
@@ -777,54 +874,6 @@ class Bootstrap
     }
 
     /**
-     * 判断监听地址是否绑定回环
-     *
-     * 纯函数（不读静态状态），便于单测直接覆盖各类 listen 写法。
-     *
-     * 声明为 public 是为让 start.php 的环境自检与启动横幅复用**同一份**判定 ——
-     * 「能不能免签」这件事一旦出现两套实现，就必然出现"启动提示已关闭、实际仍在验签"
-     * 这类自相矛盾的输出。
-     *
-     * 刻意不用 parse_url()：它对「省略协议」（workerman 允许 0.0.0.0:8290 这类写法）
-     * 与「裸 IPv6」（::1）的解析结果不稳定，前者靠补 scheme 能救、后者直接取不到
-     * host。这是安全相关的判定，可预测性优先于写法上的"标准"，故手工解析。
-     *
-     * @param string $listen 形如 http://127.0.0.1:8290 / 0.0.0.0:8290 / http://[::1]:8290
-     * @return bool
-     */
-    public static function isLoopbackHost($listen)
-    {
-        $rest = trim((string)$listen);
-        if ($rest === '') {
-            // 判定不了就按「非回环」处理，即保留验签 —— 出错时偏向安全侧
-            return false;
-        }
-
-        // 剥掉协议头，得到 host[:port] / [::1]:port
-        $rest = preg_replace('#^[a-z][a-z0-9+.\-]*://#i', '', $rest);
-        $rest = strtolower(trim((string)$rest));
-
-        if (str_starts_with($rest, '[')) {
-            // IPv6 字面量：方括号内即 host
-            $end  = strpos($rest, ']');
-            $host = $end === false ? substr($rest, 1) : substr($rest, 1, $end - 1);
-        } elseif (substr_count($rest, ':') === 1) {
-            // 有且仅有一个冒号 → host:port
-            $host = substr($rest, 0, (int)strrpos($rest, ':'));
-        } else {
-            // 无端口，或裸 IPv6（冒号不止一个且无方括号）
-            $host = $rest;
-        }
-
-        if ($host === 'localhost' || $host === '::1') {
-            return true;
-        }
-
-        // 127.0.0.0/8 整段都是回环，不止 127.0.0.1
-        return str_starts_with($host, '127.');
-    }
-
-    /**
      * 接口密钥：api.secret 留空时回退复用 auth.secret
      *
      * @return string
@@ -835,6 +884,7 @@ class Bootstrap
         if ($secret === '') {
             $secret = isset(self::$appConfig['auth']['secret']) ? (string)self::$appConfig['auth']['secret'] : '';
         }
+
         return $secret;
     }
 
@@ -842,6 +892,7 @@ class Bootstrap
      * 单 IP 滑动分钟限流
      *
      * @param Request $request
+     *
      * @return bool 是否放行
      */
     protected static function rateLimit(Request $request)
@@ -855,7 +906,7 @@ class Bootstrap
         $key = RedisKeys::rateApi($ip);
 
         // 同步语义：单进程内用静态计数兜底，避免依赖异步回调造成误判
-        static $local = array();
+        static $local = [];
         if (!isset($local[$key])) {
             $local[$key] = 0;
         }
@@ -883,6 +934,7 @@ class Bootstrap
      *
      * @param Request $request
      * @param string  $name
+     *
      * @return string
      */
     protected static function header(Request $request, $name)
@@ -896,6 +948,7 @@ class Bootstrap
                 return is_array($value) ? (string)reset($value) : (string)$value;
             }
         }
+
         return '';
     }
 
@@ -903,6 +956,7 @@ class Bootstrap
      * 客户端 IP
      *
      * @param Request $request
+     *
      * @return string
      */
     protected static function clientIp(Request $request)
@@ -910,28 +964,31 @@ class Bootstrap
         $forwarded = self::header($request, 'x-forwarded-for');
         if ($forwarded !== '') {
             $parts = explode(',', $forwarded);
+
             return trim($parts[0]);
         }
+
         return $request->connection->getRemoteIp();
     }
 
     /**
      * 构造 JSON 响应
      *
-     * @param int         $status HTTP 状态码
-     * @param int         $code   业务码
-     * @param string      $msg
-     * @param array|null  $data
-     * @param int|null    $http
+     * @param int        $status HTTP 状态码
+     * @param int        $code   业务码
+     * @param string     $msg
+     * @param null|array $data
+     * @param null|int   $http
+     *
      * @return Response
      */
     protected static function json($status, $code, $msg, $data = null, $http = null)
     {
-        $body = array(
+        $body = [
             'code' => (int)$code,
             'msg'  => (string)$msg,
             'ts'   => time(),
-        );
+        ];
         if ($data !== null) {
             $body['data'] = $data;
         }
@@ -941,9 +998,9 @@ class Bootstrap
             $payload = '{"code":5000,"msg":"response encode failed"}';
         }
 
-        return new Response($http ?? $status, array(
+        return new Response($http ?? $status, [
             'Content-Type' => 'application/json; charset=utf-8',
-        ), $payload);
+        ], $payload);
     }
 
     /**
@@ -953,11 +1010,13 @@ class Bootstrap
      * 不得硬编码 —— 否则他处误传角色名会静默返回错误结果。
      *
      * @param string $role
+     *
      * @return bool
      */
     protected static function roleEnabled($role)
     {
         $current = defined('APP_ROLE') ? APP_ROLE : 'all';
+
         return $current === 'all' || $current === $role;
     }
 }

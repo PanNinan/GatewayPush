@@ -143,6 +143,7 @@ GatewayPush/
 │   └── dashboard/index.html          监控面板页面（自包含，零外链）
 ├── runtime/                          运行时目录（.gitignore 排除，只放产物不放人工资产）
 │   ├── logs/                         {role}_YYYY-MM-DD.log / error_YYYY-MM-DD.log / workerman.log / stdout.log
+│   │   └── archive/                  {YYYY-MM}.tar.gz（开启 LOG_ARCHIVE_ENABLE 后由 log-archive 产生）
 │   ├── pid/                          workerman_{role}.pid（Linux）/ win_{role}.pid（Windows 承载窗口）
 │   └── phpstan/                      PHPStan 分析缓存（tmpDir）
 ├── src/
@@ -214,7 +215,9 @@ GatewayPush/
 ├── AGENTS.md                         AI 协作入口（红线 / 门禁 / 目录速查，供任意 AI 工具对齐）
 ├── start.php                         统一启动入口：命令分发 + 环境自检 + 启动（实现见 src/Console/）
 ├── composer.json                    依赖与脚本
-├── phpstan.neon / phpstan-baseline.neon
+├── phpstan.neon                     静态分析配置（level 5 + 扩展 include + 刻意关闭的 strictRules）
+├── phpstan-baseline.neon            生产代码存量基线（只减不增）
+├── phpstan-tests-baseline.neon      测试代码存量基线（tests 首次纳入分析时冻结，只减不增）
 ├── phpunit.xml
 ├── .env.example                     配置模板（含全部变量的说明）
 └── docs/                             设计与接口文档
@@ -776,11 +779,23 @@ composer check          # php start.php check
 composer env-init       # php start.php env:init
 composer analyse        # phpstan analyse --memory-limit=512M
 composer baseline       # phpstan analyse --memory-limit=512M --generate-baseline
+composer cs             # php-cs-fixer 排版自动修复（唯一允许写文件的风格命令）
+composer cs:check       # php-cs-fixer 排版体检（--dry-run --diff，只报不改）
+composer lint           # phpcs 审计：注释 / 命名 / 业务红线（只读，不写文件）
+composer lint:summary   # phpcs 按嗅探器聚合的汇总视图（看趋势用）
+composer lint:errors    # phpcs 仅错误（--warning-severity=0）
+composer lint:self      # phpcs 自定义嗅探器自检（RedisKeys 漂移检测 + 作用域/豁免矩阵）
 composer test           # phpunit
 composer test:e2e       # php tests/e2e_check.php
 composer test:client-e2e # php client/tests/E2E/ClientE2E.php（客户端 SDK 同口径 15 用例）
 composer demo:http      # php tests/Api/http_demo.php（HTTP 接口调用示例，需 api/business 在跑）
 ```
+
+> **风格工具分工（刻意不重叠）**：**排版**归 `php-cs-fixer`（只有 `composer cs` 会写文件）；
+> **注释 / 命名 / 业务红线审计**归 `phpcs`（`composer lint`，只读）。
+> **不要用 `phpcbf`** —— 它会与 fixer 对同一段代码反向修（如类型 long form ↔ short form 来回震荡）。
+> 两侧刻意关掉的规则都写在配置文件头部：`.php-cs-fixer.dist.php` 的「四个界外」、
+> `phpcs.xml.dist` 文末的「四类刻意排除」，每条都附实测数据与理由。
 
 ---
 
@@ -824,8 +839,13 @@ composer demo:http      # php tests/Api/http_demo.php（HTTP 接口调用示例�
 | --------------- | ------- | ----------------------------------------------------------------- |
 | `LOG_LEVEL`     | `debug` | `debug` / `info` / `warn` / `error`                               |
 | `LOG_STDOUT`    | `true`  | 是否同时输出到控制台，生产建议 `false`                                           |
-| `LOG_KEEP_DAYS` | `30`    | 日志保留天数，超期由定时任务清理                                                  |
+| `LOG_KEEP_DAYS` | `30`    | 日志保留天数，超期由 `log-cleanup` 任务清理（进程启动后 1s 补跑一次，此后每 24h 一次） |
 | `LOG_MAX_MB`    | `10`    | `workerman.log` 单文件上限（MB）。**超出后原地截断、仅保留后半（前半丢弃），非归档轮转**；`0` = 不轮转 |
+| `LOG_ARCHIVE_ENABLE`     | `false` | 是否启用日志归档：超期明文压进 `archive/{YYYY-MM}.tar.gz` 后删除明文（见下）              |
+| `LOG_ARCHIVE_AFTER_DAYS` | `7`     | 明文转为归档的天数。**必须小于 `LOG_KEEP_DAYS`**，否则明文先被清理任务删掉、归档拿不到内容       |
+| `LOG_ARCHIVE_DIR`        | 空       | 归档目录，留空 = `runtime/logs/archive`                                    |
+| `LOG_ARCHIVE_KEEP_DAYS`  | `180`   | 归档包保留天数，超期删除                                                |
+| `LOG_ARCHIVE_LEVEL`      | `6`     | gzip 压缩级别 `1`~`9`，越界自动回落 `6`                                   |
 
 日志文件命名：`runtime/logs/{role}_{YYYY-MM-DD}.log` —— 按 **角色** 与日期分割。  
 `role` 即进程的日志通道（`register` / `gateway` / `udp` / `business` / `api` / `dashboard`；  
@@ -837,6 +857,31 @@ composer demo:http      # php tests/Api/http_demo.php（HTTP 接口调用示例�
 
 > 通道在进程启动时定型：改代码或调整角色后需**重启对应角色进程**才会写入新文件，  
 > 旧文件停止写入并按 `LOG_KEEP_DAYS` 自然淘汰，不需要迁移。
+
+**日志归档**（`LOG_ARCHIVE_ENABLE=true` 时启用，由 `log-archive` 任务驱动，每 24h 一次、  
+进程启动后 1s 补跑一次）把上面这条「按天淘汰」升级为三级生命周期：
+
+| 阶段 | 形态 | 存活期 | 用途 |
+| --- | --- | --- | --- |
+| 热明文 | `logs/{role}_{YYYY-MM-DD}.log` | `LOG_ARCHIVE_AFTER_DAYS` 天 | 实时排查 |
+| 冷归档 | `logs/archive/{YYYY-MM}.tar.gz` | 再保留 `LOG_ARCHIVE_KEEP_DAYS` 天 | 留证 / 审计 |
+| 删除 | — | — | — |
+
+包名按**文件自身日期**的月份生成，而非归档发生的月份 —— 9 月 3 日归档 8 月 27 日的日志  
+会进 `2026-08.tar.gz`，包内不跨月。包内保留原始文件名，按需单取：
+
+```bash
+tar -tzf runtime/logs/archive/2026-09.tar.gz                        # 列出内容
+tar -xzf runtime/logs/archive/2026-09.tar.gz api_2026-09-01.log     # 只取某一个
+```
+
+格式为 POSIX ustar + gzip，**只依赖 PHP 内置 zlib**（不需要 `zip` / `phar` 扩展）。
+
+> 两点实现约定：
+> 1. **先写包成功、再删明文** —— 中途失败时明文会留下，绝不会出现「明文已删、归档包里却没有」的数据空洞；既有的包若已损坏，会跳过本轮并保留明文，且不覆盖该包。
+> 2. `log-archive` 必须排在 `log-cleanup` **之前**（两者都在启动后 1s 补跑，按声明顺序触发）。颠倒会让刚超期的明文先被清理任务删掉，归档永远拿不到内容 —— 不报错、不告警，只是归档恒为空。
+>
+> `LOG_ARCHIVE_ENABLE=false`（默认）时该任务空转一次即返回，`LOG_KEEP_DAYS` 是唯一生效的保留策略。
 
 #### Redis
 
@@ -2027,11 +2072,23 @@ class OrderQueryAction implements ActionInterface
 ### 13.1 命令
 
 ```bash
-composer analyse        # PHPStan（level 5，baseline 冻结 11 条存量告警）
-composer test           # PHPUnit（443 tests / 1246 assertions；含 client/tests/Unit）
+composer analyse        # PHPStan（level 5；baseline 冻结存量：生产代码 10 条 + 测试 57 条目）
+composer test           # PHPUnit（467 tests / 1317 assertions；含 client/tests/Unit）
+composer lint           # phpcs 审计：注释 / 命名 / 业务红线（只读，不写文件）
+composer lint:self      # phpcs 自定义嗅探器自检（RedisKeys 漂移 + 作用域/豁免矩阵）
+composer cs:check       # php-cs-fixer 排版体检（只报不改；落地用 composer cs）
 composer test:e2e       # 端到端自检（16 个用例）
 composer test:client-e2e # 客户端 SDK 端到端对齐（A~O 共 15 个用例，需五角色 + Redis）
 ```
+
+> **风格工具分工（刻意不重叠）**：**排版**归 `php-cs-fixer`，只有 `composer cs` 会写文件；
+> **注释 / 命名 / 业务红线审计**归 `phpcs`（`composer lint`，只读不写）。
+> 禁用 `phpcbf` —— 它会与 fixer 对同一段代码反向修（类型 long form ↔ short form 来回震荡）。
+> 两侧刻意排除的规则见各自配置文件的头部注释，每条都附实测理由。
+>
+> `phpcs` 侧另有两条**项目自定义嗅探器**（`tools/phpcs/Sniffs/`）：`ForbiddenCallSniff`
+> 拦截 `src/` 与 `client/src/` 内的 `exit`·`die`·`sleep`·`usleep`·`pcntl_fork`；
+> `RedisKeyLiteralSniff` 拦截 Redis 键名硬编码。两者由 `composer lint:self` 自检兜底。
 
 > HTTP 侧的验签与动作接口断言另有两个**独立脚本**（不在 PHPUnit 套件内，需服务已启动）：
 >
@@ -2042,13 +2099,25 @@ composer test:client-e2e # 客户端 SDK 端到端对齐（A~O 共 15 个用例�
 
 ### 13.2 静态分析约束
 
-| 项          | 约束                                                                       |
+| 项           | 约束                                                                       |
 | ---------- | ------------------------------------------------------------------------ |
 | PHPStan 版本 | `^2.0`                                                                   |
 | 内存         | **必须带 `--memory-limit=512M`**（本机 php.ini 仅 128M，否则子进程崩溃）；已写入 composer 脚本 |
-| 分析范围       | `paths` 只含 `src`、`client/src` 与 `start.php`，**不含 `tests/`**              |
+| 分析范围       | `paths` = `src`、`client/src`、`start.php`、`tests`、`client/tests`（共 112 文件）。**`tests` 必须在列**，否则 `phpstan-phpunit` 的断言 / mock 规则不会生效 |
 | 分析口径       | `phpVersion: 80100` —— 刻意设置用于**拦截 8.2+ 语法误用**，保证 8.1 兼容性                 |
-| 收敛策略       | baseline 冻结存量告警 + 新代码零容忍；**不为让工具通过而改业务代码**                               |
+| 扩展         | `phpstan-strict-rules` + `phpstan-phpunit`，**在 `includes` 里显式声明**（本项目未装 `phpstan/extension-installer`，不写 `includes` 则规则一条都不生效） |
+| strict-rules | `strictRules.allRules: true`，仅刻意关闭 3 条：`disallowedEmpty`、`booleansInConditions`(+`booleansInLoopConditions`)、`dynamicCallOnStaticMethod`（理由见 `phpstan.neon` 内的逐条注释） |
+| 收敛策略       | **两份 baseline**：`phpstan-baseline.neon`（生产代码，10 条）/ `phpstan-tests-baseline.neon`（测试存量，57 条目）。两份都**只减不增**；**不为让工具通过而改业务代码** |
+
+> **⚠ `level` 与 baseline 必须同源**：baseline 是用哪个 level 生成的，`parameters.level` 就得是哪个值。
+> 二者不一致时，PHPStan 会对每条不再命中的条目报 `ignore.unmatched (non-ignorable)` ——
+> 一次就能把门禁刷成红色（曾发生：baseline 以 level 6 生成 362 条，而配置仍为 level 5，
+> 结果 `composer analyse` 直接报 351 errors）。
+>
+> 本项目的 level 是**刻意停在 5** 的：升到 6 会额外检查「数组缺 value 类型」，实测
+> 生产代码 + 客户端 SDK 会从 16 条涨到 367 条且几乎全是 `missingType.iterableValue`。
+> 真修要给约 60 个文件补 `array<string, mixed>` 这类 phpdoc，用 baseline 一次性豁免
+> 350 条则等于放弃「新代码零容忍」，故暂不提级。
 
 > **`ignore.unmatched` 是修复的免费验证器**：baseline 中不再匹配任何实际错误的 `ignore`  
 > 条目会触发 `ignore.unmatched (non-ignorable)` 报错。因此「删掉 baseline 条目 → 分析干净通过」  

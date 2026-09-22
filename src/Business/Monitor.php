@@ -27,10 +27,15 @@ use GatewayPush\Common\Logger;
 use GatewayPush\Common\RedisClient;
 use GatewayPush\Common\RedisKeys;
 
+/**
+ * 服务监控指标采集
+ *
+ * 业务侧只做进程内累加（零 IO），由定时任务批量刷入 metrics:counter / metrics:gauge。
+ */
 class Monitor
 {
     /** 累加型指标保留天数 */
-    const COUNTER_KEEP_DAYS = 7;
+    public const COUNTER_KEEP_DAYS = 7;
 
     /**
      * gauge Hash 中「按 PID 独立」的字段前缀
@@ -39,41 +44,42 @@ class Monitor
      * 避免两处各写一份字面量而漂移 —— 前缀一旦不一致，清理就会漏删（残留累积）
      * 或误删（活进程字段被清）。
      */
-    const FIELD_PID_AT       = 'pid_at:';
-    const FIELD_PROC         = 'proc:';
-    const FIELD_TASKS        = 'tasks:';
-    const FIELD_MEMORY_BYTES = 'memory_bytes:';
+    public const FIELD_PID_AT       = 'pid_at:';
+    public const FIELD_PROC         = 'proc:';
+    public const FIELD_TASKS        = 'tasks:';
+    public const FIELD_MEMORY_BYTES = 'memory_bytes:';
 
     /**
      * 监控配置
      *
      * @var array
      */
-    protected static $config = array(
+    protected static $config = [
         'enable'   => true,
         'interval' => 60,
         'ttl'      => 600,
-        'metrics'  => array(),
-    );
+        'metrics'  => [],
+    ];
 
     /**
      * 进程内累加计数
      *
      * @var array
      */
-    protected static $counters = array();
+    protected static $counters = [];
 
     /**
      * 进程内瞬时值
      *
      * @var array
      */
-    protected static $gauges = array();
+    protected static $gauges = [];
 
     /**
      * 初始化
      *
      * @param array $config app.monitor 配置
+     *
      * @return void
      */
     public static function init(array $config)
@@ -86,6 +92,7 @@ class Monitor
      *
      * @param string $metric
      * @param int    $step
+     *
      * @return void
      */
     public static function incr($metric, $step = 1)
@@ -104,6 +111,7 @@ class Monitor
      *
      * @param string $metric
      * @param mixed  $value
+     *
      * @return void
      */
     public static function gauge($metric, $value)
@@ -120,6 +128,7 @@ class Monitor
      * @param bool $withOnline 是否采集在线连接数。
      *                         UDP 网关进程仅有连接数以外的指标（出站收发），
      *                         且进程内无 Session/业务上下文，故传 false 跳过。
+     *
      * @return void
      */
     public static function report($withOnline = true)
@@ -177,17 +186,18 @@ class Monitor
      * 读取指标快照（供监控面板 / 运维接口调用）
      *
      * @param callable $cb function(array $snapshot)
+     *
      * @return void
      */
     public static function snapshot(callable $cb)
     {
         RedisClient::hGetAll(RedisKeys::METRICS_GAUGE, function ($gauge) use ($cb) {
             RedisClient::hGetAll(RedisKeys::metricsCounter(), function ($counter) use ($gauge, $cb) {
-                $cb(array(
-                    'gauge'   => is_array($gauge) ? $gauge : array(),
-                    'counter' => is_array($counter) ? $counter : array(),
+                $cb([
+                    'gauge'   => is_array($gauge) ? $gauge : [],
+                    'counter' => is_array($counter) ? $counter : [],
                     'task'    => Task::stats(),
-                ));
+                ]);
             });
         });
     }
@@ -199,10 +209,60 @@ class Monitor
      */
     public static function pending()
     {
-        return array(
+        return [
             'counters' => self::$counters,
             'gauges'   => self::$gauges,
-        );
+        ];
+    }
+
+    /**
+     * 从 gauge 快照中挑出「已退出进程」的残留字段名
+     *
+     * 纯计算、零 IO —— 与 Redis 读写解耦，便于单测覆盖各类边界
+     * （缺时间戳 / 脏 PID / 恰好落在阈值上 / 非进程字段混入）。
+     *
+     * 判定：`pid_at` 存在且 `0 < pid_at < now - ttl` 即视为已退出。
+     * 只认以 pid_at: 开头且后缀为纯数字的字段，其余（report_at、conn_total 等
+     * 全局字段）一律不动 —— 它们不属于任何进程，没有「退出」概念。
+     *
+     * @param array $gauge HGETALL 结果
+     * @param int   $ttl   存活宽限（秒），<=0 时视为不清理
+     * @param int   $now   当前时间戳
+     *
+     * @return array 待删除的 field 列表；无需清理时为空数组
+     */
+    public static function staleFields(array $gauge, $ttl, $now)
+    {
+        if ($ttl <= 0 || !$gauge) {
+            return [];
+        }
+
+        $deadline = $now - $ttl;
+        $fields   = [];
+
+        foreach ($gauge as $field => $value) {
+            if (!str_starts_with($field, self::FIELD_PID_AT)) {
+                continue;
+            }
+
+            $pid = substr($field, strlen(self::FIELD_PID_AT));
+            if ($pid === '' || !ctype_digit($pid)) {
+                continue;
+            }
+
+            $at = (int)$value;
+            // at <= 0：时间戳缺失/损坏的字段不删，避免把来源不明的东西误清
+            if ($at <= 0 || $at >= $deadline) {
+                continue;
+            }
+
+            $fields[] = self::FIELD_PID_AT . $pid;
+            $fields[] = self::FIELD_PROC . $pid;
+            $fields[] = self::FIELD_TASKS . $pid;
+            $fields[] = self::FIELD_MEMORY_BYTES . $pid;
+        }
+
+        return $fields;
     }
 
     /* ---------------------------------------------------------------------
@@ -217,7 +277,7 @@ class Monitor
     protected static function flushCounters()
     {
         $counters = self::$counters;
-        self::$counters = array();
+        self::$counters = [];
         if (!$counters) {
             return;
         }
@@ -245,6 +305,7 @@ class Monitor
      * @param string $gaugeKey
      * @param int    $pid
      * @param int    $now
+     *
      * @return void
      */
     protected static function flushProcessMeta($gaugeKey, $pid, $now)
@@ -257,19 +318,19 @@ class Monitor
         // 进程身份：光有 PID 无法判断它是什么进程 —— PID 会被系统回收复用，
         // 同一角色下的多个 worker 也肉眼不可分。APP_ROLE 由 start.php 定义，
         // 是进程唯一的权威身份来源。
-        $proc = json_encode(array(
+        $proc = json_encode([
             'role'      => $role,
             'worker_id' => $workerId,
-        ), JSON_UNESCAPED_UNICODE);
+        ], JSON_UNESCAPED_UNICODE);
 
         if ($proc !== false) {
             RedisClient::hSet($gaugeKey, self::FIELD_PROC . $pid, $proc);
         }
 
-        $payload = json_encode(array(
+        $payload = json_encode([
             'worker_id' => $workerId,
             'jobs'      => Task::stats(),
-        ), JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
 
         if ($payload !== false) {
             RedisClient::hSet($gaugeKey, self::FIELD_TASKS . $pid, $payload);
@@ -298,6 +359,7 @@ class Monitor
      * @param string $gaugeKey
      * @param int    $ttl
      * @param int    $now
+     *
      * @return void
      */
     protected static function purgeExitedProcesses($gaugeKey, $ttl, $now)
@@ -317,60 +379,11 @@ class Monitor
             }
 
             RedisClient::hDel($gaugeKey, $fields, function () use ($gaugeKey, $fields) {
-                Logger::info('已清理已退出进程的残留指标字段', array(
+                Logger::info('已清理已退出进程的残留指标字段', [
                     'key'    => $gaugeKey,
                     'fields' => $fields,
-                ));
+                ]);
             });
         });
-    }
-
-    /**
-     * 从 gauge 快照中挑出「已退出进程」的残留字段名
-     *
-     * 纯计算、零 IO —— 与 Redis 读写解耦，便于单测覆盖各类边界
-     * （缺时间戳 / 脏 PID / 恰好落在阈值上 / 非进程字段混入）。
-     *
-     * 判定：`pid_at` 存在且 `0 < pid_at < now - ttl` 即视为已退出。
-     * 只认以 pid_at: 开头且后缀为纯数字的字段，其余（report_at、conn_total 等
-     * 全局字段）一律不动 —— 它们不属于任何进程，没有「退出」概念。
-     *
-     * @param array $gauge HGETALL 结果
-     * @param int   $ttl   存活宽限（秒），<=0 时视为不清理
-     * @param int   $now   当前时间戳
-     * @return array 待删除的 field 列表；无需清理时为空数组
-     */
-    public static function staleFields(array $gauge, $ttl, $now)
-    {
-        if ($ttl <= 0 || !$gauge) {
-            return array();
-        }
-
-        $deadline = $now - $ttl;
-        $fields   = array();
-
-        foreach ($gauge as $field => $value) {
-            if (strpos($field, self::FIELD_PID_AT) !== 0) {
-                continue;
-            }
-
-            $pid = substr($field, strlen(self::FIELD_PID_AT));
-            if ($pid === '' || !ctype_digit($pid)) {
-                continue;
-            }
-
-            $at = (int)$value;
-            // at <= 0：时间戳缺失/损坏的字段不删，避免把来源不明的东西误清
-            if ($at <= 0 || $at >= $deadline) {
-                continue;
-            }
-
-            $fields[] = self::FIELD_PID_AT . $pid;
-            $fields[] = self::FIELD_PROC . $pid;
-            $fields[] = self::FIELD_TASKS . $pid;
-            $fields[] = self::FIELD_MEMORY_BYTES . $pid;
-        }
-
-        return $fields;
     }
 }

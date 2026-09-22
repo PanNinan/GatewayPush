@@ -20,7 +20,6 @@ use GatewayPush\Common\Env;
 $basePath = defined('BASE_PATH') ? BASE_PATH : dirname(__DIR__);
 
 return [
-
     /* ---------------------------------------------------------------
      | 应用基础信息
      --------------------------------------------------------------- */
@@ -55,13 +54,23 @@ return [
      | 日志配置
      --------------------------------------------------------------- */
     'log' => [
-        'path'           => $basePath . '/runtime/logs',
-        'level'          => Env::str('LOG_LEVEL', 'debug'),    // debug | info | warn | error
-        'rotate'         => 'daily',                           // 按天分割
-        'max_size_mb'    => Env::int('LOG_MAX_MB', 10),        // workerman.log 单文件上限（MB），0 = 不轮转
-        'keep_days'      => Env::int('LOG_KEEP_DAYS', 30),     // 自动清理超过 N 天的日志文件
-        'stdout'         => Env::bool('LOG_STDOUT', true),     // 同时输出到控制台
-        'global_handler' => true,                              // 注册全局异常 / 错误 / 致命错误捕获
+        'path'               => $basePath . '/runtime/logs',
+        'level'              => Env::str('LOG_LEVEL', 'debug'),   // debug | info | warn | error
+        // 按天分割（{role}_{YYYY-MM-DD}.log）由 Logger 内部固化，无需配置项
+        'max_size_mb'        => Env::int('LOG_MAX_MB', 10),       // workerman.log 单文件上限（MB），0 = 不轮转
+        'keep_days'          => Env::int('LOG_KEEP_DAYS', 30),    // 明文日志保留天数（归档开启后它退为兜底）
+        'stdout'             => Env::bool('LOG_STDOUT', true),    // 同时输出到控制台
+        'global_handler'     => true,                             // 注册全局异常 / 错误 / 致命错误捕获
+
+        /* 归档：把超期明文压进 archive/{YYYY-MM}.tar.gz 后删除明文（默认关闭）。
+         | 不变量：0 < archive_after_days < keep_days —— 反之明文会先被 cleanup 删掉，
+         | 归档永远拿不到内容。违反时 Logger 只告警并跳过本轮，不阻断启动。
+         | 归档产物后缀为 .tar.gz，与 cleanup 的 .log 判据天然隔离，不会被误删。 */
+        'archive_enable'     => Env::bool('LOG_ARCHIVE_ENABLE'),
+        'archive_after_days' => Env::int('LOG_ARCHIVE_AFTER_DAYS', 7),    // 明文转为归档的天数
+        'archive_dir'        => Env::str('LOG_ARCHIVE_DIR'),         // 空 = runtime/logs/archive
+        'archive_keep_days'  => Env::int('LOG_ARCHIVE_KEEP_DAYS', 180),  // 归档包保留天数
+        'archive_level'      => Env::int('LOG_ARCHIVE_LEVEL', 6),        // gzip 级别 1~9，越界回落 6
     ],
 
     /* ---------------------------------------------------------------
@@ -72,8 +81,8 @@ return [
     'redis' => [
         'host'               => Env::str('REDIS_HOST', '127.0.0.1'),
         'port'               => Env::int('REDIS_PORT', 6379),
-        'password'           => Env::str('REDIS_PASSWORD', ''),
-        'database'           => Env::int('REDIS_DB', 0),
+        'password'           => Env::str('REDIS_PASSWORD'),
+        'database'           => Env::int('REDIS_DB'),
         'timeout'            => Env::float('REDIS_TIMEOUT', 2.0),   // 连接超时（秒）
         'pool_size'          => Env::int('REDIS_POOL_SIZE', 8),     // 每进程异步连接数
         'prefix'             => Env::str('REDIS_PREFIX', 'gwpush:'),
@@ -89,7 +98,7 @@ return [
      | 避免业务鉴权密钥扩散到内部通信用途（二者泄露影响面不同）。
      --------------------------------------------------------------- */
     'internal' => [
-        'secret' => Env::str('INTERNAL_SECRET', ''),
+        'secret' => Env::str('INTERNAL_SECRET'),
     ],
 
     /* ---------------------------------------------------------------
@@ -101,7 +110,7 @@ return [
     'auth' => [
         'enable'       => Env::bool('AUTH_ENABLE', true),
         'mode'         => Env::str('AUTH_MODE', 'hmac'),
-        'secret'       => Env::str('AUTH_SECRET', ''),
+        'secret'       => Env::str('AUTH_SECRET'),
         'sign_enable'  => Env::bool('AUTH_SIGN_ENABLE', true),   // 是否校验报文签名（UDP 强烈建议开启）
         'token_ttl'    => Env::int('AUTH_TOKEN_TTL', 7200),      // 默认 Token 有效期（秒）
         'clock_skew'   => Env::int('AUTH_CLOCK_SKEW', 300),      // 允许的时钟偏移（秒）
@@ -152,7 +161,7 @@ return [
         'enable'    => Env::bool('API_ENABLE', true),
         'listen'    => Env::str('API_LISTEN', 'http://127.0.0.1:8290'),
         'name'      => 'GW-API',                                 // 进程名，结构性
-        'secret'    => Env::str('API_SECRET', ''),
+        'secret'    => Env::str('API_SECRET'),
 
         // 接口验签开关。**仅供本地调试**，默认开启。
         //
@@ -227,7 +236,7 @@ return [
             'burst' => Env::int('RATE_LIMIT_PING_BURST', 10),
         ],
 
-        'close_on_exceed' => Env::bool('RATE_LIMIT_CLOSE', false),   // 超限是否断开连接
+        'close_on_exceed' => Env::bool('RATE_LIMIT_CLOSE'),   // 超限是否断开连接
         'notify'          => Env::bool('RATE_LIMIT_NOTIFY', true),   // 超限是否回错误报文（UDP 恒定不回）
         'mem_max_buckets' => Env::int('RATE_LIMIT_MEM_MAX', 20000),  // L1 内存桶数量上限
     ],
@@ -243,7 +252,7 @@ return [
      --------------------------------------------------------------- */
     'subscribe' => [
         'enable'             => Env::bool('SUBSCRIBE_ENABLE', true),
-        'ttl'                => Env::int('SUBSCRIBE_TTL', 0),            // 订阅关系过期时间（秒），0 = 永不过期
+        'ttl'                => Env::int('SUBSCRIBE_TTL'),            // 订阅关系过期时间（秒），0 = 永不过期
         'max_topics_per_uid' => Env::int('SUBSCRIBE_MAX_TOPICS', 100),   // 单用户订阅主题数上限，0 = 不限
     ],
 

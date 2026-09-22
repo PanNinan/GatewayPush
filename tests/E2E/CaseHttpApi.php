@@ -19,11 +19,12 @@ final class CaseHttpApi
 {
     /**
      * @param Harness $h
+     *
      * @return void
      */
     public static function run(Harness $h)
     {
-        $hErrors = array();
+        $hErrors = [];
 
         $health = Harness::httpRequest('GET', $h->apiAddress . '/health');
         if (!$health['ok']) {
@@ -45,21 +46,21 @@ final class CaseHttpApi
                 echo "      API_SIGN_ENABLE=false 且监听回环：免签模式，跳过「伪造签名被拒」断言\n";
             }
 
-            $pushBody = json_encode(array(
+            $pushBody = json_encode([
                 'target_type' => 'uid',
                 'target'      => $h->ctx('H')['uid'],
-                'payload'     => array('from' => 'http-e2e'),
+                'payload'     => ['from' => 'http-e2e'],
                 'msg_id'      => 'e2e-http-' . bin2hex(random_bytes(4)),
-            ), JSON_UNESCAPED_UNICODE);
+            ], JSON_UNESCAPED_UNICODE);
 
             $timestamp = time();
             $goodSign  = hash_hmac('sha256', $timestamp . '|' . $pushBody, $h->secret);
 
-            $accepted = Harness::httpRequest('POST', $h->apiAddress . '/push', array(
+            $accepted = Harness::httpRequest('POST', $h->apiAddress . '/push', [
                 'Content-Type' => 'application/json',
                 'X-Timestamp'  => $timestamp,
                 'X-Sign'       => $goodSign,
-            ), $pushBody);
+            ], $pushBody);
 
             if (!$accepted['ok'] || $accepted['status'] !== 200
                 || !is_array($accepted['json']) || (int)$accepted['json']['code'] !== 0) {
@@ -67,11 +68,11 @@ final class CaseHttpApi
             }
 
             if (!$freeMode) {
-                $denied = Harness::httpRequest('POST', $h->apiAddress . '/push', array(
+                $denied = Harness::httpRequest('POST', $h->apiAddress . '/push', [
                     'Content-Type' => 'application/json',
                     'X-Timestamp'  => $timestamp,
                     'X-Sign'       => str_repeat('0', 64),
-                ), $pushBody);
+                ], $pushBody);
 
                 $deniedCode = is_array($denied['json']) && isset($denied['json']['code']) ? (int)$denied['json']['code'] : 0;
                 if ($denied['status'] !== 401 || $deniedCode !== 4001) {

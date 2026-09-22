@@ -18,6 +18,7 @@
  */
 
 define('BASE_PATH', dirname(__DIR__, 2));
+
 require BASE_PATH . '/vendor/autoload.php';
 
 use GatewayPush\Client\Event\PushReceiver;
@@ -31,22 +32,22 @@ $device = isset($argv[2]) ? (string)$argv[2] : 'p5-dev';
 echo "P5 重连/补投实测（客户端 A）\n";
 echo "uid={$uid} device={$device}\n";
 
-$state = array(
+$state = [
     'auth1'         => false,   // 首次鉴权完成（reconnected=0）
     'dropped'       => false,   // 被动断线已发生
     'reconnectTry'  => 0,       // 重连尝试次数
     'reconnected'   => false,   // 重连后重鉴权 reconnected=1
     'offlinePush'   => false,   // 收到 offline=1 补投
     'acked'         => 0,
-);
-$failMsg = array();
+];
+$failMsg = [];
 
 $worker = new Worker();
 
 $worker->onWorkerStart = function () use ($uid, $device, &$state, &$failMsg) {
     $transport = new WsTransport('ws://127.0.0.1:8282');
 
-    $session = new SessionManager(array(
+    $session = new SessionManager([
         'uid'            => $uid,
         'device_id'      => $device,
         'secret'         => (require BASE_PATH . '/config/app.php')['auth']['secret'],
@@ -56,7 +57,7 @@ $worker->onWorkerStart = function () use ($uid, $device, &$state, &$failMsg) {
         'reconnect_base' => 1.0,
         'reconnect_max'  => 4.0,
         'auto_auth'      => false, // 手动鉴权以便捕获 reconnected 标志
-    ), $transport);
+    ], $transport);
 
     $session->onStateChange(function ($new, $old) use ($session, &$state) {
         echo sprintf("[state] %s -> %s\n", $old, $new);
@@ -88,13 +89,17 @@ $worker->onWorkerStart = function () use ($uid, $device, &$state, &$failMsg) {
 
     $session->onError(function ($e) use (&$failMsg) {
         // 网关不可达期间的重试错误是预期路径，不计失败
-        echo "[error] " . $e->getMessage() . "\n";
+        echo '[error] ' . $e->getMessage() . "\n";
     });
 
     $receiver = new PushReceiver($session);
     $receiver->onPush(function (array $payload, array $meta) use (&$state) {
-        echo sprintf("[push] msg_id=%s offline=%d payload=%s\n",
-            $meta['msg_id'], $meta['offline'], json_encode($payload, JSON_UNESCAPED_UNICODE));
+        echo sprintf(
+            "[push] msg_id=%s offline=%d payload=%s\n",
+            $meta['msg_id'],
+            $meta['offline'],
+            json_encode($payload, JSON_UNESCAPED_UNICODE)
+        );
         if ($meta['offline'] === 1) {
             $state['offlinePush'] = true;
         }
@@ -115,25 +120,26 @@ $worker->onWorkerStart = function () use ($uid, $device, &$state, &$failMsg) {
         }
 
         echo "\n" . str_repeat('=', 60) . "\n";
-        $checks = array(
+        $checks = [
             'auth1'       => '首次鉴权 ready（reconnected=0）',
             'dropped'     => '网关停止后被动断线',
             'reconnected' => '重连后自动重鉴权（reconnected=1）',
             'offlinePush' => '离线补投 offline=1',
-        );
+        ];
         $pass = $receiver->ackedCount() >= 1;
         foreach ($checks as $key => $label) {
             $ok   = $state[$key] === true;
             $pass = $pass && $ok;
             echo sprintf("[%s] %s\n", $ok ? 'PASS' : 'FAIL', $label);
         }
-        echo "自动回执数 acked=" . $receiver->ackedCount() . "\n";
+        echo '自动回执数 acked=' . $receiver->ackedCount() . "\n";
         foreach ($failMsg as $msg) {
             echo "异常：{$msg}\n";
             $pass = false;
         }
         echo str_repeat('=', 60) . "\n";
         echo $pass ? "P5 实测结论：全部通过\n" : "P5 实测结论：存在失败项（等待 {$elapsed}s）\n";
+
         exit($pass ? 0 : 1);
     });
 };

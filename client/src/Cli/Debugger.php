@@ -30,42 +30,47 @@ use GatewayPush\Client\Transport\WsTransport;
 use Workerman\Timer;
 use Workerman\Worker;
 
+/**
+ * CLI 调试器引擎（client/bin/gwclient.php 的能力实现）
+ *
+ * 支持一次性命令、REPL 交互与 listen 挂机三种模式；复用 Protocol / Transport / Session / Service。
+ */
 class Debugger
 {
-    const VERSION = '1.0.0';
+    public const VERSION = '1.0.0';
 
     /** 一次性命令白名单 */
-    const COMMANDS = array(
+    public const COMMANDS = [
         'help', 'state', 'ping', 'echo', 'session', 'report',
         'subscribe', 'unsubscribe', 'topics', 'notify',
         'push', 'stats', 'health', 'shell', 'listen',
-    );
+    ];
 
     /** @var array 运行配置 */
     private $config;
 
-    /** @var SessionManager|null */
+    /** @var null|SessionManager */
     private $session;
 
-    /** @var PushReceiver|null */
+    /** @var null|PushReceiver */
     private $receiver;
 
     /** @var array<string,object> 已装配的业务 API */
-    private $apis = array();
+    private $apis = [];
 
     /** @var bool REPL 模式（输出需保护输入行） */
     private $repl = false;
 
-    /** @var resource|null */
+    /** @var null|resource */
     private $stdin;
 
     /**
      * @param array $config uid / device_id / secret / proto / ws_url / udp_url / api_url /
      *                      api_secret / timeout / heartbeat
      */
-    public function __construct(array $config = array())
+    public function __construct(array $config = [])
     {
-        $this->config = array_merge(array(
+        $this->config = array_merge([
             'uid'        => '',
             'device_id'  => '',              // 缺省按 uid 派生（保证同 uid 复用同一设备身份）
             'secret'     => '',
@@ -76,14 +81,16 @@ class Debugger
             'api_secret' => '',
             'timeout'    => 5.0,
             'heartbeat'  => 0,
-        ), $config);
+        ], $config);
     }
 
     /**
      * 入口：解析参数并拉起事件循环
      *
      * @param array $args 不含程序名的 argv
+     *
      * @return int 退出码（事件循环内 exit，实际不返回）
+     *
      * @throws ClientException 配置非法
      */
     public function run(array $args)
@@ -95,11 +102,13 @@ class Debugger
 
         if ($command === '' || $command === 'help' || CommandParser::flag($parsed['options'], 'help')) {
             $this->printHelp();
+
             return 0;
         }
 
         if (!in_array($command, self::COMMANDS, true)) {
             $this->line('未知命令：' . $command . '（help 查看可用命令）');
+
             return 2;
         }
 
@@ -116,7 +125,7 @@ class Debugger
         // client/bin/ 里凭空多出一个 workerman.log。显式收敛到仓库 runtime/logs，
         // 与服务端 start.php 同一处，运行时产物不散落在源码树里。
         $logDir = dirname(__DIR__, 3) . '/runtime/logs';
-        if (!is_dir($logDir) && !@mkdir($logDir, 0755, true) && !is_dir($logDir)) {
+        if (!is_dir($logDir) && !@mkdir($logDir, 0o755, true) && !is_dir($logDir)) {
             fwrite(STDERR, "[WARN] 日志目录创建失败：{$logDir}\n");
         }
         Worker::$logFile = $logDir . '/gwclient.log';
@@ -139,11 +148,12 @@ class Debugger
      * 选项覆盖运行配置
      *
      * @param array $options
+     *
      * @return void
      */
     private function applyOptions(array $options)
     {
-        $map = array(
+        $map = [
             'uid'        => 'uid',
             'device'     => 'device_id',
             'device-id'  => 'device_id',
@@ -154,7 +164,7 @@ class Debugger
             'api'        => 'api_url',
             'api-secret' => 'api_secret',
             'hb'         => 'heartbeat',
-        );
+        ];
 
         foreach ($map as $opt => $key) {
             $value = CommandParser::str($options, $opt, '');
@@ -178,6 +188,7 @@ class Debugger
      * 事件循环内的启动分发
      *
      * @param array $parsed
+     *
      * @return void
      */
     private function boot(array $parsed)
@@ -185,8 +196,9 @@ class Debugger
         $command = (string)$parsed['command'];
 
         // HTTP 管理端命令不需要长连接会话
-        if (in_array($command, array('push', 'stats', 'health'), true)) {
+        if (in_array($command, ['push', 'stats', 'health'], true)) {
             $this->runHttp($command, $parsed);
+
             return;
         }
 
@@ -195,11 +207,13 @@ class Debugger
         if ($command === 'shell') {
             $this->startRepl();
             $this->session()->connect();
+
             return;
         }
 
         if ($command === 'listen') {
             $this->startListen($parsed);
+
             return;
         }
 
@@ -207,6 +221,7 @@ class Debugger
         $this->awaitReady(function () use ($command, $parsed) {
             if ($command === 'state') {
                 $this->printState();
+
                 exit(0);
             }
             $this->execute($command, $parsed, true);
@@ -217,13 +232,14 @@ class Debugger
      * 装配会话与业务 API
      *
      * @return void
+     *
      * @throws ClientException 传输层配置非法
      */
     private function bootSession()
     {
         $transport = $this->createTransport();
 
-        $this->session = new SessionManager(array(
+        $this->session = new SessionManager([
             'uid'            => (string)$this->config['uid'],
             'device_id'      => (string)$this->config['device_id'],
             'secret'         => (string)$this->config['secret'],
@@ -233,7 +249,7 @@ class Debugger
             'reconnect_base' => 1.0,
             'reconnect_max'  => 8.0,
             'auto_auth'      => true,
-        ), $transport);
+        ], $transport);
 
         $this->session->onStateChange(function ($new, $old) {
             $this->line(sprintf('[state] %s -> %s', $old, $new));
@@ -253,19 +269,20 @@ class Debugger
             ));
         });
 
-        $this->apis = array(
+        $this->apis = [
             'echo'     => new EchoApi($this->session),
             'session'  => new SessionApi($this->session),
             'report'   => new ReportApi($this->session),
             'sub'      => new SubscribeApi($this->session),
             'notify'   => new NotifyApi($this->session),
-        );
+        ];
     }
 
     /**
      * 按 proto 创建传输层
      *
      * @return TransportInterface
+     *
      * @throws ClientException 协议非法
      */
     private function createTransport()
@@ -273,6 +290,7 @@ class Debugger
         if ((string)$this->config['proto'] === 'udp') {
             return new UdpTransport((string)$this->config['udp_url']);
         }
+
         return new WsTransport((string)$this->config['ws_url']);
     }
 
@@ -280,6 +298,7 @@ class Debugger
      * 取会话（未装配时抛错，便于静态分析与排障）
      *
      * @return SessionManager
+     *
      * @throws ClientException 未装配
      */
     private function session()
@@ -287,6 +306,7 @@ class Debugger
         if ($this->session === null) {
             throw ClientException::state('会话尚未装配');
         }
+
         return $this->session;
     }
 
@@ -298,6 +318,7 @@ class Debugger
      * 等待会话就绪后执行
      *
      * @param callable $cb
+     *
      * @return void
      */
     private function awaitReady(callable $cb)
@@ -310,13 +331,15 @@ class Debugger
 
             if ($state === SessionManager::STATE_READY) {
                 Timer::del((int)$timerId);
-                call_user_func($cb);
+                $cb();
+
                 return;
             }
 
             if ($waited > 15.0) {
                 Timer::del((int)$timerId);
                 $this->line('[fail] 等待就绪超时（当前状态 ' . $state . '）');
+
                 exit(3);
             }
         });
@@ -328,6 +351,7 @@ class Debugger
      * @param string $command
      * @param array  $parsed
      * @param bool   $exitAfter 完成后是否退出进程
+     *
      * @return void
      */
     private function execute($command, array $parsed, $exitAfter)
@@ -345,19 +369,22 @@ class Debugger
                     ));
                     $this->settle($ok, $exitAfter);
                 });
+
                 return;
 
             case 'echo':
-                $params = $this->jsonArg($args, 0, array());
-                $this->api('echo')->send(is_array($params) ? $params : array($params), function ($ok, $data, $error) use ($exitAfter) {
+                $params = $this->jsonArg($args, 0, []);
+                $this->api('echo')->send(is_array($params) ? $params : [$params], function ($ok, $data, $error) use ($exitAfter) {
                     $this->result('echo', $ok, $data, $error, $exitAfter);
                 });
+
                 return;
 
             case 'session':
                 $this->api('session')->get(function ($ok, $data, $error) use ($exitAfter) {
                     $this->result('session', $ok, $data, $error, $exitAfter);
                 });
+
                 return;
 
             case 'report':
@@ -367,20 +394,24 @@ class Debugger
                 $this->api('report')->report($topic, $count, $value, function ($ok, $data, $error) use ($exitAfter) {
                     $this->result('report', $ok, $data, $error, $exitAfter);
                 });
+
                 return;
 
             case 'subscribe':
                 $this->chainTopics('subscribe', $args, 0, $exitAfter);
+
                 return;
 
             case 'unsubscribe':
                 $this->chainTopics('unsubscribe', $args, 0, $exitAfter);
+
                 return;
 
             case 'topics':
                 $this->api('sub')->topics(function ($ok, $data, $error) use ($exitAfter) {
                     $this->result('topics', $ok, $data, $error, $exitAfter);
                 });
+
                 return;
 
             case 'notify':
@@ -395,8 +426,9 @@ class Debugger
                     }
                     Timer::add(2.0, function () use ($ok) {
                         exit($ok ? 0 : 1);
-                    }, array(), false);
+                    }, [], false);
                 });
+
                 return;
 
             default:
@@ -408,16 +440,18 @@ class Debugger
     /**
      * 主题族命令串行执行（订阅多个主题时逐个下发，避免乱序）
      *
-     * @param string $action subscribe|unsubscribe
+     * @param string $action    subscribe|unsubscribe
      * @param array  $args
      * @param int    $index
      * @param bool   $exitAfter
+     *
      * @return void
      */
     private function chainTopics($action, array $args, $index, $exitAfter)
     {
         if (!isset($args[$index])) {
             $this->settle(true, $exitAfter);
+
             return;
         }
 
@@ -426,6 +460,7 @@ class Debugger
         $next  = function ($ok) use ($action, $args, $index, $exitAfter) {
             if (!$ok) {
                 $this->settle(false, $exitAfter);
+
                 return;
             }
             $this->chainTopics($action, $args, $index + 1, $exitAfter);
@@ -434,14 +469,15 @@ class Debugger
         if ($action === 'subscribe') {
             $api->subscribe($topic, function ($ok, $data, $error) use ($topic, $next) {
                 $this->result('subscribe ' . $topic, $ok, $data, $error, false);
-                call_user_func($next, $ok);
+                $next($ok);
             });
+
             return;
         }
 
         $api->unsubscribe($topic, function ($ok, $data, $error) use ($topic, $next) {
             $this->result('unsubscribe ' . $topic, $ok, $data, $error, false);
-            call_user_func($next, $ok);
+            $next($ok);
         });
     }
 
@@ -450,6 +486,7 @@ class Debugger
      *
      * @param string $command
      * @param array  $parsed
+     *
      * @return void
      */
     private function runHttp($command, array $parsed)
@@ -469,6 +506,7 @@ class Debugger
             $api->health(function ($ok, $data, $error) {
                 $this->result('health', $ok, $data, $error, true);
             });
+
             return;
         }
 
@@ -476,13 +514,14 @@ class Debugger
             $api->stats(function ($ok, $data, $error) {
                 $this->result('stats', $ok, $data, $error, true);
             });
+
             return;
         }
 
         $targetType = CommandParser::str($parsed['options'], 'to-type', 'uid');
         $target     = CommandParser::str($parsed['options'], 'to', (string)$this->config['uid']);
-        $payload    = $this->jsonArg($parsed['args'], 0, array());
-        $pushOpts   = array();
+        $payload    = $this->jsonArg($parsed['args'], 0, []);
+        $pushOpts   = [];
         $msgId      = CommandParser::str($parsed['options'], 'msg-id', '');
         if ($msgId !== '') {
             $pushOpts['msg_id'] = $msgId;
@@ -492,7 +531,7 @@ class Debugger
             $pushOpts['offline_mode'] = $mode;
         }
 
-        $api->push($targetType, $target, is_array($payload) ? $payload : array($payload), $pushOpts, function ($ok, $data, $error) {
+        $api->push($targetType, $target, is_array($payload) ? $payload : [$payload], $pushOpts, function ($ok, $data, $error) {
             $this->result('push', $ok, $data, $error, true);
         });
     }
@@ -516,6 +555,7 @@ class Debugger
         $stdin      = fopen('php://stdin', 'r');
         if ($stdin === false) {
             $this->line('[fail] 无法打开 stdin');
+
             exit(1);
         }
         $this->stdin = $stdin;
@@ -532,6 +572,7 @@ class Debugger
      * 启动挂机监听模式
      *
      * @param array $parsed
+     *
      * @return void
      */
     private function startListen(array $parsed)
@@ -561,6 +602,7 @@ class Debugger
         }
         if (feof($stdin)) {
             $this->line('[repl] 输入结束，退出');
+
             exit(0);
         }
 
@@ -572,6 +614,7 @@ class Debugger
         $line = trim($line);
         if ($line === '') {
             $this->prompt();
+
             return;
         }
 
@@ -582,24 +625,27 @@ class Debugger
      * 非阻塞读取一行
      *
      * @param resource $stdin
-     * @return string|null null = 暂无输入
+     *
+     * @return null|string null = 暂无输入
      */
     private function readLine($stdin)
     {
-        $read   = array($stdin);
-        $write  = array();
-        $except = array();
+        $read   = [$stdin];
+        $write  = [];
+        $except = [];
         $ready  = @stream_select($read, $write, $except, 0);
 
         if ($ready === false) {
             // 降级：控制台不可 select，直接阻塞读
             $line = fgets($stdin);
+
             return $line === false ? null : $line;
         }
         if ($ready < 1) {
             return null;
         }
         $line = fgets($stdin);
+
         return $line === false ? null : $line;
     }
 
@@ -607,18 +653,21 @@ class Debugger
      * 处理一行 REPL 输入
      *
      * @param string $line
+     *
      * @return void
      */
     private function handleLine($line)
     {
         if ($line === 'quit' || $line === 'exit') {
             $this->line('[repl] 退出');
+
             exit(0);
         }
 
         if ($line === 'help') {
             $this->printReplHelp();
             $this->prompt();
+
             return;
         }
 
@@ -629,29 +678,34 @@ class Debugger
         if (!in_array($name, self::COMMANDS, true)) {
             $this->line('未知命令：' . $name);
             $this->prompt();
+
             return;
         }
 
-        if (in_array($name, array('shell', 'listen'), true)) {
+        if (in_array($name, ['shell', 'listen'], true)) {
             $this->line('[warn] shell / listen 仅在启动时可用');
             $this->prompt();
+
             return;
         }
 
-        if (in_array($name, array('push', 'stats', 'health'), true)) {
+        if (in_array($name, ['push', 'stats', 'health'], true)) {
             $this->runHttp($name, $parsed);
+
             return;
         }
 
         if ($parsed['command'] === 'state') {
             $this->printState();
             $this->prompt();
+
             return;
         }
 
         if (!$this->session()->isReady()) {
             $this->line('[warn] 未就绪（state=' . $this->session()->state() . '），命令未发送');
             $this->prompt();
+
             return;
         }
 
@@ -666,6 +720,7 @@ class Debugger
      * 输出一行（REPL 下先清行再输出，避免打断输入）
      *
      * @param string $text
+     *
      * @return void
      */
     private function line($text)
@@ -673,6 +728,7 @@ class Debugger
         if ($this->repl) {
             echo "\r" . str_repeat(' ', 100) . "\r" . $text . PHP_EOL;
             $this->prompt();
+
             return;
         }
         echo $text . PHP_EOL;
@@ -712,9 +768,10 @@ class Debugger
      *
      * @param string     $label
      * @param bool       $ok
-     * @param array|null $data
-     * @param array|null $error
+     * @param null|array $data
+     * @param null|array $error
      * @param bool       $exitAfter
+     *
      * @return void
      */
     private function result($label, $ok, $data, $error, $exitAfter)
@@ -735,6 +792,7 @@ class Debugger
      *
      * @param bool $ok
      * @param bool $exitAfter
+     *
      * @return void
      */
     private function settle($ok, $exitAfter)
@@ -742,6 +800,7 @@ class Debugger
         if (!$exitAfter) {
             return; // REPL 下每条输出已自带提示符，避免重复
         }
+
         exit($ok ? 0 : 1);
     }
 
@@ -753,7 +812,9 @@ class Debugger
      * 取业务 API 实例
      *
      * @param string $key
+     *
      * @return object
+     *
      * @throws ClientException 未装配
      */
     private function api($key)
@@ -761,15 +822,17 @@ class Debugger
         if (!isset($this->apis[$key])) {
             throw ClientException::state('API 未装配：' . $key);
         }
+
         return $this->apis[$key];
     }
 
     /**
      * 解析 JSON 位置参数
      *
-     * @param array  $args
-     * @param int    $index
-     * @param mixed  $default
+     * @param array $args
+     * @param int   $index
+     * @param mixed $default
+     *
      * @return mixed
      */
     private function jsonArg(array $args, $index, $default = null)
@@ -782,6 +845,7 @@ class Debugger
             return $raw; // 非 JSON 原样作为标量
         }
         $decoded = json_decode($raw, true);
+
         return $decoded === null ? $default : $decoded;
     }
 
@@ -793,33 +857,33 @@ class Debugger
     private function printHelp()
     {
         echo <<<TXT
-gwclient —— GatewayPush 客户端调试器 v{$this->version()}
+            gwclient —— GatewayPush 客户端调试器 v{$this->version()}
 
-用法：
-  php client/bin/gwclient.php <command> [args] [options]
-  php client/bin/gwclient.php shell                 交互模式（提示符反映连接态）
-  php client/bin/gwclient.php listen [topic...]     挂机接收推送
+            用法：
+              php client/bin/gwclient.php <command> [args] [options]
+              php client/bin/gwclient.php shell                 交互模式（提示符反映连接态）
+              php client/bin/gwclient.php listen [topic...]     挂机接收推送
 
-命令：
-  ping                       心跳往返
-  echo <json>                echo 回显（params='*' 原样透传）
-  session                    会话摘要
-  report <topic> [n] [json]  数据上报
-  subscribe <topic...>       订阅主题
-  unsubscribe <topic...>     取消订阅
-  topics                     已订阅主题
-  notify <json> [--msg-id=] [--offline-mode=]  触发自身推送
-  push <json> [--to-type=uid] [--to=] [--msg-id=] [--offline-mode=] [--bad-sign]
-  stats / health             HTTP 管理端
-  state                      本地会话状态
-  shell / listen / help
+            命令：
+              ping                       心跳往返
+              echo <json>                echo 回显（params='*' 原样透传）
+              session                    会话摘要
+              report <topic> [n] [json]  数据上报
+              subscribe <topic...>       订阅主题
+              unsubscribe <topic...>     取消订阅
+              topics                     已订阅主题
+              notify <json> [--msg-id=] [--offline-mode=]  触发自身推送
+              push <json> [--to-type=uid] [--to=] [--msg-id=] [--offline-mode=] [--bad-sign]
+              stats / health             HTTP 管理端
+              state                      本地会话状态
+              shell / listen / help
 
-常用选项：
-  --uid=xxx --device=xxx --secret=xxx --proto=ws|udp
-  --ws=ws://host:port --udp=udp://host:port --api=http://host:port
-  --timeout=5 --hb=0（主动心跳秒数，0=关闭）
+            常用选项：
+              --uid=xxx --device=xxx --secret=xxx --proto=ws|udp
+              --ws=ws://host:port --udp=udp://host:port --api=http://host:port
+              --timeout=5 --hb=0（主动心跳秒数，0=关闭）
 
-TXT;
+            TXT;
     }
 
     /**

@@ -13,6 +13,11 @@
 
 namespace GatewayPush\Console;
 
+/**
+ * 端口占用探测
+ *
+ * 独立成类以保证自检报告与启动横幅判定一致；Windows 走 netstat 快照而非 bind 探测。
+ */
 final class PortProbe
 {
     /**
@@ -23,12 +28,13 @@ final class PortProbe
      *
      * @var array<string,array<int,bool>>
      */
-    private static $netstatCache = array();
+    private static $netstatCache = [];
 
     /**
      * 判断监听地址对应的端口是否已被占用
      *
      * @param string $listen 形如 websocket://0.0.0.0:8282 / udp://0.0.0.0:8283 / tcp://127.0.0.1:1238
+     *
      * @return bool true 表示已被占用
      */
     public static function isUsed($listen)
@@ -44,6 +50,7 @@ final class PortProbe
             $colon = strrpos($target, ':');
             if ($colon !== false) {
                 $ports = self::usedPortsByNetstat($isUdp ? 'udp' : 'tcp');
+
                 return isset($ports[(int)substr($target, $colon + 1)]);
             }
         }
@@ -63,6 +70,7 @@ final class PortProbe
             return true;
         }
         @fclose($socket);
+
         return false;
     }
 
@@ -72,6 +80,7 @@ final class PortProbe
      * netstat 输出的状态列在中文 Windows 下仍为英文（LISTENING），可安全匹配。
      *
      * @param string $protocol 'tcp' 或 'udp'
+     *
      * @return array 端口号 => true
      */
     private static function usedPortsByNetstat($protocol)
@@ -80,8 +89,8 @@ final class PortProbe
             return self::$netstatCache[$protocol];
         }
 
-        $ports = array();
-        $lines = array();
+        $ports = [];
+        $lines = [];
         @exec('netstat -a -n -p ' . strtoupper($protocol), $lines);
 
         foreach ($lines as $line) {
@@ -109,6 +118,7 @@ final class PortProbe
         }
 
         self::$netstatCache[$protocol] = $ports;
+
         return $ports;
     }
 }

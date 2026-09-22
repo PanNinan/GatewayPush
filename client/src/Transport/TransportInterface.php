@@ -29,7 +29,9 @@ interface TransportInterface
      * 发送一帧文本
      *
      * @param string $frame
+     *
      * @return void
+     *
      * @throws \GatewayPush\Client\Error\ClientException 连接未建立时
      */
     public function send($frame);
@@ -52,6 +54,7 @@ interface TransportInterface
      * 注册握手完成回调
      *
      * @param callable $cb function (): void
+     *
      * @return void
      */
     public function onOpen(callable $cb);
@@ -60,6 +63,7 @@ interface TransportInterface
      * 注册收帧回调
      *
      * @param callable $cb function (string $frame): void
+     *
      * @return void
      */
     public function onMessage(callable $cb);
@@ -68,6 +72,7 @@ interface TransportInterface
      * 注册断开回调
      *
      * @param callable $cb function (): void
+     *
      * @return void
      */
     public function onClose(callable $cb);
@@ -76,6 +81,7 @@ interface TransportInterface
      * 注册底层错误回调
      *
      * @param callable $cb function (int $code, string $message): void
+     *
      * @return void
      */
     public function onError(callable $cb);

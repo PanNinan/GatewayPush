@@ -46,7 +46,7 @@
  * 兼容 PHP 8.1 ~ 8.5
  */
 error_reporting(E_ALL & ~E_DEPRECATED);
-define('BASE_PATH', __DIR__);
+const BASE_PATH = __DIR__;
 define('START_AT', microtime(true));
 
 /* ---------------------------------------------------------------------
@@ -55,8 +55,10 @@ define('START_AT', microtime(true));
 $autoload = BASE_PATH . '/vendor/autoload.php';
 if (!is_file($autoload)) {
     fwrite(STDERR, "[FATAL] 依赖未安装，请先执行：composer install\n");
+
     exit(1);
 }
+
 require $autoload;
 
 use GatewayPush\Business\Auth;
@@ -71,15 +73,16 @@ use Workerman\Worker;
 /* ---------------------------------------------------------------------
  | 2. 命令与角色解析
  --------------------------------------------------------------------- */
-$argvList = $argv ?? array();
+$argvList = $argv ?? [];
 $command  = $argvList[1] ?? 'help';
 $role     = 'all';
 
 // 提取 --role=xxx 并从 argv 中剔除，避免干扰 workerman 自身的命令解析
-$cleanArgv = array();
+$cleanArgv = [];
 foreach ($argvList as $item) {
     if (str_starts_with($item, '--role=')) {
         $role = substr($item, 7);
+
         continue;
     }
     $cleanArgv[] = $item;
@@ -89,9 +92,10 @@ if (isset($_SERVER['argv'])) {
     $_SERVER['argv'] = $cleanArgv;
 }
 
-$validRoles = array('all', 'register', 'gateway', 'udp', 'business', 'api', 'dashboard');
+$validRoles = ['all', 'register', 'gateway', 'udp', 'business', 'api', 'dashboard'];
 if (!in_array($role, $validRoles, true)) {
     fwrite(STDERR, '[FATAL] 非法启动角色：' . $role . '，可选值：' . implode(' / ', $validRoles) . "\n");
+
     exit(1);
 }
 define('APP_ROLE', $role);
@@ -124,10 +128,11 @@ if (empty($appConfig['internal']['secret'])) {
 /* ---------------------------------------------------------------------
  | 4. 运行时目录准备
  --------------------------------------------------------------------- */
-foreach (array('runtime_path', 'log_path', 'pid_path') as $key) {
+foreach (['runtime_path', 'log_path', 'pid_path'] as $key) {
     $dir = $appConfig['runtime'][$key];
-    if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
+    if (!is_dir($dir) && !@mkdir($dir, 0o755, true) && !is_dir($dir)) {
         fwrite(STDERR, '[FATAL] 运行时目录创建失败：' . $dir . "\n");
+
         exit(1);
     }
 }
@@ -135,8 +140,9 @@ foreach (array('runtime_path', 'log_path', 'pid_path') as $key) {
 /* ---------------------------------------------------------------------
  | 5. 自定义命令（不进入 workerman 主流程）
  --------------------------------------------------------------------- */
-if (in_array($command, array('help', '-h', '--help'), true)) {
+if (in_array($command, ['help', '-h', '--help'], true)) {
     echo Commands::usage();
+
     exit(0);
 }
 
@@ -147,20 +153,22 @@ if ($command === 'env:init') {
 if ($command === 'token') {
     Auth::init($appConfig['auth']);
 
-    $uid = isset($cleanArgv[2]) ? (string)$cleanArgv[2] : '';
+    $uid = $cleanArgv[2] ?? '';
     if ($uid === '') {
         fwrite(STDERR, "用法：php start.php token <uid> [device_id] [ttl]\n");
+
         exit(1);
     }
-    $deviceId = isset($cleanArgv[3]) ? (string)$cleanArgv[3] : '';
+    $deviceId = $cleanArgv[3] ?? '';
     $ttl      = isset($cleanArgv[4]) ? (int)$cleanArgv[4] : 0;
 
-    $token = Auth::issue(array('uid' => $uid, 'device_id' => $deviceId), $ttl);
+    $token = Auth::issue(['uid' => $uid, 'device_id' => $deviceId], $ttl);
 
     echo "uid       : {$uid}\n";
     echo "device_id : {$deviceId}\n";
     echo 'ttl       : ' . ($ttl > 0 ? $ttl : (int)$appConfig['auth']['token_ttl']) . "s\n";
     echo "token     : {$token}\n";
+
     exit(0);
 }
 
@@ -171,15 +179,16 @@ if ($command === 'push') {
 if ($command === 'check') {
     $result = EnvChecker::check($appConfig, $gatewayConfig, $businessConfig, $actionConfig);
     echo $result['text'];
+
     exit($result['ok'] ? 0 : 1);
 }
 
 if ($command === 'info') {
     // 可选参数为逗号分隔的角色列表，供管理脚本按实际启动范围过滤；
     // 非角色名一律忽略而非报错 —— 该命令是只读展示，不应因参数写法失败。
-    $infoRoles = array();
-    if (isset($cleanArgv[2]) && trim((string)$cleanArgv[2]) !== '') {
-        foreach (explode(',', strtolower((string)$cleanArgv[2])) as $infoItem) {
+    $infoRoles = [];
+    if (isset($cleanArgv[2]) && trim($cleanArgv[2]) !== '') {
+        foreach (explode(',', strtolower($cleanArgv[2])) as $infoItem) {
             $infoItem = trim($infoItem);
             if ($infoItem !== '' && $infoItem !== 'all' && in_array($infoItem, $validRoles, true)) {
                 $infoRoles[] = $infoItem;
@@ -188,6 +197,7 @@ if ($command === 'info') {
     }
 
     echo Banner::render($appConfig, $gatewayConfig, $businessConfig, $infoRoles, true);
+
     exit(0);
 }
 
@@ -198,6 +208,7 @@ if ($command === 'roles') {
     //
     // 输出格式即契约，消费方读取 role / enabled / env 三个字段，不解析人读文案。
     echo Commands::roles($gatewayConfig, $businessConfig, $appConfig) . "\n";
+
     exit(0);
 }
 
@@ -208,6 +219,7 @@ $envResult = EnvChecker::check($appConfig, $gatewayConfig, $businessConfig, $act
 if (!$envResult['ok']) {
     echo $envResult['text'];
     fwrite(STDERR, "\n[FATAL] 环境自检未通过，启动终止。修正后可用 php start.php check 复检。\n");
+
     exit(1);
 }
 
@@ -236,6 +248,7 @@ if (DIRECTORY_SEPARATOR !== '/' && $role === 'all') {
     echo Commands::usage();
     fwrite(STDERR, "\n[FATAL] Windows 下不支持单文件启动全部组件（workerman 限制）。\n");
     fwrite(STDERR, "        请按角色分别启动，或改用 Linux 部署。\n");
+
     exit(1);
 }
 
@@ -251,12 +264,12 @@ if (DIRECTORY_SEPARATOR !== '/' && $role === 'all') {
  |
  | 带 -q 时跳过，与 workerman 自身的静默语义保持一致。
  --------------------------------------------------------------------- */
-if (in_array($command, array('start', 'restart'), true) && !in_array('-q', $cleanArgv, true)) {
+if (in_array($command, ['start', 'restart'], true) && !in_array('-q', $cleanArgv, true)) {
     echo Banner::render(
         $appConfig,
         $gatewayConfig,
         $businessConfig,
-        $role === 'all' ? array() : array($role),
+        $role === 'all' ? [] : [$role],
         false,
         in_array('-d', $cleanArgv, true) ? 'DAEMON' : 'DEBUG'
     );

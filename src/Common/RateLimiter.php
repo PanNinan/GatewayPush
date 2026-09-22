@@ -43,41 +43,46 @@
 
 namespace GatewayPush\Common;
 
+/**
+ * 报文级限流（两层实现不可互换）
+ *
+ * L1 内存桶用于 UDP 验签前（零 IO、每来源 IP）；L2 Redis 令牌桶用于业务侧（每连接 + 每 uid）。
+ */
 class RateLimiter
 {
     /** 维度：每连接（clientId） */
-    const DIM_CONN = 'conn';
+    public const DIM_CONN = 'conn';
 
     /** 维度：每用户（uid） */
-    const DIM_UID = 'uid';
+    public const DIM_UID = 'uid';
 
     /** 维度：每来源 IP */
-    const DIM_IP = 'ip';
+    public const DIM_IP = 'ip';
 
     /** 维度：心跳指令（ping），配额独立且更严 */
-    const DIM_PING = 'ping';
+    public const DIM_PING = 'ping';
 
     /** 超限日志采样间隔（秒/维度），防止被限流的洪水写爆日志 */
-    const LOG_INTERVAL = 1.0;
+    public const LOG_INTERVAL = 1.0;
 
     /** 内存桶键前缀（仅 L1 使用） */
-    const MEM_PREFIX = 'mem:';
+    public const MEM_PREFIX = 'mem:';
 
     /**
      * 限流配置（app.rate_limit）
      *
      * @var array
      */
-    protected static $config = array(
+    protected static $config = [
         'enable'          => true,
-        'conn'            => array('rate' => 20,  'burst' => 40),
-        'uid'             => array('rate' => 50,  'burst' => 100),
-        'ip'              => array('rate' => 200, 'burst' => 400),
-        'ping'            => array('rate' => 5,   'burst' => 10),
+        'conn'            => ['rate' => 20, 'burst' => 40],
+        'uid'             => ['rate' => 50, 'burst' => 100],
+        'ip'              => ['rate' => 200, 'burst' => 400],
+        'ping'            => ['rate' => 5, 'burst' => 10],
         'close_on_exceed' => false,
         'notify'          => true,
         'mem_max_buckets' => 20000,
-    );
+    ];
 
     /**
      * 进程内内存桶（L1）
@@ -86,22 +91,23 @@ class RateLimiter
      *
      * @var array
      */
-    protected static $buckets = array();
+    protected static $buckets = [];
 
     /**
      * 超限日志采样时间戳：{ dim => float(秒) }
      *
      * @var array
      */
-    protected static $logAt = array();
+    protected static $logAt = [];
 
     /**
      * 初始化
      *
      * @param array $config app.rate_limit
+     *
      * @return void
      */
-    public static function init(array $config = array())
+    public static function init(array $config = [])
     {
         self::$config = array_merge(self::$config, $config);
     }
@@ -142,13 +148,14 @@ class RateLimiter
      * 读取维度配额
      *
      * @param string $dim
+     *
      * @return array ['rate' => int, 'burst' => int]，rate <= 0 表示该维度不限流
      */
     public static function spec($dim)
     {
         $spec = isset(self::$config[$dim]) && is_array(self::$config[$dim])
             ? self::$config[$dim]
-            : array();
+            : [];
 
         $rate  = isset($spec['rate']) ? (int)$spec['rate'] : 0;
         $burst = isset($spec['burst']) ? (int)$spec['burst'] : 0;
@@ -158,7 +165,7 @@ class RateLimiter
             $burst = $rate;
         }
 
-        return array('rate' => $rate, 'burst' => $burst);
+        return ['rate' => $rate, 'burst' => $burst];
     }
 
     /* ---------------------------------------------------------------------
@@ -174,6 +181,7 @@ class RateLimiter
      * @param string $dim  维度（本层通常为 DIM_IP）
      * @param string $id   维度主体（IP / clientId / uid）
      * @param int    $cost 本次消耗令牌数
+     *
      * @return bool 是否放行
      */
     public static function checkMemory($dim, $id, $cost = 1)
@@ -193,10 +201,10 @@ class RateLimiter
 
         if (!isset(self::$buckets[$key])) {
             self::evictIfNeeded();
-            self::$buckets[$key] = array(
+            self::$buckets[$key] = [
                 'tokens' => (float)$spec['burst'],
                 'ts'     => $now,
-            );
+            ];
         }
 
         $bucket = &self::$buckets[$key];
@@ -211,7 +219,124 @@ class RateLimiter
         }
 
         $bucket['tokens'] -= $cost;
+
         return true;
+    }
+
+    /* ---------------------------------------------------------------------
+     | L2：Redis 令牌桶（跨进程共享）
+     --------------------------------------------------------------------- */
+
+    /**
+     * 构造桶定义
+     *
+     * 主体标识统一 md5 压缩：uid 可能含任意字符，且避免键名过长。
+     *
+     * @param string $dim
+     * @param string $id
+     *
+     * @return array 空数组表示该维度未启用限流
+     */
+    public static function bucket($dim, $id)
+    {
+        $spec = self::spec($dim);
+        if ($spec['rate'] <= 0 || (string)$id === '') {
+            return [];
+        }
+
+        return [
+            'key'   => RedisKeys::rateBucket($dim, $id),
+            'rate'  => $spec['rate'],
+            'burst' => $spec['burst'],
+        ];
+    }
+
+    /**
+     * Redis 多桶判定
+     *
+     * @param array    $buckets bucket() 返回的桶定义列表（可含空数组，自动忽略）
+     * @param int      $cost
+     * @param callable $cb      function(bool $allowed)
+     *
+     * @return void
+     */
+    public static function acquire(array $buckets, $cost, callable $cb)
+    {
+        $valid = [];
+        foreach ($buckets as $bucket) {
+            if (is_array($bucket) && !empty($bucket['key'])) {
+                $valid[] = $bucket;
+            }
+        }
+
+        if (!self::enabled() || !$valid) {
+            $cb(true);
+
+            return;
+        }
+
+        RedisClient::tokenBuckets($valid, $cost, function ($allowed, $error = '') use ($cb) {
+            if ($allowed === null) {
+                // Redis 异常：fail-open 放行，避免限流器故障放大为业务全量中断
+                Logger::error('限流器不可用，按 fail-open 放行', ['error' => $error]);
+                $cb(true);
+
+                return;
+            }
+            $cb((bool)$allowed);
+        });
+    }
+
+    /* ---------------------------------------------------------------------
+     | 可观测性辅助
+     --------------------------------------------------------------------- */
+
+    /**
+     * 超限日志（按维度采样，每秒最多一条）
+     *
+     * 被限流的流量本身就是洪水，逐条记录会让日志成为新的瓶颈。
+     *
+     * @param string $dim
+     * @param string $id
+     * @param array  $extra
+     *
+     * @return void
+     */
+    public static function logReject($dim, $id, array $extra = [])
+    {
+        $now = microtime(true);
+        if (isset(self::$logAt[$dim]) && $now - self::$logAt[$dim] < self::LOG_INTERVAL) {
+            return;
+        }
+        self::$logAt[$dim] = $now;
+
+        Logger::warn('报文超限已拒绝（日志按维度采样）', array_merge([
+            'dim'   => $dim,
+            'rate'  => self::spec($dim)['rate'],
+            'burst' => self::spec($dim)['burst'],
+            'from'  => substr((string)$id, 0, 64),
+        ], $extra));
+    }
+
+    /**
+     * 重置进程内状态（仅测试使用）
+     *
+     * @return void
+     */
+    public static function reset()
+    {
+        self::$buckets = [];
+        self::$logAt   = [];
+    }
+
+    /**
+     * 当前内存桶数量（仅观测/测试使用）
+     *
+     * @return int
+     */
+    public static function bucketCount()
+    {
+        return count(self::$buckets);
     }
 
     /**
@@ -233,6 +358,7 @@ class RateLimiter
             if ($a['ts'] === $b['ts']) {
                 return 0;
             }
+
             return $a['ts'] < $b['ts'] ? -1 : 1;
         });
 
@@ -242,121 +368,10 @@ class RateLimiter
         $now = microtime(true);
         if (!isset(self::$logAt['__evict']) || $now - self::$logAt['__evict'] >= self::LOG_INTERVAL) {
             self::$logAt['__evict'] = $now;
-            Logger::warn('限流内存桶达到上限，已淘汰最旧的一半', array(
+            Logger::warn('限流内存桶达到上限，已淘汰最旧的一半', [
                 'limit' => $max,
                 'kept'  => count(self::$buckets),
-            ));
+            ]);
         }
-    }
-
-    /* ---------------------------------------------------------------------
-     | L2：Redis 令牌桶（跨进程共享）
-     --------------------------------------------------------------------- */
-
-    /**
-     * 构造桶定义
-     *
-     * 主体标识统一 md5 压缩：uid 可能含任意字符，且避免键名过长。
-     *
-     * @param string $dim
-     * @param string $id
-     * @return array 空数组表示该维度未启用限流
-     */
-    public static function bucket($dim, $id)
-    {
-        $spec = self::spec($dim);
-        if ($spec['rate'] <= 0 || (string)$id === '') {
-            return array();
-        }
-
-        return array(
-            'key'   => RedisKeys::rateBucket($dim, $id),
-            'rate'  => $spec['rate'],
-            'burst' => $spec['burst'],
-        );
-    }
-
-    /**
-     * Redis 多桶判定
-     *
-     * @param array    $buckets bucket() 返回的桶定义列表（可含空数组，自动忽略）
-     * @param int      $cost
-     * @param callable $cb      function(bool $allowed)
-     * @return void
-     */
-    public static function acquire(array $buckets, $cost, callable $cb)
-    {
-        $valid = array();
-        foreach ($buckets as $bucket) {
-            if (is_array($bucket) && !empty($bucket['key'])) {
-                $valid[] = $bucket;
-            }
-        }
-
-        if (!self::enabled() || !$valid) {
-            call_user_func($cb, true);
-            return;
-        }
-
-        RedisClient::tokenBuckets($valid, $cost, function ($allowed, $error = '') use ($cb) {
-            if ($allowed === null) {
-                // Redis 异常：fail-open 放行，避免限流器故障放大为业务全量中断
-                Logger::error('限流器不可用，按 fail-open 放行', array('error' => $error));
-                call_user_func($cb, true);
-                return;
-            }
-            call_user_func($cb, (bool)$allowed);
-        });
-    }
-
-    /* ---------------------------------------------------------------------
-     | 可观测性辅助
-     --------------------------------------------------------------------- */
-
-    /**
-     * 超限日志（按维度采样，每秒最多一条）
-     *
-     * 被限流的流量本身就是洪水，逐条记录会让日志成为新的瓶颈。
-     *
-     * @param string $dim
-     * @param string $id
-     * @param array  $extra
-     * @return void
-     */
-    public static function logReject($dim, $id, array $extra = array())
-    {
-        $now = microtime(true);
-        if (isset(self::$logAt[$dim]) && $now - self::$logAt[$dim] < self::LOG_INTERVAL) {
-            return;
-        }
-        self::$logAt[$dim] = $now;
-
-        Logger::warn('报文超限已拒绝（日志按维度采样）', array_merge(array(
-            'dim'   => $dim,
-            'rate'  => self::spec($dim)['rate'],
-            'burst' => self::spec($dim)['burst'],
-            'from'  => substr((string)$id, 0, 64),
-        ), $extra));
-    }
-
-    /**
-     * 重置进程内状态（仅测试使用）
-     *
-     * @return void
-     */
-    public static function reset()
-    {
-        self::$buckets = array();
-        self::$logAt   = array();
-    }
-
-    /**
-     * 当前内存桶数量（仅观测/测试使用）
-     *
-     * @return int
-     */
-    public static function bucketCount()
-    {
-        return count(self::$buckets);
     }
 }

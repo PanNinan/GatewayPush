@@ -23,6 +23,11 @@ namespace GatewayPush\Client\Protocol;
 use GatewayPush\Business\Message;
 use JsonException;
 
+/**
+ * 报文签名（服务端 Message 的薄适配）
+ *
+ * uid 不参与签名；WS 通道不校验签名，客户端一律计算并携带。
+ */
 final class Signer
 {
     /**
@@ -30,6 +35,7 @@ final class Signer
      *
      * @param array  $packet
      * @param string $secret
+     *
      * @return string 64 位十六进制
      */
     public static function sign(array $packet, $secret)
@@ -41,8 +47,10 @@ final class Signer
      * 业务数据规范化字符串：递归按键名升序 + 紧凑 JSON
      *
      * @param mixed $data
+     *
      * @return string
-     * @throws JsonException
+     *
+     * @throws JsonException 数据无法编码为 JSON 时抛出
      */
     public static function canonicalize($data)
     {
@@ -56,19 +64,21 @@ final class Signer
      * 一旦任一侧漂移即测试失败。
      *
      * @param array $packet
+     *
      * @return string
-     * @throws JsonException
+     *
+     * @throws JsonException data 无法编码为 JSON 时抛出
      */
     public static function baseString(array $packet)
     {
-        return implode('|', array(
+        return implode('|', [
             isset($packet['cmd']) ? (string)$packet['cmd'] : '',
             isset($packet['seq']) ? (string)$packet['seq'] : '',
             isset($packet['ts']) ? (string)$packet['ts'] : '',
             isset($packet['device_id']) ? (string)$packet['device_id'] : '',
             isset($packet['token']) ? (string)$packet['token'] : '',
-            self::canonicalize($packet['data'] ?? array()),
-        ));
+            self::canonicalize($packet['data'] ?? []),
+        ]);
     }
 
     /**
@@ -80,14 +90,15 @@ final class Signer
      * @param array  $packet
      * @param string $secret
      * @param int    $clockSkew 允许的时间戳偏差（秒），<=0 表示不校验
+     *
      * @return array ['ok'=>bool,'code'=>int,'msg'=>string]
      */
     public static function verify(array $packet, $secret, $clockSkew = 300)
     {
-        return Message::verify($packet, array(
+        return Message::verify($packet, [
             'sign_enable' => true,
             'secret'      => (string)$secret,
             'clock_skew'  => (int)$clockSkew,
-        ));
+        ]);
     }
 }

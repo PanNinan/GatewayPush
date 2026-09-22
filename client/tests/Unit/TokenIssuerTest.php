@@ -22,7 +22,7 @@ use PHPUnit\Framework\TestCase;
 
 class TokenIssuerTest extends TestCase
 {
-    const SECRET = 'unit-test-secret';
+    public const SECRET = 'unit-test-secret';
 
     /* ---------------------------------------------------------------------
      | 构造与基础
@@ -61,33 +61,33 @@ class TokenIssuerTest extends TestCase
         $issuer = new TokenIssuer(self::SECRET);
 
         try {
-            $issuer->issue(array('device_id' => 'd1'));
+            $issuer->issue(['device_id' => 'd1']);
             self::fail('缺少 uid 必须抛 ClientException');
         } catch (ClientException $e) {
             self::assertSame(ErrorCode::CLIENT_CONFIG, $e->getCode());
         }
 
         $this->expectException(ClientException::class);
-        $issuer->issue(array('uid' => ''));
+        $issuer->issue(['uid' => '']);
     }
 
     public function testIssueProducesTwoPartBase64UrlToken(): void
     {
-        $token = (new TokenIssuer(self::SECRET))->issue(array('uid' => 'alice'));
+        $token = (new TokenIssuer(self::SECRET))->issue(['uid' => 'alice']);
 
         self::assertSame(1, preg_match('#^[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+$#', $token));
         // URL 安全 base64：不得出现 '+' '/' '=' 填充
         self::assertStringNotContainsString('=', $token);
         self::assertStringNotContainsString('+', $token);
         self::assertStringNotContainsString('/', $token);
-        self::assertSame(2, count(explode('.', $token)));
+        self::assertCount(2, explode('.', $token));
     }
 
     public function testIssuePayloadContract(): void
     {
         $issuer = new TokenIssuer(self::SECRET);
         $before = time();
-        $token  = $issuer->issue(array('uid' => 'alice', 'device_id' => 'dev1'), 600);
+        $token  = $issuer->issue(['uid' => 'alice', 'device_id' => 'dev1'], 600);
         $after  = time();
 
         $claims = $issuer->peek($token);
@@ -103,7 +103,7 @@ class TokenIssuerTest extends TestCase
     public function testIssueUsesDefaultTtlWhenOmitted(): void
     {
         $issuer = new TokenIssuer(self::SECRET, 60);
-        $claims = $issuer->peek($issuer->issue(array('uid' => 'alice')));
+        $claims = $issuer->peek($issuer->issue(['uid' => 'alice']));
 
         self::assertSame(60, $claims['exp'] - $claims['iat']);
     }
@@ -112,7 +112,7 @@ class TokenIssuerTest extends TestCase
     {
         $this->expectException(ClientException::class);
 
-        (new TokenIssuer(self::SECRET))->issue(array('uid' => 'alice'), -5);
+        (new TokenIssuer(self::SECRET))->issue(['uid' => 'alice'], -5);
     }
 
     /* ---------------------------------------------------------------------
@@ -122,7 +122,7 @@ class TokenIssuerTest extends TestCase
     public function testInspectAcceptsOwnToken(): void
     {
         $issuer = new TokenIssuer(self::SECRET);
-        $token  = $issuer->issue(array('uid' => 'alice', 'device_id' => 'dev1'));
+        $token  = $issuer->issue(['uid' => 'alice', 'device_id' => 'dev1']);
 
         $result = $issuer->inspect($token);
 
@@ -152,7 +152,7 @@ class TokenIssuerTest extends TestCase
 
     public function testInspectRejectsWrongSecret(): void
     {
-        $token  = (new TokenIssuer(self::SECRET))->issue(array('uid' => 'alice'));
+        $token  = (new TokenIssuer(self::SECRET))->issue(['uid' => 'alice']);
         $result = (new TokenIssuer('another-secret'))->inspect($token);
 
         self::assertFalse($result['ok']);
@@ -163,7 +163,7 @@ class TokenIssuerTest extends TestCase
     public function testInspectRejectsTamperedPayload(): void
     {
         $issuer = new TokenIssuer(self::SECRET);
-        $token  = $issuer->issue(array('uid' => 'alice'));
+        $token  = $issuer->issue(['uid' => 'alice']);
 
         $parts = explode('.', $token);
         $body  = $parts[0];
@@ -180,7 +180,7 @@ class TokenIssuerTest extends TestCase
     {
         $issuer = new TokenIssuer(self::SECRET);
         // claims 在 array_merge 中覆盖默认值，故可构造「签发即过期」的 Token
-        $token  = $issuer->issue(array('uid' => 'alice', 'exp' => time() - 10));
+        $token  = $issuer->issue(['uid' => 'alice', 'exp' => time() - 10]);
 
         $result = $issuer->inspect($token);
 
@@ -192,7 +192,7 @@ class TokenIssuerTest extends TestCase
     public function testInspectRejectsFutureIssuedAt(): void
     {
         $issuer = new TokenIssuer(self::SECRET, 0, 300);
-        $token  = $issuer->issue(array('uid' => 'alice', 'iat' => time() + 3600));
+        $token  = $issuer->issue(['uid' => 'alice', 'iat' => time() + 3600]);
 
         $result = $issuer->inspect($token);
 
@@ -205,14 +205,14 @@ class TokenIssuerTest extends TestCase
     {
         // clock_skew = 0 时服务端不校验 iat，此处必须与之一致
         $issuer = new TokenIssuer(self::SECRET, 0, 0);
-        $token  = $issuer->issue(array('uid' => 'alice', 'iat' => time() + 3600));
+        $token  = $issuer->issue(['uid' => 'alice', 'iat' => time() + 3600]);
 
         self::assertTrue($issuer->inspect($token)['ok']);
     }
 
     public function testClaimsReturnsEmptyArrayOnFailure(): void
     {
-        self::assertSame(array(), (new TokenIssuer(self::SECRET))->claims('garbage'));
+        self::assertSame([], (new TokenIssuer(self::SECRET))->claims('garbage'));
     }
 
     /* ---------------------------------------------------------------------
@@ -221,7 +221,7 @@ class TokenIssuerTest extends TestCase
 
     public function testPeekDecodesWithoutVerifying(): void
     {
-        $token = (new TokenIssuer(self::SECRET))->issue(array('uid' => 'alice', 'device_id' => 'dev1'));
+        $token = (new TokenIssuer(self::SECRET))->issue(['uid' => 'alice', 'device_id' => 'dev1']);
 
         // 换成错密钥的 issuer：inspect 必失败，peek 仍可读出载荷
         $other = new TokenIssuer('another-secret');
@@ -235,11 +235,11 @@ class TokenIssuerTest extends TestCase
     {
         $issuer = new TokenIssuer(self::SECRET);
 
-        self::assertSame(array(), $issuer->peek(''));
-        self::assertSame(array(), $issuer->peek('not-a-token'));
-        self::assertSame(array(), $issuer->peek('a.b.c'));
-        self::assertSame(array(), $issuer->peek('!!!.sig'));
-        self::assertSame(array(), $issuer->peek('aGVsbG8.sig'));
+        self::assertSame([], $issuer->peek(''));
+        self::assertSame([], $issuer->peek('not-a-token'));
+        self::assertSame([], $issuer->peek('a.b.c'));
+        self::assertSame([], $issuer->peek('!!!.sig'));
+        self::assertSame([], $issuer->peek('aGVsbG8.sig'));
     }
 
     /* ---------------------------------------------------------------------
@@ -249,9 +249,9 @@ class TokenIssuerTest extends TestCase
     public function testIssueDelegatesToServerAuth(): void
     {
         // 服务端 Auth 为静态类，先按同一密钥初始化，验证客户端产出可被服务端直接认可
-        Auth::init(array('secret' => self::SECRET, 'token_ttl' => 7200));
+        Auth::init(['secret' => self::SECRET, 'token_ttl' => 7200]);
 
-        $token  = (new TokenIssuer(self::SECRET))->issue(array('uid' => 'alice'));
+        $token  = (new TokenIssuer(self::SECRET))->issue(['uid' => 'alice']);
         $result = Auth::verifyLocal($token);
 
         self::assertTrue($result['ok']);
@@ -260,8 +260,8 @@ class TokenIssuerTest extends TestCase
 
     public function testServerIssuedTokenIsAcceptedByClient(): void
     {
-        Auth::init(array('secret' => self::SECRET, 'token_ttl' => 7200));
-        $token = Auth::issue(array('uid' => 'bob', 'device_id' => 'dev9'));
+        Auth::init(['secret' => self::SECRET, 'token_ttl' => 7200]);
+        $token = Auth::issue(['uid' => 'bob', 'device_id' => 'dev9']);
 
         $result = (new TokenIssuer(self::SECRET))->inspect($token);
 
@@ -276,11 +276,11 @@ class TokenIssuerTest extends TestCase
     public function testMultipleIssuersDoNotLeakSecret(): void
     {
         $issuerA = new TokenIssuer('secret-a', 7200);
-        $tokenA  = $issuerA->issue(array('uid' => 'alice'));
+        $tokenA  = $issuerA->issue(['uid' => 'alice']);
 
         // 后建实例若污染了 Auth 的静态密钥，issuerA 的校验会跟着失效
         $issuerB = new TokenIssuer('secret-b', 7200);
-        $tokenB  = $issuerB->issue(array('uid' => 'bob'));
+        $tokenB  = $issuerB->issue(['uid' => 'bob']);
 
         self::assertTrue($issuerA->inspect($tokenA)['ok'], 'issuerA 必须仍能用 secret-a 校验自己的 Token');
         self::assertTrue($issuerB->inspect($tokenB)['ok'], 'issuerB 必须能用 secret-b 校验自己的 Token');

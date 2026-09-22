@@ -38,15 +38,16 @@ final class CaseHttpAction
      * POST /action 为同步等待语义，服务端最长等待 API_ACTION_WAIT_MS（默认 6s），
      * 客户端超时必须留出余量，否则会把「服务端仍在正常等待」误判为请求失败。
      */
-    const TIMEOUT = 20;
+    public const TIMEOUT = 20;
 
     /**
      * @param Harness $h
+     *
      * @return void
      */
     public static function run(Harness $h)
     {
-        $errors = array();
+        $errors = [];
         $ctx    = $h->ctx('P');
 
         self::checkEcho($h, $ctx, $errors);
@@ -74,30 +75,33 @@ final class CaseHttpAction
      * @param Harness $h
      * @param array   $ctx
      * @param array   $errors
+     *
      * @return void
      */
     private static function checkEcho(Harness $h, array $ctx, array &$errors)
     {
-        $params = array('probe' => 'http-action-e2e', 'n' => 42);
+        $params = ['probe' => 'http-action-e2e', 'n' => 42];
 
-        $res = self::callAction($h, array(
+        $res = self::callAction($h, [
             'action' => 'echo',
             'uid'    => $ctx['uid'],
             'params' => $params,
-        ));
+        ]);
 
         if (!$res['ok']) {
             $errors[] = 'POST /action 不可达（api 角色未启动？）：' . $res['error'];
+
             return;
         }
 
         if ($res['status'] !== 200 || (int)$res['json']['code'] !== 0) {
             $errors[] = sprintf('echo 未被正常受理：HTTP %d，响应 %s', $res['status'], $res['body']);
+
             return;
         }
 
-        $data   = isset($res['json']['data']) ? $res['json']['data'] : array();
-        $result = isset($data['result']) && is_array($data['result']) ? $data['result'] : array();
+        $data   = $res['json']['data'] ?? [];
+        $result = isset($data['result']) && is_array($data['result']) ? $data['result'] : [];
 
         if (!isset($data['status']) || $data['status'] !== 'done') {
             $errors[] = 'echo 响应缺少 status=done';
@@ -106,11 +110,11 @@ final class CaseHttpAction
             $errors[] = 'echo 响应缺少 request_id';
         }
         if (!isset($result['params']) || $result['params'] !== $params) {
-            $errors[] = 'echo 未原样回显 params：' . json_encode(isset($result['params']) ? $result['params'] : null);
+            $errors[] = 'echo 未原样回显 params：' . json_encode($result['params'] ?? null);
         }
         // 通道必须回报为 http —— 这一项直接验证 ActionRunner 的前缀表判定正确
         if (!isset($result['channel']) || $result['channel'] !== 'http') {
-            $errors[] = 'echo 回报的 channel 不是 http：' . (isset($result['channel']) ? $result['channel'] : '(缺失)');
+            $errors[] = 'echo 回报的 channel 不是 http：' . ($result['channel'] ?? '(缺失)');
         }
     }
 
@@ -125,25 +129,28 @@ final class CaseHttpAction
      * @param Harness $h
      * @param array   $ctx
      * @param array   $errors
+     *
      * @return void
      */
     private static function checkReportPersisted(Harness $h, array $ctx, array &$errors)
     {
-        $payload = array(
+        $payload = [
             'action' => 'report',
             'uid'    => $ctx['uid'],
-            'params' => array('topic' => $ctx['topic'], 'count' => 1),
-        );
+            'params' => ['topic' => $ctx['topic'], 'count' => 1],
+        ];
 
         $first = self::callAction($h, $payload);
         if (!$first['ok'] || $first['status'] !== 200 || (int)$first['json']['code'] !== 0) {
             $errors[] = sprintf('report 首次调用失败：HTTP %d，响应 %s', $first['status'], $first['body']);
+
             return;
         }
 
         $second = self::callAction($h, $payload);
         if (!$second['ok'] || $second['status'] !== 200 || (int)$second['json']['code'] !== 0) {
             $errors[] = sprintf('report 二次调用失败：HTTP %d，响应 %s', $second['status'], $second['body']);
+
             return;
         }
 
@@ -152,10 +159,12 @@ final class CaseHttpAction
 
         if ($t1 === null || $t2 === null) {
             $errors[] = 'report 回执缺少 total 字段';
+
             return;
         }
         if ($t2 !== $t1 + 1) {
             $errors[] = sprintf('report 计数未按预期递增：首次 total=%s，二次 total=%s', var_export($t1, true), var_export($t2, true));
+
             return;
         }
 
@@ -168,31 +177,32 @@ final class CaseHttpAction
      * @param Harness $h
      * @param array   $ctx
      * @param array   $errors
+     *
      * @return void
      */
     private static function checkRejections(Harness $h, array $ctx, array &$errors)
     {
         // session 依赖 clientId 语义，声明中刻意未开放 HTTP
-        $res = self::callAction($h, array('action' => 'session', 'uid' => $ctx['uid']));
+        $res = self::callAction($h, ['action' => 'session', 'uid' => $ctx['uid']]);
         if ($res['status'] !== 400 || (int)$res['json']['code'] !== 4006) {
             $errors[] = sprintf(
                 '未开放 HTTP 的动作未被拒绝：HTTP %d，业务码 %s（期望 400 / 4006）',
                 $res['status'],
-                isset($res['json']['code']) ? $res['json']['code'] : '(无)'
+                $res['json']['code'] ?? '(无)'
             );
         }
 
-        $res = self::callAction($h, array('action' => 'no_such_action', 'uid' => $ctx['uid']));
+        $res = self::callAction($h, ['action' => 'no_such_action', 'uid' => $ctx['uid']]);
         if ($res['status'] !== 400 || (int)$res['json']['code'] !== 4006) {
             $errors[] = sprintf(
                 '未知动作未被拒绝：HTTP %d，业务码 %s（期望 400 / 4006）',
                 $res['status'],
-                isset($res['json']['code']) ? $res['json']['code'] : '(无)'
+                $res['json']['code'] ?? '(无)'
             );
         }
 
         // report 的 topic 为必填 —— 参数校验在业务进程执行，错误经回程桥透出
-        $res = self::callAction($h, array('action' => 'report', 'uid' => $ctx['uid'], 'params' => array()));
+        $res = self::callAction($h, ['action' => 'report', 'uid' => $ctx['uid'], 'params' => []]);
         if ($res['status'] !== 200) {
             $errors[] = sprintf(
                 '动作级参数错误应以 HTTP 200 + 业务码返回，实际 HTTP %d',
@@ -201,7 +211,7 @@ final class CaseHttpAction
         } elseif ((int)$res['json']['code'] !== 4007) {
             $errors[] = sprintf(
                 '缺少必填参数未被拒绝：业务码 %s（期望 4007）',
-                isset($res['json']['code']) ? $res['json']['code'] : '(无)'
+                $res['json']['code'] ?? '(无)'
             );
         } elseif (!isset($res['json']['data']['status']) || $res['json']['data']['status'] !== 'failed') {
             $errors[] = '动作级错误响应的 data.status 不是 failed';
@@ -213,6 +223,7 @@ final class CaseHttpAction
      *
      * @param Harness $h
      * @param array   $errors
+     *
      * @return void
      */
     private static function checkMissingResult(Harness $h, array &$errors)
@@ -224,10 +235,10 @@ final class CaseHttpAction
         $res = Harness::httpRequest(
             'GET',
             $h->apiAddress . '/action/' . $missing,
-            array(
+            [
                 'X-Timestamp' => $ts,
                 'X-Sign'      => hash_hmac('sha256', $ts . '|', $h->secret),
-            ),
+            ],
             '',
             self::TIMEOUT
         );
@@ -246,6 +257,7 @@ final class CaseHttpAction
      *
      * @param Harness $h
      * @param array   $body
+     *
      * @return array
      */
     private static function callAction(Harness $h, array $body)
@@ -256,11 +268,11 @@ final class CaseHttpAction
         return Harness::httpRequest(
             'POST',
             $h->apiAddress . '/action',
-            array(
+            [
                 'Content-Type' => 'application/json',
                 'X-Timestamp'  => $ts,
                 'X-Sign'       => hash_hmac('sha256', $ts . '|' . $raw, $h->secret),
-            ),
+            ],
             (string)$raw,
             self::TIMEOUT
         );
@@ -271,6 +283,7 @@ final class CaseHttpAction
      *
      * @param array  $res
      * @param string $key
+     *
      * @return mixed
      */
     private static function resultField(array $res, $key)

@@ -31,16 +31,22 @@ use GatewayPush\Client\Error\ErrorCode;
 use Workerman\Connection\AsyncUdpConnection;
 use Workerman\Timer;
 
+/**
+ * UDP 传输（AsyncUdpConnection 的封装）
+ *
+ * 承载两条 UDP 特有策略：延迟首包（避开建连瞬间丢包）与应用层重传
+ * （收到任何下行即视为此前最近一条未确认报文已送达）。
+ */
 final class UdpTransport implements TransportInterface
 {
     /** 预热窗口时长（秒）：窗口内 send() 入队，窗口结束统一补发 */
-    const DEFAULT_FIRST_SEND_DELAY = 0.2;
+    public const DEFAULT_FIRST_SEND_DELAY = 0.2;
 
     /** 重传间隔（秒）：与 e2e Harness::udpSendUntilAck 的实测口径一致 */
-    const DEFAULT_RETRANSMIT_INTERVAL = 1.2;
+    public const DEFAULT_RETRANSMIT_INTERVAL = 1.2;
 
     /** 单报文最大发送次数（含首发）：超过后放弃并触发 onError */
-    const DEFAULT_MAX_ATTEMPTS = 4;
+    public const DEFAULT_MAX_ATTEMPTS = 4;
 
     /**
      * 服务地址（udp://host:port）
@@ -61,7 +67,7 @@ final class UdpTransport implements TransportInterface
     /**
      * 底层连接（默认 AsyncUdpConnection，单测为假连接；关闭后置 null）
      *
-     * @var object|null
+     * @var null|object
      */
     private $conn;
 
@@ -87,14 +93,14 @@ final class UdpTransport implements TransportInterface
      *
      * @var array
      */
-    private $queue = array();
+    private $queue = [];
 
     /**
      * 在途报文：frame => 已发送次数（收到下行即确认最旧一笔）
      *
      * @var array
      */
-    private $inflight = array();
+    private $inflight = [];
 
     /**
      * 累计放弃的报文数（重传耗尽）
@@ -103,10 +109,10 @@ final class UdpTransport implements TransportInterface
      */
     private $dropped = 0;
 
-    /** @var int|null 预热定时器 id */
+    /** @var null|int 预热定时器 id */
     private $warmupTimerId;
 
-    /** @var int|null 重传定时器 id */
+    /** @var null|int 重传定时器 id */
     private $retransmitTimerId;
 
     /** @var callable 计时器创建 function (float $interval, bool $persistent, callable $fn): int */
@@ -115,32 +121,33 @@ final class UdpTransport implements TransportInterface
     /** @var callable 计时器删除 function (int $timerId): void */
     private $timerDel;
 
-    /** @var callable|null function (): void */
+    /** @var null|callable function (): void */
     private $onOpenCb;
 
-    /** @var callable|null function (string $frame): void */
+    /** @var null|callable function (string $frame): void */
     private $onMessageCb;
 
-    /** @var callable|null function (): void */
+    /** @var null|callable function (): void */
     private $onCloseCb;
 
-    /** @var callable|null function (int $code, string $message): void */
+    /** @var null|callable function (int $code, string $message): void */
     private $onErrorCb;
 
     /**
-     * @param string         $url         udp://host:port
-     * @param array          $options     first_send_delay / retransmit_interval / max_attempts
-     * @param callable|null  $connFactory 连接工厂（单测注入假连接），缺省创建 AsyncUdpConnection
-     * @param callable|null  $timerAdd    计时器创建（单测注入假计时器）
-     * @param callable|null  $timerDel    计时器删除
+     * @param string        $url         udp://host:port
+     * @param array         $options     first_send_delay / retransmit_interval / max_attempts
+     * @param null|callable $connFactory 连接工厂（单测注入假连接），缺省创建 AsyncUdpConnection
+     * @param null|callable $timerAdd    计时器创建（单测注入假计时器）
+     * @param null|callable $timerDel    计时器删除
+     *
      * @throws ClientException URL 非法
      */
     public function __construct(
         $url,
-        array $options = array(),
-        callable $connFactory = null,
-        callable $timerAdd = null,
-        callable $timerDel = null
+        array $options = [],
+        ?callable $connFactory = null,
+        ?callable $timerAdd = null,
+        ?callable $timerDel = null
     ) {
         $url    = (string)$url;
         $scheme = parse_url($url, PHP_URL_SCHEME);
@@ -157,18 +164,14 @@ final class UdpTransport implements TransportInterface
         $this->maxAttempts        = isset($options['max_attempts'])
             ? max(1, (int)$options['max_attempts']) : self::DEFAULT_MAX_ATTEMPTS;
 
-        $self         = $this;
+        // 闭包在方法体内创建即自动绑定 $this，无需另存一份 $self
         $this->connFactory = $connFactory !== null
             ? $connFactory
-            : function () use ($self) {
-                return new AsyncUdpConnection($self->url);
-            };
+            : fn () => new AsyncUdpConnection($this->url);
 
         $this->timerAdd = $timerAdd !== null
             ? $timerAdd
-            : function ($interval, $persistent, $fn) {
-                return Timer::add($interval, $fn, array(), $persistent);
-            };
+            : fn ($interval, $persistent, $fn) => Timer::add($interval, $fn, [], $persistent);
         $this->timerDel = $timerDel !== null
             ? $timerDel
             : function ($timerId) {
@@ -177,7 +180,7 @@ final class UdpTransport implements TransportInterface
     }
 
     /**
-     * @inheritDoc
+     * {@inheritDoc}
      */
     public function connect()
     {
@@ -185,12 +188,12 @@ final class UdpTransport implements TransportInterface
             return; // 幂等：已在建连/已连接，重复调用无副作用
         }
 
-        $conn = call_user_func($this->connFactory);
+        $conn = ($this->connFactory)();
 
         $conn->onConnect = function () {
             $this->connected = true;
             if ($this->onOpenCb !== null) {
-                call_user_func($this->onOpenCb);
+                ($this->onOpenCb)();
             }
         };
 
@@ -204,15 +207,15 @@ final class UdpTransport implements TransportInterface
             $this->conn      = null;
             $this->stopTimers();
             if ($this->onCloseCb !== null) {
-                call_user_func($this->onCloseCb);
+                ($this->onCloseCb)();
             }
         };
 
         // AsyncUdpConnection 无 onError 回调（UDP 无连接级错误事件），保留接口占位
 
         $this->conn     = $conn;
-        $this->inflight = array();
-        $this->queue    = array();
+        $this->inflight = [];
+        $this->queue    = [];
         // 预热标记必须先于 connect() 置位：onConnect 同步回调里 SessionManager
         // 会立即发 auth，该报文须入队等待窗口结束补发（硬约束⑩）
         $this->warmup   = true;
@@ -221,7 +224,9 @@ final class UdpTransport implements TransportInterface
     }
 
     /**
-     * @inheritDoc
+     * {@inheritDoc}
+     *
+     * @throws ClientException 连接未建立时抛出
      */
     public function send($frame)
     {
@@ -233,6 +238,7 @@ final class UdpTransport implements TransportInterface
 
         if ($this->warmup) {
             $this->queue[] = $frame;
+
             return;
         }
 
@@ -240,7 +246,7 @@ final class UdpTransport implements TransportInterface
     }
 
     /**
-     * @inheritDoc
+     * {@inheritDoc}
      */
     public function close()
     {
@@ -252,7 +258,7 @@ final class UdpTransport implements TransportInterface
     }
 
     /**
-     * @inheritDoc
+     * {@inheritDoc}
      */
     public function isConnected()
     {
@@ -260,7 +266,7 @@ final class UdpTransport implements TransportInterface
     }
 
     /**
-     * @inheritDoc
+     * {@inheritDoc}
      */
     public function onOpen(callable $cb)
     {
@@ -268,7 +274,7 @@ final class UdpTransport implements TransportInterface
     }
 
     /**
-     * @inheritDoc
+     * {@inheritDoc}
      */
     public function onMessage(callable $cb)
     {
@@ -276,7 +282,7 @@ final class UdpTransport implements TransportInterface
     }
 
     /**
-     * @inheritDoc
+     * {@inheritDoc}
      */
     public function onClose(callable $cb)
     {
@@ -284,7 +290,7 @@ final class UdpTransport implements TransportInterface
     }
 
     /**
-     * @inheritDoc
+     * {@inheritDoc}
      */
     public function onError(callable $cb)
     {
@@ -337,6 +343,7 @@ final class UdpTransport implements TransportInterface
      * 下行」即可确认「最旧在途报文已送达」。
      *
      * @param string $raw
+     *
      * @return void
      */
     private function handleInbound($raw)
@@ -349,7 +356,7 @@ final class UdpTransport implements TransportInterface
         }
 
         if ($this->onMessageCb !== null) {
-            call_user_func($this->onMessageCb, $raw);
+            ($this->onMessageCb)($raw);
         }
     }
 
@@ -357,6 +364,7 @@ final class UdpTransport implements TransportInterface
      * 实际发送并登记在途（重传跟踪）
      *
      * @param string $frame
+     *
      * @return void
      */
     private function doSend($frame)
@@ -382,12 +390,17 @@ final class UdpTransport implements TransportInterface
         $this->warmupTimerId = null;
 
         $queued = $this->queue;
-        $this->queue = array();
+        $this->queue = [];
         foreach ($queued as $frame) {
             $this->doSend($frame);
         }
     }
 
+    /**
+     * 启动预热窗口计时器（窗口结束后补发首包）
+     *
+     * @return void
+     */
     private function scheduleWarmup()
     {
         if ($this->warmupTimerId !== null) {
@@ -398,6 +411,11 @@ final class UdpTransport implements TransportInterface
         });
     }
 
+    /**
+     * 确保重传计时器处于运行态（惰性启动：仅在途表非空时注册）
+     *
+     * @return void
+     */
     private function ensureRetransmit()
     {
         if (count($this->inflight) === 0 || $this->retransmitTimerId !== null) {
@@ -426,12 +444,13 @@ final class UdpTransport implements TransportInterface
                 unset($this->inflight[$frame]);
                 $this->dropped++;
                 if ($this->onErrorCb !== null) {
-                    call_user_func($this->onErrorCb, ErrorCode::CLIENT_TRANSPORT, sprintf(
+                    ($this->onErrorCb)(ErrorCode::CLIENT_TRANSPORT, sprintf(
                         'UDP 报文重传 %d 次未收到回执，已放弃（%d 字节）',
                         $this->maxAttempts,
                         strlen($frame)
                     ));
                 }
+
                 continue;
             }
 
@@ -439,11 +458,16 @@ final class UdpTransport implements TransportInterface
             $this->conn->send($frame);
         }
 
-        if (count($this->inflight) > 0) {
-            $this->ensureRetransmit();
-        }
+        // 不必再判 count($this->inflight)：ensureRetransmit() 首行已自守
+        // 「在途为空则直接返回」，此处多一次判断既冗余、静态分析下又恒真
+        $this->ensureRetransmit();
     }
 
+    /**
+     * 停止重传计时器
+     *
+     * @return void
+     */
     private function stopRetransmit()
     {
         if ($this->retransmitTimerId !== null) {
@@ -452,6 +476,11 @@ final class UdpTransport implements TransportInterface
         }
     }
 
+    /**
+     * 停止本类注册的全部计时器（预热窗口 + 重传）
+     *
+     * @return void
+     */
     private function stopTimers()
     {
         $this->stopRetransmit();
@@ -461,15 +490,31 @@ final class UdpTransport implements TransportInterface
         }
     }
 
+    /**
+     * 注册计时器（经注入的 add 函数，单测可替换为假实现）
+     *
+     * @param float    $interval
+     * @param bool     $persistent
+     * @param callable $fn
+     *
+     * @return int 计时器 ID
+     */
     private function addTimer($interval, $persistent, $fn)
     {
-        return (int)call_user_func($this->timerAdd, (float)$interval, $persistent, $fn);
+        return (int)($this->timerAdd)((float)$interval, $persistent, $fn);
     }
 
+    /**
+     * 删除计时器（ID 为 0 / null 时静默跳过）
+     *
+     * @param null|int $timerId
+     *
+     * @return void
+     */
     private function delTimer($timerId)
     {
         if ($timerId) {
-            call_user_func($this->timerDel, (int)$timerId);
+            ($this->timerDel)((int)$timerId);
         }
     }
 }

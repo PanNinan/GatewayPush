@@ -13,6 +13,7 @@
  */
 
 define('BASE_PATH', dirname(__DIR__, 2));
+
 require BASE_PATH . '/vendor/autoload.php';
 
 use GatewayPush\Client\Session\SessionManager;
@@ -25,7 +26,7 @@ $secret = (require BASE_PATH . '/config/app.php')['auth']['secret'];
 
 echo "P5 设备绑定首胜验证 uid={$uid}\n";
 
-$result = array();
+$result = [];
 
 $worker = new Worker();
 
@@ -34,12 +35,13 @@ $worker->onWorkerStart = function () use ($uid, $secret, &$result) {
      * 单次鉴权尝试
      *
      * @param string   $device
-     * @param callable $done function(bool $ok, int $code, string $msg)
+     * @param callable $done   function(bool $ok, int $code, string $msg)
+     *
      * @return void
      */
     $attempt = function ($device, callable $done) use ($uid, $secret) {
         $transport = new WsTransport('ws://127.0.0.1:8282');
-        $session   = new SessionManager(array(
+        $session   = new SessionManager([
             'uid'       => $uid,
             'device_id' => $device,
             'secret'    => $secret,
@@ -47,7 +49,7 @@ $worker->onWorkerStart = function () use ($uid, $secret, &$result) {
             'timeout'   => 5.0,
             'reconnect' => false,
             'auto_auth' => false,
-        ), $transport);
+        ], $transport);
 
         $settled = false;
         $finish  = function ($ok, $code, $msg) use (&$settled, $done, $session) {
@@ -56,7 +58,7 @@ $worker->onWorkerStart = function () use ($uid, $secret, &$result) {
             }
             $settled = true;
             $session->close();
-            call_user_func($done, $ok, $code, $msg);
+            $done($ok, $code, $msg);
         };
 
         $session->onStateChange(function ($new, $old) use ($session, $finish) {
@@ -73,12 +75,12 @@ $worker->onWorkerStart = function () use ($uid, $secret, &$result) {
             if ($new === SessionManager::STATE_DISCONNECTED && $old !== SessionManager::STATE_DISCONNECTED) {
                 \Workerman\Timer::add(0.5, function () use ($finish) {
                     $finish(false, -1, '连接被服务端关闭（鉴权失败断连）');
-                }, array(), false);
+                }, [], false);
             }
         });
 
         $session->onError(function ($e) {
-            echo "  [error] " . $e->getMessage() . "\n";
+            echo '  [error] ' . $e->getMessage() . "\n";
         });
 
         $session->connect();
@@ -98,7 +100,7 @@ $worker->onWorkerStart = function () use ($uid, $secret, &$result) {
             $redis = new RedisClient('redis://127.0.0.1:6379');
             $redis->select(9, function () use ($redis, $uid, $attempt, &$result) {
                 $key = 'gwpush:auth:bind:' . $uid;
-                $redis->del($key, function ($r) use ($redis, $uid, $key, $attempt, &$result) {
+                $redis->del($key, function ($r) use ($redis, $key, $attempt, &$result) {
                     echo sprintf("[3] 清除绑定键 %s -> del=%s\n", $key, var_export($r, true));
                     $redis->close();
 
@@ -114,6 +116,7 @@ $worker->onWorkerStart = function () use ($uid, $secret, &$result) {
                         echo sprintf("[%s] 清绑后可换设备\n", $result['afterClear'] ? 'PASS' : 'FAIL');
                         echo str_repeat('=', 60) . "\n";
                         echo $pass ? "P5 设备绑定结论：全部通过\n" : "P5 设备绑定结论：存在失败项\n";
+
                         exit($pass ? 0 : 1);
                     });
                 });

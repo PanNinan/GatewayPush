@@ -25,43 +25,6 @@ final class SessionManagerTest extends TestCase
 {
     use FakeTimers;
 
-    private function makeSession(array $overrides = array(), FakeTransport &$transport = null)
-    {
-        $this->makeTimers();
-
-        $transport = new FakeTransport();
-        $config    = array_merge(array(
-            'uid'       => 'alice',
-            'device_id' => 'dev1',
-            'secret'    => 'test-secret',
-        ), $overrides);
-
-        return new SessionManager($config, $transport, null, $this->timerAdd, $this->timerDel);
-    }
-
-    /** 建连并完成鉴权，进入 ready */
-    private function connectAndReady(SessionManager $session, FakeTransport $transport)
-    {
-        $session->connect();
-        $transport->open(); // auto_auth 发出 auth
-
-        $authPacket = $transport->lastPacket();
-        self::assertSame(Message::CMD_AUTH, $authPacket['cmd']);
-
-        $transport->receive(array(
-            'cmd' => Message::CMD_ACK,
-            'seq' => $authPacket['seq'],
-            'ts'  => time(),
-            'data' => array(
-                'uid'         => 'alice',
-                'device_id'   => 'dev1',
-                'protocol'    => 'ws',
-                'reconnected' => 0,
-            ),
-        ));
-        self::assertTrue($session->isReady());
-    }
-
     /* ---------------------------------------------------------------------
      | 配置与状态守卫
      --------------------------------------------------------------------- */
@@ -69,7 +32,7 @@ final class SessionManagerTest extends TestCase
     public function testMissingRequiredConfigThrows()
     {
         try {
-            $this->makeSession(array('secret' => ''));
+            $this->makeSession(['secret' => '']);
             self::fail('缺少 secret 必须抛 ClientException');
         } catch (ClientException $e) {
             self::assertSame(ErrorCode::CLIENT_CONFIG, $e->getCode());
@@ -80,12 +43,12 @@ final class SessionManagerTest extends TestCase
     {
         try {
             // 不注入 transport，让 SessionManager 按默认逻辑构造 WsTransport
-            new SessionManager(array(
+            new SessionManager([
                 'uid'       => 'a',
                 'device_id' => 'd',
                 'secret'    => 's',
                 'ws_url'    => 'http://127.0.0.1:8282',
-            ));
+            ]);
             self::fail('非 ws(s):// 的 ws_url 必须抛 ClientException');
         } catch (ClientException $e) {
             self::assertSame(ErrorCode::CLIENT_CONFIG, $e->getCode());
@@ -94,7 +57,7 @@ final class SessionManagerTest extends TestCase
 
     public function testConnectTwiceThrowsState()
     {
-        $session   = $this->makeSession(array(), $transport);
+        $session   = $this->makeSession([], $transport);
         $session->connect();
 
         try {
@@ -107,7 +70,7 @@ final class SessionManagerTest extends TestCase
 
     public function testRequestBeforeReadyThrowsState()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
 
         try {
             $session->request('echo');
@@ -123,7 +86,7 @@ final class SessionManagerTest extends TestCase
 
     public function testAutoAuthSendsAuthPacketOnOpen()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
         $session->connect();
         $transport->open();
 
@@ -137,15 +100,15 @@ final class SessionManagerTest extends TestCase
         self::assertSame('1', $auth['seq']);
 
         // token 载荷须携带同一身份（服务端据此识别 uid）
-        $payload = json_decode(base64_decode(str_replace(array('-', '_'), array('+', '/'), explode('.', $auth['token'])[0])), true);
+        $payload = json_decode(base64_decode(str_replace(['-', '_'], ['+', '/'], explode('.', $auth['token'])[0])), true);
         self::assertSame('alice', $payload['uid']);
         self::assertSame('dev1', $payload['device_id']);
     }
 
     public function testAuthAckEntersReadyAndSchedulesHeartbeat()
     {
-        $states   = array();
-        $session  = $this->makeSession(array(), $transport);
+        $states   = [];
+        $session  = $this->makeSession([], $transport);
         $session->onStateChange(function ($new, $old) use (&$states) {
             $states[] = $new;
         });
@@ -160,7 +123,7 @@ final class SessionManagerTest extends TestCase
 
     public function testManualAuthModeStaysConnectedAfterOpen()
     {
-        $session = $this->makeSession(array('auto_auth' => false), $transport);
+        $session = $this->makeSession(['auto_auth' => false], $transport);
         $cbOk    = null;
         $session->connect();
         $transport->open();
@@ -174,12 +137,12 @@ final class SessionManagerTest extends TestCase
         self::assertSame(SessionManager::STATE_AUTHENTICATING, $session->state());
 
         $auth = $transport->lastPacket();
-        $transport->receive(array(
+        $transport->receive([
             'cmd'  => Message::CMD_ACK,
             'seq'  => $auth['seq'],
             'ts'   => time(),
-            'data' => array('uid' => 'alice', 'device_id' => 'dev1', 'protocol' => 'ws', 'reconnected' => 0),
-        ));
+            'data' => ['uid' => 'alice', 'device_id' => 'dev1', 'protocol' => 'ws', 'reconnected' => 0],
+        ]);
 
         self::assertTrue($session->isReady());
         self::assertTrue($cbOk);
@@ -187,7 +150,7 @@ final class SessionManagerTest extends TestCase
 
     public function testAuthErrorRejectsPendingAndFiresError()
     {
-        $session   = $this->makeSession(array(), $transport);
+        $session   = $this->makeSession([], $transport);
         $errorCode = null;
         $cbResult  = null;
         $session->onError(function (ClientException $e) use (&$errorCode) {
@@ -198,13 +161,13 @@ final class SessionManagerTest extends TestCase
         $transport->open();
         $auth = $transport->lastPacket();
 
-        $transport->receive(array(
+        $transport->receive([
             'cmd'  => Message::CMD_ERROR,
             'seq'  => $auth['seq'],
             'ref'  => 'auth',
             'ts'   => time(),
-            'data' => array('code' => ErrorCode::AUTH_FAILED, 'msg' => 'Token 无效'),
-        ));
+            'data' => ['code' => ErrorCode::AUTH_FAILED, 'msg' => 'Token 无效'],
+        ]);
 
         self::assertSame(ErrorCode::AUTH_FAILED, $errorCode);
         self::assertSame(0, $session->pendingCount());
@@ -217,23 +180,23 @@ final class SessionManagerTest extends TestCase
 
     public function testPingPongSetsRtt()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
         $this->connectAndReady($session, $transport);
 
         $result = null;
         $session->ping(function ($ok, $data) use (&$result) {
-            $result = array($ok, $data);
+            $result = [$ok, $data];
         });
 
         $ping = $transport->lastPacket();
         self::assertSame(Message::CMD_PING, $ping['cmd']);
 
-        $transport->receive(array(
+        $transport->receive([
             'cmd'  => Message::CMD_PONG,
             'seq'  => $ping['seq'],
             'ts'   => time(),
-            'data' => array(),
-        ));
+            'data' => [],
+        ]);
 
         self::assertTrue($result[0]);
         self::assertGreaterThanOrEqual(0.0, $session->lastRtt());
@@ -242,12 +205,12 @@ final class SessionManagerTest extends TestCase
 
     public function testServerReversePingIsAnsweredWithPong()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
         $this->connectAndReady($session, $transport);
         $sentBefore = count($transport->sentPackets);
 
         // 服务端网关反向心跳固定为 {"cmd":"ping","ts":0}（无 seq）
-        $transport->receive(array('cmd' => Message::CMD_PING, 'ts' => 0));
+        $transport->receive(['cmd' => Message::CMD_PING, 'ts' => 0]);
 
         $reply = $transport->lastPacket();
         self::assertCount($sentBefore + 1, $transport->sentPackets, '反向心跳必须立即应答');
@@ -258,29 +221,29 @@ final class SessionManagerTest extends TestCase
 
     public function testRequestBuildsDataPacketAndSettlesOnAck()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
         $this->connectAndReady($session, $transport);
 
         $result = null;
-        $seq    = $session->request('echo', array('hello' => 'postman'), function ($ok, $data) use (&$result) {
-            $result = array($ok, $data);
+        $seq    = $session->request('echo', ['hello' => 'postman'], function ($ok, $data) use (&$result) {
+            $result = [$ok, $data];
         });
 
         $req = $transport->lastPacket();
         self::assertSame(Message::CMD_DATA, $req['cmd']);
         self::assertSame($seq, $req['seq']);
         self::assertSame('echo', $req['data']['action']);
-        self::assertSame(array('hello' => 'postman'), $req['data']['params']);
+        self::assertSame(['hello' => 'postman'], $req['data']['params']);
         self::assertSame('alice', $req['uid']);
         self::assertNotSame('', $req['sign'], '业务报文应带签名（WS 不校验但无副作用）');
         self::assertSame(1, $session->pendingCount());
 
-        $transport->receive(array(
+        $transport->receive([
             'cmd'  => Message::CMD_ACK,
             'seq'  => $seq,
             'ts'   => time(),
-            'data' => array('action' => 'echo', 'echoed' => array('hello' => 'postman')),
-        ));
+            'data' => ['action' => 'echo', 'echoed' => ['hello' => 'postman']],
+        ]);
 
         self::assertTrue($result[0]);
         self::assertSame('echo', $result[1]['data']['action']);
@@ -289,11 +252,11 @@ final class SessionManagerTest extends TestCase
 
     public function testUnsolicitedAckIsIgnored()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
         $this->connectAndReady($session, $transport);
 
         // 服务端推送回执等无主 ack 不应触发任何 pending 或异常
-        $transport->receive(array('cmd' => Message::CMD_ACK, 'seq' => '999', 'ts' => time(), 'data' => array()));
+        $transport->receive(['cmd' => Message::CMD_ACK, 'seq' => '999', 'ts' => time(), 'data' => []]);
 
         self::assertSame(0, $session->pendingCount());
         self::assertTrue($session->isReady());
@@ -301,7 +264,7 @@ final class SessionManagerTest extends TestCase
 
     public function testInvalidFrameFiresBadPacketError()
     {
-        $session   = $this->makeSession(array(), $transport);
+        $session   = $this->makeSession([], $transport);
         $errorCode = null;
         $session->onError(function (ClientException $e) use (&$errorCode) {
             $errorCode = $e->getCode();
@@ -316,7 +279,7 @@ final class SessionManagerTest extends TestCase
 
     public function testPushIsForwardedToCallback()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
         $pushed  = null;
         $session->onPush(function (array $packet) use (&$pushed) {
             $pushed = $packet;
@@ -324,16 +287,16 @@ final class SessionManagerTest extends TestCase
 
         $this->connectAndReady($session, $transport);
 
-        $transport->receive(array(
+        $transport->receive([
             'cmd'       => Message::CMD_PUSH,
             'seq'       => 'm-1',
             'ts'        => time(),
-            'data'      => array('title' => 'hi'),
+            'data'      => ['title' => 'hi'],
             'msg_id'    => 'm-1',
             'source'    => 'cli',
             'offline'   => 0,
             'pushed_at' => time(),
-        ));
+        ]);
 
         self::assertNotNull($pushed);
         self::assertSame('m-1', $pushed['msg_id']);
@@ -345,50 +308,50 @@ final class SessionManagerTest extends TestCase
 
     public function testTransportAckSettlesAuthAndPingButNotData()
     {
-        $session = $this->makeSession(array('heartbeat' => 0), $transport);
+        $session = $this->makeSession(['heartbeat' => 0], $transport);
 
         // auth：UDP 网关对 auth 无业务层回执，传输层 ack（data 空且无 action）即结算
         $session->connect();
         $transport->open();
         $auth = $transport->lastPacket();
-        $transport->receive(array(
+        $transport->receive([
             'cmd'  => Message::CMD_ACK,
             'seq'  => $auth['seq'],
             'ts'   => time(),
-            'data' => array(),
-        ));
+            'data' => [],
+        ]);
         self::assertTrue($session->isReady(), '传输层 ack 应结算 auth');
 
         // data.echo：传输层 ack 不得结算，须等业务层回执（带 data.action）
         $settled = null;
-        $seq     = $session->request('echo', array('k' => 'v'), function ($ok, $packet) use (&$settled) {
+        $seq     = $session->request('echo', ['k' => 'v'], function ($ok, $packet) use (&$settled) {
             $settled = $ok;
         });
-        $transport->receive(array(
+        $transport->receive([
             'cmd'  => Message::CMD_ACK,
             'seq'  => $seq,
             'ts'   => time(),
-            'data' => array(),
-        ));
+            'data' => [],
+        ]);
         self::assertNull($settled, '传输层 ack 不得结算业务请求（硬约束⑳）');
         self::assertSame(1, $session->pendingCount());
 
-        $transport->receive(array(
+        $transport->receive([
             'cmd'  => Message::CMD_ACK,
             'seq'  => $seq,
             'ts'   => time(),
-            'data' => array('action' => 'echo', 'echoed' => array('k' => 'v')),
-        ));
+            'data' => ['action' => 'echo', 'echoed' => ['k' => 'v']],
+        ]);
         self::assertTrue($settled);
         self::assertSame(0, $session->pendingCount());
     }
 
     public function testAttachTokenCarriesTokenOnOutgoingPackets()
     {
-        $session = $this->makeSession(array('heartbeat' => 0, 'attach_token' => true), $transport);
+        $session = $this->makeSession(['heartbeat' => 0, 'attach_token' => true], $transport);
         $this->connectAndReady($session, $transport);
 
-        $session->request('echo', array(), null);
+        $session->request('echo', [], null);
         $req = $transport->lastPacket();
 
         self::assertNotSame('', $req['token'], 'attach_token 开启时业务报文必须携带 Token（硬约束⑲）');
@@ -408,10 +371,10 @@ final class SessionManagerTest extends TestCase
 
     public function testAttachTokenDisabledKeepsPacketsTokenFree()
     {
-        $session = $this->makeSession(array('heartbeat' => 0), $transport);
+        $session = $this->makeSession(['heartbeat' => 0], $transport);
         $this->connectAndReady($session, $transport);
 
-        $session->request('echo', array(), null);
+        $session->request('echo', [], null);
         $req = $transport->lastPacket();
 
         self::assertArrayNotHasKey('token', $req, '默认（WS）路径不应附加 Token');
@@ -423,7 +386,7 @@ final class SessionManagerTest extends TestCase
 
     public function testRequestTimeoutFiresTimeoutError()
     {
-        $session   = $this->makeSession(array('timeout' => 0.5), $transport);
+        $session   = $this->makeSession(['timeout' => 0.5], $transport);
         $errorCode = null;
         $session->onError(function (ClientException $e) use (&$errorCode) {
             $errorCode = $e->getCode();
@@ -432,8 +395,8 @@ final class SessionManagerTest extends TestCase
         $this->connectAndReady($session, $transport);
 
         $result = null;
-        $session->request('echo', array(), function ($ok, $data) use (&$result) {
-            $result = array($ok, $data);
+        $session->request('echo', [], function ($ok, $data) use (&$result) {
+            $result = [$ok, $data];
         });
 
         // 最后登记的计时器即本请求的超时定时器（auth 的已随 ack 删除）
@@ -447,7 +410,7 @@ final class SessionManagerTest extends TestCase
 
     public function testHeartbeatDisabledWhenZero()
     {
-        $session = $this->makeSession(array('heartbeat' => 0), $transport);
+        $session = $this->makeSession(['heartbeat' => 0], $transport);
         $this->connectAndReady($session, $transport);
 
         self::assertCount(0, $this->persistentTimers(), 'heartbeat=0 时不应有心跳定时器');
@@ -455,7 +418,7 @@ final class SessionManagerTest extends TestCase
 
     public function testHeartbeatSendsPingPeriodically()
     {
-        $session = $this->makeSession(array('heartbeat' => 20), $transport);
+        $session = $this->makeSession(['heartbeat' => 20], $transport);
         $this->connectAndReady($session, $transport);
 
         $sentBefore = count($transport->sentPackets);
@@ -479,12 +442,12 @@ final class SessionManagerTest extends TestCase
 
     public function testDisconnectFailsPendingAndSchedulesReconnect()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
         $this->connectAndReady($session, $transport);
 
         $result = null;
-        $session->request('echo', array(), function ($ok, $data) use (&$result) {
-            $result = array($ok, $data);
+        $session->request('echo', [], function ($ok, $data) use (&$result) {
+            $result = [$ok, $data];
         });
 
         $transport->drop();
@@ -501,7 +464,7 @@ final class SessionManagerTest extends TestCase
 
     public function testReconnectBackoffIsExponential()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
         $this->connectAndReady($session, $transport);
 
         // 第一轮：退避 1s
@@ -521,19 +484,19 @@ final class SessionManagerTest extends TestCase
 
     public function testReconnectSuccessResetsAttempts()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
         $this->connectAndReady($session, $transport);
 
         $transport->drop();
         $this->fireTimer($this->lastTimerId()); // → connecting
         $transport->open();                     // auto_auth 再次发 auth
         $auth = $transport->lastPacket();
-        $transport->receive(array(
+        $transport->receive([
             'cmd'  => Message::CMD_ACK,
             'seq'  => $auth['seq'],
             'ts'   => time(),
-            'data' => array('uid' => 'alice', 'device_id' => 'dev1', 'protocol' => 'ws', 'reconnected' => 1),
-        ));
+            'data' => ['uid' => 'alice', 'device_id' => 'dev1', 'protocol' => 'ws', 'reconnected' => 1],
+        ]);
 
         self::assertTrue($session->isReady());
         self::assertSame(0, $session->stats()['reconnect_attempts'], '鉴权成功后重连计数清零');
@@ -541,8 +504,8 @@ final class SessionManagerTest extends TestCase
 
     public function testReconnectDisabledGoesDisconnected()
     {
-        $session = $this->makeSession(array('reconnect' => false), $transport);
-        $errors  = array();
+        $session = $this->makeSession(['reconnect' => false], $transport);
+        $errors  = [];
         $session->onError(function (ClientException $e) use (&$errors) {
             $errors[] = $e;
         });
@@ -558,7 +521,7 @@ final class SessionManagerTest extends TestCase
 
     public function testUserCloseDoesNotReconnect()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
         $this->connectAndReady($session, $transport);
 
         $session->close();
@@ -571,7 +534,7 @@ final class SessionManagerTest extends TestCase
 
     public function testUserCloseDuringReconnectCancelsReconnectTimer()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
         $this->connectAndReady($session, $transport);
 
         $transport->drop(); // → reconnecting，重连定时器挂起
@@ -589,7 +552,7 @@ final class SessionManagerTest extends TestCase
 
     public function testStatsSnapshotShape()
     {
-        $session = $this->makeSession(array(), $transport);
+        $session = $this->makeSession([], $transport);
         $stats   = $session->stats();
 
         self::assertSame('disconnected', $stats['state']);
@@ -598,5 +561,42 @@ final class SessionManagerTest extends TestCase
         self::assertSame(0, $stats['pending']);
         self::assertArrayHasKey('last_rtt', $stats);
         self::assertArrayHasKey('reconnect_attempts', $stats);
+    }
+
+    private function makeSession(array $overrides = [], ?FakeTransport &$transport = null)
+    {
+        $this->makeTimers();
+
+        $transport = new FakeTransport();
+        $config    = array_merge([
+            'uid'       => 'alice',
+            'device_id' => 'dev1',
+            'secret'    => 'test-secret',
+        ], $overrides);
+
+        return new SessionManager($config, $transport, null, $this->timerAdd, $this->timerDel);
+    }
+
+    /** 建连并完成鉴权，进入 ready */
+    private function connectAndReady(SessionManager $session, FakeTransport $transport)
+    {
+        $session->connect();
+        $transport->open(); // auto_auth 发出 auth
+
+        $authPacket = $transport->lastPacket();
+        self::assertSame(Message::CMD_AUTH, $authPacket['cmd']);
+
+        $transport->receive([
+            'cmd' => Message::CMD_ACK,
+            'seq' => $authPacket['seq'],
+            'ts'  => time(),
+            'data' => [
+                'uid'         => 'alice',
+                'device_id'   => 'dev1',
+                'protocol'    => 'ws',
+                'reconnected' => 0,
+            ],
+        ]);
+        self::assertTrue($session->isReady());
     }
 }

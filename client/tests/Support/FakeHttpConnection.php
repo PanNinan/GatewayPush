@@ -11,20 +11,20 @@ namespace GatewayPush\Client\Tests\Support;
 
 final class FakeHttpConnection
 {
-    /** @var callable|null */
+    /** @var null|callable */
     public $onConnect;
 
-    /** @var callable|null */
+    /** @var null|callable */
     public $onMessage;
 
-    /** @var callable|null */
+    /** @var null|callable */
     public $onClose;
 
-    /** @var callable|null */
+    /** @var null|callable */
     public $onError;
 
     /** @var string[] 已发送的原始报文 */
-    public $sentRaw = array();
+    public $sentRaw = [];
 
     /** @var int */
     public $connectCalls = 0;
@@ -52,7 +52,7 @@ final class FakeHttpConnection
         $this->destroyed = true;
     }
 
-    /* ---- 模拟辅助 ---- */
+    // ---- 模拟辅助 ----
 
     /** 模拟服务端下发响应数据 */
     public function emit($raw)

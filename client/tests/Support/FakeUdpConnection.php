@@ -14,17 +14,17 @@ namespace GatewayPush\Client\Tests\Support;
 
 final class FakeUdpConnection
 {
-    /** @var callable|null function (self $con): void */
+    /** @var null|callable function (self $con): void */
     public $onConnect;
 
-    /** @var callable|null function (self $con, string $raw): void */
+    /** @var null|callable function (self $con, string $raw): void */
     public $onMessage;
 
-    /** @var callable|null function (self $con): void */
+    /** @var null|callable function (self $con): void */
     public $onClose;
 
     /** @var string[] 已发出的原始帧 */
-    public $sent = array();
+    public $sent = [];
 
     /** @var int */
     public $connectCalls = 0;
@@ -55,7 +55,7 @@ final class FakeUdpConnection
         }
     }
 
-    /* ---- 模拟辅助 ---- */
+    // ---- 模拟辅助 ----
 
     /** 模拟服务端下发一帧原始报文 */
     public function emit($raw)

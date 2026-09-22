@@ -33,6 +33,11 @@
 
 namespace GatewayPush\Business;
 
+/**
+ * 指令路由注册表（cmd → data.action 两级）
+ *
+ * 只提供注册与查询，零 IO、零日志；分发与错误处理仍由 Bootstrap 负责。
+ */
 class Router
 {
     /**
@@ -40,14 +45,14 @@ class Router
      *
      * @var array
      */
-    protected static $commands = array();
+    protected static $commands = [];
 
     /**
      * 二级路由表：action => callable
      *
      * @var array
      */
-    protected static $actions = array();
+    protected static $actions = [];
 
     /* ---------------------------------------------------------------------
      | 注册
@@ -58,6 +63,7 @@ class Router
      *
      * @param string   $cmd
      * @param callable $handler function (string $clientId, array $packet): void
+     *
      * @return void
      */
     public static function registerCommand($cmd, callable $handler)
@@ -74,6 +80,7 @@ class Router
      *
      * @param string   $action
      * @param callable $handler function (string $clientId, array $packet): void
+     *
      * @return void
      */
     public static function registerAction($action, callable $handler)
@@ -93,24 +100,28 @@ class Router
      * 取一级指令处理器
      *
      * @param string $cmd
-     * @return callable|null 未注册返回 null
+     *
+     * @return null|callable 未注册返回 null
      */
     public static function command($cmd)
     {
         $cmd = (string)$cmd;
-        return isset(self::$commands[$cmd]) ? self::$commands[$cmd] : null;
+
+        return self::$commands[$cmd] ?? null;
     }
 
     /**
      * 取二级业务动作处理器
      *
      * @param string $action
-     * @return callable|null 未注册返回 null
+     *
+     * @return null|callable 未注册返回 null
      */
     public static function action($action)
     {
         $action = (string)$action;
-        return isset(self::$actions[$action]) ? self::$actions[$action] : null;
+
+        return self::$actions[$action] ?? null;
     }
 
     /**
@@ -137,6 +148,7 @@ class Router
      * 是否存在指定一级指令
      *
      * @param string $cmd
+     *
      * @return bool
      */
     public static function hasCommand($cmd)
@@ -148,6 +160,7 @@ class Router
      * 是否存在指定业务动作
      *
      * @param string $action
+     *
      * @return bool
      */
     public static function hasAction($action)

@@ -17,6 +17,11 @@ namespace GatewayPush\Client\Service;
 use GatewayPush\Client\Error\ErrorCode;
 use GatewayPush\Client\Session\SessionManager;
 
+/**
+ * 业务动作 API 基类
+ *
+ * 统一包装 SessionManager::request() 的结算回调；子类只声明动作名与参数。
+ */
 abstract class AbstractApi
 {
     /**
@@ -37,8 +42,9 @@ abstract class AbstractApi
      *
      * @param string        $action  动作名（须在服务端 config/actions.php 登记）
      * @param array         $params  动作参数
-     * @param callable|null $cb      function (bool $ok, array $data, ?array $error): void
-     * @param float|null    $timeout 覆盖全局超时
+     * @param null|callable $cb      function (bool $ok, array $data, ?array $error): void
+     * @param null|float    $timeout 覆盖全局超时
+     *
      * @return string 本请求 seq
      */
     protected function call($action, array $params, $cb = null, $timeout = null)
@@ -48,10 +54,11 @@ abstract class AbstractApi
                 return;
             }
 
-            $data = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : array();
+            $data = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : [];
 
             if ($ok) {
-                call_user_func($cb, true, $data, null);
+                $cb(true, $data, null);
+
                 return;
             }
 
@@ -61,7 +68,7 @@ abstract class AbstractApi
                 ? (string)$data['msg']
                 : ErrorCode::message($code);
 
-            call_user_func($cb, false, $data, array('code' => $code, 'msg' => $msg));
+            $cb(false, $data, ['code' => $code, 'msg' => $msg]);
         }, $timeout);
     }
 }

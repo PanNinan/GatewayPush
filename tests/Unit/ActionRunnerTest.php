@@ -25,7 +25,6 @@
 namespace GatewayPush\Tests\Unit;
 
 use GatewayPush\Business\ActionContext;
-use GatewayPush\Business\ActionInterface;
 use GatewayPush\Business\ActionRunner;
 use GatewayPush\Common\Logger;
 use PHPUnit\Framework\TestCase;
@@ -38,24 +37,12 @@ class ActionRunnerTest extends TestCase
         // stdout 之前即被丢弃 —— 满足 beStrictAboutOutputDuringTests 约束。
         // path 指向已存在的系统临时目录：Logger::init 只在目录不存在时创建，
         // 这样本用例不产生任何文件或目录残留。
-        Logger::init(array(
+        Logger::init([
             'path'   => sys_get_temp_dir(),
             'level'  => Logger::ERROR,
             'role'   => 'test',
             'stdout' => false,
-        ));
-    }
-
-    /**
-     * 装载一份动作表
-     *
-     * @param array $actions
-     * @param array $defaults
-     * @return array 已装载的动作名
-     */
-    private function load(array $actions, array $defaults = array())
-    {
-        return ActionRunner::load(array('defaults' => $defaults, 'actions' => $actions));
+        ]);
     }
 
     /* ---------------------------------------------------------------------
@@ -64,51 +51,51 @@ class ActionRunnerTest extends TestCase
 
     public function testOnlyValidDeclarationsAreRegistered(): void
     {
-        $names = $this->load(array(
-            'good'     => array('handler' => StubAction::class),
-            'missing'  => array('handler' => __NAMESPACE__ . '\\NoSuchHandlerClass'),
-            'not_impl' => array('handler' => NotAnAction::class),
-        ));
+        $names = $this->load([
+            'good'     => ['handler' => StubAction::class],
+            'missing'  => ['handler' => __NAMESPACE__ . '\NoSuchHandlerClass'],
+            'not_impl' => ['handler' => NotAnAction::class],
+        ]);
 
-        $this->assertSame(array('good'), $names);
+        $this->assertSame(['good'], $names);
     }
 
     public function testActionWithoutHandlerIsSkipped(): void
     {
-        $names = $this->load(array(
-            'nohandler' => array('params' => array()),
-            'ok'        => array('handler' => StubAction::class),
-        ));
+        $names = $this->load([
+            'nohandler' => ['params' => []],
+            'ok'        => ['handler' => StubAction::class],
+        ]);
 
-        $this->assertSame(array('ok'), $names);
+        $this->assertSame(['ok'], $names);
     }
 
     public function testNonArrayDeclarationIsSkipped(): void
     {
-        $names = $this->load(array(
+        $names = $this->load([
             'scalar' => 'not-an-array',
-            'ok'     => array('handler' => StubAction::class),
-        ));
+            'ok'     => ['handler' => StubAction::class],
+        ]);
 
-        $this->assertSame(array('ok'), $names);
+        $this->assertSame(['ok'], $names);
     }
 
     public function testEmptyActionNameIsSkipped(): void
     {
-        $names = $this->load(array(
-            ''   => array('handler' => StubAction::class),
-            'ok' => array('handler' => StubAction::class),
-        ));
+        $names = $this->load([
+            ''   => ['handler' => StubAction::class],
+            'ok' => ['handler' => StubAction::class],
+        ]);
 
-        $this->assertSame(array('ok'), $names);
+        $this->assertSame(['ok'], $names);
     }
 
     public function testMalformedConfigLoadsNothing(): void
     {
         // actions 缺失 / 非数组时不得抛异常，应退化为空表
-        $this->assertSame(array(), ActionRunner::load(array()));
-        $this->assertSame(array(), ActionRunner::load(array('actions' => 'bogus')));
-        $this->assertSame(array(), ActionRunner::registered());
+        $this->assertSame([], ActionRunner::load([]));
+        $this->assertSame([], ActionRunner::load(['actions' => 'bogus']));
+        $this->assertSame([], ActionRunner::registered());
     }
 
     /* ---------------------------------------------------------------------
@@ -117,7 +104,7 @@ class ActionRunnerTest extends TestCase
 
     public function testHasAndDeclaration(): void
     {
-        $this->load(array('echo' => array('handler' => StubAction::class)));
+        $this->load(['echo' => ['handler' => StubAction::class]]);
 
         $this->assertTrue(ActionRunner::has('echo'));
         $this->assertFalse(ActionRunner::has('nope'));
@@ -129,14 +116,14 @@ class ActionRunnerTest extends TestCase
 
     public function testLoadIsIdempotentAndReplacesPreviousTable(): void
     {
-        $this->load(array('old' => array('handler' => StubAction::class)));
+        $this->load(['old' => ['handler' => StubAction::class]]);
         $this->assertTrue(ActionRunner::has('old'));
 
-        $this->load(array('new' => array('handler' => StubAction::class)));
+        $this->load(['new' => ['handler' => StubAction::class]]);
 
         $this->assertFalse(ActionRunner::has('old'), '重复装载应以最后一次为准重建声明表');
         $this->assertTrue(ActionRunner::has('new'));
-        $this->assertSame(array('new'), ActionRunner::registered());
+        $this->assertSame(['new'], ActionRunner::registered());
     }
 
     /* ---------------------------------------------------------------------
@@ -145,31 +132,31 @@ class ActionRunnerTest extends TestCase
 
     public function testDefaultsAreAppliedToActionsOmittingKeys(): void
     {
-        $this->load(array('echo' => array('handler' => StubAction::class)));
+        $this->load(['echo' => ['handler' => StubAction::class]]);
 
         $decl = ActionRunner::declaration('echo');
 
         $this->assertTrue($decl['auth'], '默认要求鉴权');
         $this->assertSame(
-            array(
+            [
                 ActionContext::CHANNEL_WS   => ActionContext::REPLY_SYNC,
                 ActionContext::CHANNEL_UDP  => ActionContext::REPLY_SYNC,
                 ActionContext::CHANNEL_HTTP => ActionContext::REPLY_SYNC,
-            ),
+            ],
             $decl['reply']
         );
         $this->assertSame(ActionRunner::DEFAULT_TIMEOUT, $decl['timeout']);
-        $this->assertSame(array(), $decl['params']);
+        $this->assertSame([], $decl['params']);
         $this->assertSame('', $decl['description']);
-        $this->assertSame(array(), $decl['options']);
+        $this->assertSame([], $decl['options']);
         $this->assertFalse($decl['http'], 'HTTP 通道默认关闭（白名单则否）');
     }
 
     public function testCustomDefaultsOverrideBuiltinOnes(): void
     {
         $this->load(
-            array('echo' => array('handler' => StubAction::class)),
-            array('auth' => false, 'timeout' => 9, 'reply' => 'none')
+            ['echo' => ['handler' => StubAction::class]],
+            ['auth' => false, 'timeout' => 9, 'reply' => 'none']
         );
 
         $decl = ActionRunner::declaration('echo');
@@ -182,12 +169,12 @@ class ActionRunnerTest extends TestCase
     public function testActionLevelDeclarationBeatsDefaults(): void
     {
         $this->load(
-            array('report' => array(
+            ['report' => [
                 'handler' => StubAction::class,
                 'auth'    => false,
                 'timeout' => '7',
-            )),
-            array('auth' => true, 'timeout' => 1)
+            ]],
+            ['auth' => true, 'timeout' => 1]
         );
 
         $decl = ActionRunner::declaration('report');
@@ -202,24 +189,24 @@ class ActionRunnerTest extends TestCase
 
     public function testReplyStringAppliesToAllChannels(): void
     {
-        $this->load(array('r' => array('handler' => StubAction::class, 'reply' => 'none')));
+        $this->load(['r' => ['handler' => StubAction::class, 'reply' => 'none']]);
 
         $this->assertSame(
-            array(
+            [
                 ActionContext::CHANNEL_WS   => ActionContext::REPLY_NONE,
                 ActionContext::CHANNEL_UDP  => ActionContext::REPLY_NONE,
                 ActionContext::CHANNEL_HTTP => ActionContext::REPLY_NONE,
-            ),
+            ],
             ActionRunner::declaration('r')['reply']
         );
     }
 
     public function testReplyMayBeDeclaredPerChannel(): void
     {
-        $this->load(array('r' => array(
+        $this->load(['r' => [
             'handler' => StubAction::class,
-            'reply'   => array('ws' => 'sync', 'udp' => 'none'),
-        )));
+            'reply'   => ['ws' => 'sync', 'udp' => 'none'],
+        ]]);
 
         $decl = ActionRunner::declaration('r');
 
@@ -234,10 +221,10 @@ class ActionRunnerTest extends TestCase
 
     public function testReplyPartialChannelDeclarationFallsBackToSync(): void
     {
-        $this->load(array('r' => array(
+        $this->load(['r' => [
             'handler' => StubAction::class,
-            'reply'   => array('udp' => 'none'),
-        )));
+            'reply'   => ['udp' => 'none'],
+        ]]);
 
         $decl = ActionRunner::declaration('r');
 
@@ -248,14 +235,14 @@ class ActionRunnerTest extends TestCase
 
     public function testInvalidReplyValueFallsBackToSync(): void
     {
-        $this->load(array('r' => array('handler' => StubAction::class, 'reply' => 'silent')));
+        $this->load(['r' => ['handler' => StubAction::class, 'reply' => 'silent']]);
 
         $this->assertSame(
-            array(
+            [
                 ActionContext::CHANNEL_WS   => ActionContext::REPLY_SYNC,
                 ActionContext::CHANNEL_UDP  => ActionContext::REPLY_SYNC,
                 ActionContext::CHANNEL_HTTP => ActionContext::REPLY_SYNC,
-            ),
+            ],
             ActionRunner::declaration('r')['reply'],
             '未识别的回执方式必须退化为 sync，不能产生第三种状态'
         );
@@ -267,7 +254,7 @@ class ActionRunnerTest extends TestCase
 
     public function testPassthroughMarkerSurvivesDeclarationListing(): void
     {
-        $this->load(array('echo' => array('handler' => StubAction::class, 'params' => '*')));
+        $this->load(['echo' => ['handler' => StubAction::class, 'params' => '*']]);
 
         $this->assertSame('*', ActionRunner::declaration('echo')['params']);
 
@@ -278,26 +265,26 @@ class ActionRunnerTest extends TestCase
 
     public function testRuleKeysAreListedInDeclarations(): void
     {
-        $this->load(array('report' => array(
+        $this->load(['report' => [
             'handler' => StubAction::class,
-            'params'  => array(
-                'topic' => array('type' => 'string'),
-                'count' => array('type' => 'int'),
-            ),
-        )));
+            'params'  => [
+                'topic' => ['type' => 'string'],
+                'count' => ['type' => 'int'],
+            ],
+        ]]);
 
         $listed = ActionRunner::declarations();
 
-        $this->assertSame(array('topic', 'count'), $listed['report']['params']);
+        $this->assertSame(['topic', 'count'], $listed['report']['params']);
     }
 
     public function testInvalidParamsValueDegradesToEmptyRules(): void
     {
-        $this->load(array('a' => array('handler' => StubAction::class, 'params' => 'bogus')));
+        $this->load(['a' => ['handler' => StubAction::class, 'params' => 'bogus']]);
 
         // 非法值退化为空规则 = 拒绝一切入参，而非透传
-        $this->assertSame(array(), ActionRunner::declaration('a')['params']);
-        $this->assertSame(array(), ActionRunner::declarations()['a']['params']);
+        $this->assertSame([], ActionRunner::declaration('a')['params']);
+        $this->assertSame([], ActionRunner::declarations()['a']['params']);
     }
 
     /* ---------------------------------------------------------------------
@@ -306,30 +293,30 @@ class ActionRunnerTest extends TestCase
 
     public function testHttpIsClosedByDefault(): void
     {
-        $this->load(array('a' => array('handler' => StubAction::class)));
+        $this->load(['a' => ['handler' => StubAction::class]]);
 
         $this->assertFalse(ActionRunner::httpExposed('a'));
-        $this->assertSame(array(), ActionRunner::httpActions());
+        $this->assertSame([], ActionRunner::httpActions());
     }
 
     public function testHttpWhitelistIsOptInPerAction(): void
     {
-        $this->load(array(
-            'open'   => array('handler' => StubAction::class, 'http' => true),
-            'closed' => array('handler' => StubAction::class),
-        ));
+        $this->load([
+            'open'   => ['handler' => StubAction::class, 'http' => true],
+            'closed' => ['handler' => StubAction::class],
+        ]);
 
         $this->assertTrue(ActionRunner::httpExposed('open'));
         $this->assertFalse(ActionRunner::httpExposed('closed'));
-        $this->assertSame(array('open'), ActionRunner::httpActions());
+        $this->assertSame(['open'], ActionRunner::httpActions());
     }
 
     public function testHttpExposureIsListedInDeclarations(): void
     {
-        $this->load(array(
-            'open'   => array('handler' => StubAction::class, 'http' => true),
-            'closed' => array('handler' => StubAction::class),
-        ));
+        $this->load([
+            'open'   => ['handler' => StubAction::class, 'http' => true],
+            'closed' => ['handler' => StubAction::class],
+        ]);
 
         $listed = ActionRunner::declarations();
 
@@ -339,17 +326,18 @@ class ActionRunnerTest extends TestCase
 
     public function testHttpExposureIsBoolTypedEvenWhenDeclaredLoosely(): void
     {
-        $this->load(array('a' => array('handler' => StubAction::class, 'http' => 1)));
+        $this->load(['a' => ['handler' => StubAction::class, 'http' => 1]]);
 
         $decl = ActionRunner::declaration('a');
 
-        $this->assertTrue($decl['http']);
-        $this->assertSame(true, $decl['http'], '声明值须归一化为 bool，避免运出到下游出现 1 / true 两种形态');
+        // assertTrue 内部即 === true 判定，已足以钉住「归一化为 bool」，
+        // 再补一句 assertSame(true, ...) 是恒真的重复断言（PHPStan 会直接判定 alreadyNarrowed）
+        $this->assertTrue($decl['http'], '声明值须归一化为 bool，避免运出到下游出现 1 / true 两种形态');
     }
 
     public function testUnexposedActionIsNotHttpExposedEvenIfRegistered(): void
     {
-        $this->load(array('a' => array('handler' => StubAction::class)));
+        $this->load(['a' => ['handler' => StubAction::class]]);
 
         // 未注册动作一律 false，不存在「未注册但被判定为可调用」的中间态
         $this->assertFalse(ActionRunner::httpExposed('nope'));
@@ -378,16 +366,16 @@ class ActionRunnerTest extends TestCase
      */
     public function channelPrefixProvider(): array
     {
-        return array(
-            'WS 数字 ID'      => array('7', ActionContext::CHANNEL_WS),
-            'WS 长数字 ID'    => array('123456789', ActionContext::CHANNEL_WS),
-            'UDP 虚拟 ID'     => array('udp:127.0.0.1:53210', ActionContext::CHANNEL_UDP),
-            'HTTP 虚拟 ID'    => array('http:9f2c1a4b', ActionContext::CHANNEL_HTTP),
-            '空 clientId'     => array('', ActionContext::CHANNEL_WS),
+        return [
+            'WS 数字 ID'      => ['7', ActionContext::CHANNEL_WS],
+            'WS 长数字 ID'    => ['123456789', ActionContext::CHANNEL_WS],
+            'UDP 虚拟 ID'     => ['udp:127.0.0.1:53210', ActionContext::CHANNEL_UDP],
+            'HTTP 虚拟 ID'    => ['http:9f2c1a4b', ActionContext::CHANNEL_HTTP],
+            '空 clientId'     => ['', ActionContext::CHANNEL_WS],
             // 前缀必须整段匹配：含 udp 字样但不以 udp: 开头的不能被误判
-            '含 udp 字样的 WS' => array('xudp:1', ActionContext::CHANNEL_WS),
-            '含 http 字样的 WS' => array('xhttp:1', ActionContext::CHANNEL_WS),
-        );
+            '含 udp 字样的 WS' => ['xudp:1', ActionContext::CHANNEL_WS],
+            '含 http 字样的 WS' => ['xhttp:1', ActionContext::CHANNEL_WS],
+        ];
     }
 
     /* ---------------------------------------------------------------------
@@ -396,17 +384,17 @@ class ActionRunnerTest extends TestCase
 
     public function testDeclarationsExposeOperationalFieldsOnly(): void
     {
-        $this->load(array('report' => array(
+        $this->load(['report' => [
             'handler'     => StubAction::class,
             'description' => '上报计数',
             'auth'        => true,
             'timeout'     => 3,
-        )));
+        ]]);
 
         $listed = ActionRunner::declarations();
 
         $this->assertSame(
-            array('description', 'auth', 'reply', 'timeout', 'http', 'params'),
+            ['description', 'auth', 'reply', 'timeout', 'http', 'params'],
             array_keys($listed['report']),
             '运维接口透出的字段应与类注释一致'
         );
@@ -417,27 +405,24 @@ class ActionRunnerTest extends TestCase
 
     public function testOptionsAreKeptOnInternalDeclaration(): void
     {
-        $this->load(array('report' => array(
+        $this->load(['report' => [
             'handler' => StubAction::class,
-            'options' => array('ttl' => 86400),
-        )));
+            'options' => ['ttl' => 86400],
+        ]]);
 
-        $this->assertSame(array('ttl' => 86400), ActionRunner::declaration('report')['options']);
+        $this->assertSame(['ttl' => 86400], ActionRunner::declaration('report')['options']);
     }
-}
 
-/* -------------------------------------------------------------------------
- | 测试夹具：仅在装载过滤逻辑中被引用，无任何行为
- ------------------------------------------------------------------------- */
-
-class StubAction implements ActionInterface
-{
-    public function handle(ActionContext $ctx)
+    /**
+     * 装载一份动作表
+     *
+     * @param array $actions
+     * @param array $defaults
+     *
+     * @return array 已装载的动作名
+     */
+    private function load(array $actions, array $defaults = [])
     {
-        return null;
+        return ActionRunner::load(['defaults' => $defaults, 'actions' => $actions]);
     }
-}
-
-class NotAnAction
-{
 }

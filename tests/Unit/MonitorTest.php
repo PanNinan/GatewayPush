@@ -31,31 +31,7 @@ use PHPUnit\Framework\TestCase;
 class MonitorTest extends TestCase
 {
     /** 与 config 默认值一致 */
-    const TTL = 600;
-
-    /**
-     * 构造一份 gauge 快照：每个 pid 生成 4 个字段（与写入侧字段完全一致）
-     *
-     * @param array $pidAts pid => pid_at 时间戳
-     * @param array $extra  额外字段（全局指标等）
-     * @return array
-     */
-    private function gauge(array $pidAts, array $extra = array())
-    {
-        $gauge = $extra;
-        foreach ($pidAts as $pid => $at) {
-            $gauge[Monitor::FIELD_PID_AT . $pid]       = (string)$at;
-            $gauge[Monitor::FIELD_PROC . $pid]         = '{"role":"business","worker_id":0}';
-            $gauge[Monitor::FIELD_TASKS . $pid]        = '{"worker_id":0,"jobs":[]}';
-            $gauge[Monitor::FIELD_MEMORY_BYTES . $pid] = '4194304';
-        }
-        return $gauge;
-    }
-
-    private function root($relative)
-    {
-        return dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relative);
-    }
+    public const TTL = 600;
 
     /* -----------------------------------------------------------------
      | 前置短路
@@ -63,15 +39,15 @@ class MonitorTest extends TestCase
 
     public function testReturnsEmptyWhenGaugeIsEmpty()
     {
-        $this->assertSame(array(), Monitor::staleFields(array(), self::TTL, 1000000));
+        $this->assertSame([], Monitor::staleFields([], self::TTL, 1000000));
     }
 
     public function testReturnsEmptyWhenTtlDisabled()
     {
         // ttl <= 0 视为「不清理」—— 配置成 0 时不能反过来变成「全都删」
-        $gauge = $this->gauge(array(123 => 1));
-        $this->assertSame(array(), Monitor::staleFields($gauge, 0, 1000000));
-        $this->assertSame(array(), Monitor::staleFields($gauge, -1, 1000000));
+        $gauge = $this->gauge([123 => 1]);
+        $this->assertSame([], Monitor::staleFields($gauge, 0, 1000000));
+        $this->assertSame([], Monitor::staleFields($gauge, -1, 1000000));
     }
 
     /* -----------------------------------------------------------------
@@ -81,8 +57,8 @@ class MonitorTest extends TestCase
     public function testKeepsLiveProcess()
     {
         $now   = 1000000;
-        $gauge = $this->gauge(array(123 => $now - 1));
-        $this->assertSame(array(), Monitor::staleFields($gauge, self::TTL, $now));
+        $gauge = $this->gauge([123 => $now - 1]);
+        $this->assertSame([], Monitor::staleFields($gauge, self::TTL, $now));
     }
 
     public function testKeepsProcessExactlyAtDeadline()
@@ -90,28 +66,28 @@ class MonitorTest extends TestCase
         // 边界：pid_at 恰好等于 now - ttl 时**保活**（用 >= 判定）。
         // 若哪天被改成 >，这条会红 —— 那意味着宽限期被悄悄缩短了 1s 且语义不清。
         $now   = 1000000;
-        $gauge = $this->gauge(array(123 => $now - self::TTL));
-        $this->assertSame(array(), Monitor::staleFields($gauge, self::TTL, $now));
+        $gauge = $this->gauge([123 => $now - self::TTL]);
+        $this->assertSame([], Monitor::staleFields($gauge, self::TTL, $now));
     }
 
     public function testPurgesProcessOneSecondPastDeadline()
     {
         $now   = 1000000;
-        $gauge = $this->gauge(array(123 => $now - self::TTL - 1));
+        $gauge = $this->gauge([123 => $now - self::TTL - 1]);
 
-        $this->assertSame(array(
+        $this->assertSame([
             Monitor::FIELD_PID_AT . '123',
             Monitor::FIELD_PROC . '123',
             Monitor::FIELD_TASKS . '123',
             Monitor::FIELD_MEMORY_BYTES . '123',
-        ), Monitor::staleFields($gauge, self::TTL, $now));
+        ], Monitor::staleFields($gauge, self::TTL, $now));
     }
 
     public function testPurgesAllFourFieldsOfEachDeadProcess()
     {
         // 四个字段必须同进同出：漏掉任意一个都会留下孤儿字段
         $now   = 1000000;
-        $gauge = $this->gauge(array(222 => $now - self::TTL - 900));
+        $gauge = $this->gauge([222 => $now - self::TTL - 900]);
         $fields = Monitor::staleFields($gauge, self::TTL, $now);
 
         $this->assertCount(4, $fields);
@@ -124,12 +100,12 @@ class MonitorTest extends TestCase
     public function testPurgesOnlyExpiredAmongMixedProcesses()
     {
         $now = 1000000;
-        $gauge = $this->gauge(array(
+        $gauge = $this->gauge([
             111 => $now - 5,                 // 活
             222 => $now - self::TTL - 1,     // 刚过宽限
             333 => $now - 10,                // 活
             444 => $now - self::TTL - 4780,  // 久（实测出现过的残留时长）
-        ));
+        ]);
 
         $fields = Monitor::staleFields($gauge, self::TTL, $now);
 
@@ -151,13 +127,13 @@ class MonitorTest extends TestCase
         // report_at / conn_* 不属于任何进程，没有「退出」概念 —— 删了面板就读不到数据
         $now = 1000000;
         $gauge = $this->gauge(
-            array(222 => $now - self::TTL - 1),
-            array(
+            [222 => $now - self::TTL - 1],
+            [
                 'report_at' => (string)$now,
                 'conn_total' => '12',
                 'conn_ws'    => '7',
                 'conn_udp'   => '5',
-            )
+            ]
         );
 
         $fields = Monitor::staleFields($gauge, self::TTL, $now);
@@ -170,35 +146,35 @@ class MonitorTest extends TestCase
     public function testIgnoresProcessFieldsWithoutPidAt()
     {
         // 没有 pid_at 就无从判存活 —— 宁可留下也不误删
-        $gauge = array(
+        $gauge = [
             'proc:222'         => '{"role":"business","worker_id":0}',
             'tasks:222'        => '{"worker_id":0,"jobs":[]}',
             'memory_bytes:222' => '4194304',
-        );
-        $this->assertSame(array(), Monitor::staleFields($gauge, self::TTL, 1000000));
+        ];
+        $this->assertSame([], Monitor::staleFields($gauge, self::TTL, 1000000));
     }
 
     public function testIgnoresNonNumericPidSuffix()
     {
         // 后缀非纯数字（脏字段 / 前缀被当键名误用）不得进入删除列表
-        $gauge = array(
+        $gauge = [
             'pid_at:abc' => '1',
             'pid_at:12x' => '1',
             'pid_at:'    => '1',
             'pid_at: 7'  => '1',
-        );
-        $this->assertSame(array(), Monitor::staleFields($gauge, self::TTL, 1000000));
+        ];
+        $this->assertSame([], Monitor::staleFields($gauge, self::TTL, 1000000));
     }
 
     public function testIgnoresMissingOrCorruptTimestamp()
     {
         // (int) 转换后 <= 0 即视为缺失 —— 不能当成「1970 年，早已过期」而删掉
-        $gauge = array(
+        $gauge = [
             'pid_at:333' => '0',
             'pid_at:444' => '',
             'pid_at:555' => 'abc',
-        );
-        $this->assertSame(array(), Monitor::staleFields($gauge, self::TTL, 1000000));
+        ];
+        $this->assertSame([], Monitor::staleFields($gauge, self::TTL, 1000000));
     }
 
     /* -----------------------------------------------------------------
@@ -221,14 +197,14 @@ class MonitorTest extends TestCase
         // 表现是「采集正常但面板进程列表空」—— 排查成本很高，这里直接钉死。
         $html = (string)file_get_contents($this->root('resources/dashboard/index.html'));
 
-        foreach (array(
+        foreach ([
             Monitor::FIELD_PID_AT,
             Monitor::FIELD_PROC,
             Monitor::FIELD_TASKS,
             Monitor::FIELD_MEMORY_BYTES,
-        ) as $prefix) {
+        ] as $prefix) {
             $this->assertStringContainsString(
-                '/^' . $prefix . '(\\d+)$/',
+                '/^' . $prefix . '(\d+)$/',
                 $html,
                 '面板未按前缀 ' . $prefix . ' 解析字段'
             );
@@ -252,6 +228,32 @@ class MonitorTest extends TestCase
     }
 
     /**
+     * 构造一份 gauge 快照：每个 pid 生成 4 个字段（与写入侧字段完全一致）
+     *
+     * @param array $pidAts pid => pid_at 时间戳
+     * @param array $extra  额外字段（全局指标等）
+     *
+     * @return array
+     */
+    private function gauge(array $pidAts, array $extra = [])
+    {
+        $gauge = $extra;
+        foreach ($pidAts as $pid => $at) {
+            $gauge[Monitor::FIELD_PID_AT . $pid]       = (string)$at;
+            $gauge[Monitor::FIELD_PROC . $pid]         = '{"role":"business","worker_id":0}';
+            $gauge[Monitor::FIELD_TASKS . $pid]        = '{"worker_id":0,"jobs":[]}';
+            $gauge[Monitor::FIELD_MEMORY_BYTES . $pid] = '4194304';
+        }
+
+        return $gauge;
+    }
+
+    private function root($relative)
+    {
+        return dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relative);
+    }
+
+    /**
      * 定位「真实语句」在源码中的偏移量
      *
      * 必须锚定行首，不能用 strpos：strpos 只找子串，把语句注释掉（前面加 //）
@@ -260,7 +262,8 @@ class MonitorTest extends TestCase
      *
      * @param string $src
      * @param string $statement
-     * @return int|null 找不到时返回 null
+     *
+     * @return null|int 找不到时返回 null
      */
     private function statementOffset($src, $statement)
     {
@@ -268,6 +271,7 @@ class MonitorTest extends TestCase
         if (preg_match($pattern, $src, $m, PREG_OFFSET_CAPTURE) !== 1) {
             return null;
         }
+
         return (int)$m[0][1];
     }
 }

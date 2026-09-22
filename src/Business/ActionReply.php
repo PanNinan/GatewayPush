@@ -47,6 +47,11 @@ use GatewayPush\Common\Logger;
 use GatewayPush\Common\RedisClient;
 use GatewayPush\Common\RedisKeys;
 
+/**
+ * HTTP 通道的动作结果回程桥
+ *
+ * 业务进程把动作回执写入 action:result:{request_id}（SET NX EX 首次胜出），api 进程轮询取回。
+ */
 class ActionReply
 {
     /**
@@ -54,19 +59,19 @@ class ActionReply
      *
      * 与 Push::UDP_PREFIX 同构：通道由 clientId 前缀推断，不额外传参。
      */
-    const CLIENT_PREFIX = 'http:';
+    public const CLIENT_PREFIX = 'http:';
 
     /**
      * 默认结果保留时长（秒）
      */
-    const DEFAULT_TTL = 60;
+    public const DEFAULT_TTL = 60;
 
     /**
      * request_id 合法字符集与长度
      *
      * request_id 会直接参与 Redis 键拼接，必须限制字符集以避免键空间污染。
      */
-    const REQUEST_ID_PATTERN = '/^[A-Za-z0-9_-]{1,64}$/';
+    public const REQUEST_ID_PATTERN = '/^[A-Za-z0-9_-]{1,64}$/';
 
     /**
      * 结果键保留时长（秒）
@@ -79,9 +84,10 @@ class ActionReply
      * 初始化
      *
      * @param array $config business.action_queue 配置
+     *
      * @return void
      */
-    public static function init(array $config = array())
+    public static function init(array $config = [])
     {
         if (isset($config['result_ttl'])) {
             self::$ttl = max(1, (int)$config['result_ttl']);
@@ -100,6 +106,7 @@ class ActionReply
      * 拼装 HTTP 通道的虚拟 clientId
      *
      * @param string $requestId
+     *
      * @return string
      */
     public static function clientId($requestId)
@@ -111,6 +118,7 @@ class ActionReply
      * 从 clientId 还原 request_id（非 HTTP 通道返回空串）
      *
      * @param string $clientId
+     *
      * @return string
      */
     public static function requestId($clientId)
@@ -119,6 +127,7 @@ class ActionReply
         if (!self::isHttpClient($clientId)) {
             return '';
         }
+
         return substr($clientId, strlen(self::CLIENT_PREFIX));
     }
 
@@ -126,6 +135,7 @@ class ActionReply
      * 是否为 HTTP 通道的 clientId
      *
      * @param string $clientId
+     *
      * @return bool
      */
     public static function isHttpClient($clientId)
@@ -137,6 +147,7 @@ class ActionReply
      * request_id 是否合法（键空间保护的唯一入口）
      *
      * @param string $requestId
+     *
      * @return bool
      */
     public static function validRequestId($requestId)
@@ -155,21 +166,23 @@ class ActionReply
      *
      * @param string        $clientId HTTP 通道的虚拟 clientId
      * @param array         $packet   已构造的回执报文
-     * @param callable|null $cb       function(bool $first)
+     * @param null|callable $cb       function(bool $first)
+     *
      * @return void
      */
-    public static function store($clientId, array $packet, callable $cb = null)
+    public static function store($clientId, array $packet, ?callable $cb = null)
     {
         $requestId = self::requestId($clientId);
 
         if ($requestId === '' || !self::validRequestId($requestId)) {
             // 键名不可信时宁可丢弃也不写入，避免请求方通过 request_id 污染键空间
-            Logger::warn('HTTP 动作回执缺少合法 request_id，已丢弃', array(
+            Logger::warn('HTTP 动作回执缺少合法 request_id，已丢弃', [
                 'client_id' => $clientId,
-            ));
+            ]);
             if ($cb) {
-                call_user_func($cb, false);
+                $cb(false);
             }
+
             return;
         }
 
@@ -178,10 +191,10 @@ class ActionReply
 
         RedisClient::setNxEx($key, $payload, self::$ttl, function ($first) use ($requestId, $cb) {
             if (!$first) {
-                Logger::debug('HTTP 动作回执已存在，保留首次结果', array('request_id' => $requestId));
+                Logger::debug('HTTP 动作回执已存在，保留首次结果', ['request_id' => $requestId]);
             }
             if ($cb) {
-                call_user_func($cb, $first);
+                $cb($first);
             }
         });
     }
@@ -193,30 +206,34 @@ class ActionReply
      *
      * @param string   $requestId
      * @param callable $cb        function(array|null $packet)
+     *
      * @return void
      */
     public static function fetch($requestId, callable $cb)
     {
         $requestId = (string)$requestId;
         if (!self::validRequestId($requestId)) {
-            call_user_func($cb, null);
+            $cb(null);
+
             return;
         }
 
         RedisClient::get(RedisKeys::actionResult($requestId), function ($raw) use ($cb) {
             if (!is_string($raw) || $raw === '') {
-                call_user_func($cb, null);
+                $cb(null);
+
                 return;
             }
 
             $packet = json_decode($raw, true);
             if (!is_array($packet)) {
                 Logger::warn('HTTP 动作回执反序列化失败，按未就绪处理');
-                call_user_func($cb, null);
+                $cb(null);
+
                 return;
             }
 
-            call_user_func($cb, $packet);
+            $cb($packet);
         });
     }
 }

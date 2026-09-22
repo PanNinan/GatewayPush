@@ -1,12 +1,6 @@
 parameters:
 	ignoreErrors:
 		-
-			message: '#^Strict comparison using \!\=\= between null and null will always evaluate to false\.$#'
-			identifier: notIdentical.alwaysFalse
-			count: 1
-			path: src/Business/ActionRunner.php
-
-		-
 			message: '#^Anonymous function has an unused use \$uid\.$#'
 			identifier: closure.unusedUse
 			count: 1

@@ -29,33 +29,33 @@ class MessageTest extends TestCase
 
     public function testCanonicalizeSortsKeysAscending(): void
     {
-        self::assertSame('{"a":2,"b":1}', Message::canonicalize(array('b' => 1, 'a' => 2)));
+        self::assertSame('{"a":2,"b":1}', Message::canonicalize(['b' => 1, 'a' => 2]));
     }
 
     public function testCanonicalizeIsRecursive(): void
     {
         self::assertSame(
             '{"a":1,"z":{"a":1,"b":2}}',
-            Message::canonicalize(array('z' => array('b' => 2, 'a' => 1), 'a' => 1))
+            Message::canonicalize(['z' => ['b' => 2, 'a' => 1], 'a' => 1])
         );
     }
 
     public function testCanonicalizeIsKeyOrderIndependent(): void
     {
-        $one = Message::canonicalize(array('a' => 1, 'b' => array('x' => 1, 'y' => 2)));
-        $two = Message::canonicalize(array('b' => array('y' => 2, 'x' => 1), 'a' => 1));
+        $one = Message::canonicalize(['a' => 1, 'b' => ['x' => 1, 'y' => 2]]);
+        $two = Message::canonicalize(['b' => ['y' => 2, 'x' => 1], 'a' => 1]);
 
         self::assertSame($one, $two);
     }
 
     public function testCanonicalizeIsCompactAndKeepsUnicode(): void
     {
-        self::assertSame('{"k":"中文"}', Message::canonicalize(array('k' => '中文')));
+        self::assertSame('{"k":"中文"}', Message::canonicalize(['k' => '中文']));
     }
 
     public function testCanonicalizeHandlesEmptyArrayAndScalars(): void
     {
-        self::assertSame('[]', Message::canonicalize(array()));
+        self::assertSame('[]', Message::canonicalize([]));
         self::assertSame('x', Message::canonicalize('x'));
         self::assertSame('5', Message::canonicalize(5));
     }
@@ -66,15 +66,15 @@ class MessageTest extends TestCase
 
     public function testSignFollowsDocumentedBaseString(): void
     {
-        $data   = array('b' => 2, 'a' => 1);
-        $packet = array(
+        $data   = ['b' => 2, 'a' => 1];
+        $packet = [
             'cmd'       => 'data',
             'seq'       => 's1',
             'ts'        => 1690000000,
             'device_id' => 'dev1',
             'token'     => 'tk',
             'data'      => $data,
-        );
+        ];
 
         $base = 'data|s1|1690000000|dev1|tk|' . Message::canonicalize($data);
 
@@ -83,18 +83,18 @@ class MessageTest extends TestCase
 
     public function testSignIgnoresUid(): void
     {
-        $base = array(
+        $base = [
             'cmd'       => 'data',
             'seq'       => 's1',
             'ts'        => 1690000000,
             'device_id' => 'dev1',
             'token'     => 'tk',
-            'data'      => array(),
-        );
+            'data'      => [],
+        ];
 
         $noUid  = $base;
-        $alice  = $base + array('uid' => 'alice');
-        $bob    = $base + array('uid' => 'bob');
+        $alice  = $base + ['uid' => 'alice'];
+        $bob    = $base + ['uid' => 'bob'];
 
         self::assertSame(Message::sign($noUid, 'secret'), Message::sign($alice, 'secret'));
         self::assertSame(Message::sign($alice, 'secret'), Message::sign($bob, 'secret'));
@@ -102,10 +102,10 @@ class MessageTest extends TestCase
 
     public function testSignIsDeterministicAndSecretDependent(): void
     {
-        $packet = array(
+        $packet = [
             'cmd' => 'ping', 'seq' => '1', 'ts' => 1,
-            'device_id' => 'd', 'token' => 't', 'data' => array(),
-        );
+            'device_id' => 'd', 'token' => 't', 'data' => [],
+        ];
 
         self::assertSame(Message::sign($packet, 'a'), Message::sign($packet, 'a'));
         self::assertNotSame(Message::sign($packet, 'a'), Message::sign($packet, 'b'));
@@ -115,8 +115,8 @@ class MessageTest extends TestCase
     public function testSignDependsOnToken(): void
     {
         // token 参与签名是 UDP 身份可信的基础，此处固定该事实
-        $one = array('cmd' => 'data', 'seq' => '', 'ts' => 1, 'device_id' => '', 'token' => 'tk1', 'data' => array());
-        $two = array('cmd' => 'data', 'seq' => '', 'ts' => 1, 'device_id' => '', 'token' => 'tk2', 'data' => array());
+        $one = ['cmd' => 'data', 'seq' => '', 'ts' => 1, 'device_id' => '', 'token' => 'tk1', 'data' => []];
+        $two = ['cmd' => 'data', 'seq' => '', 'ts' => 1, 'device_id' => '', 'token' => 'tk2', 'data' => []];
 
         self::assertNotSame(Message::sign($one, 's'), Message::sign($two, 's'));
     }
@@ -127,7 +127,7 @@ class MessageTest extends TestCase
 
     public function testEncodeKeepsUnicodeUnescaped(): void
     {
-        self::assertSame('{"k":"中文"}', Message::encode(array('k' => '中文')));
+        self::assertSame('{"k":"中文"}', Message::encode(['k' => '中文']));
     }
 
     public function testEncodeNonArrayProducesErrorPacket(): void
@@ -181,14 +181,14 @@ class MessageTest extends TestCase
         self::assertSame('', $packet['device_id']);
         self::assertSame('', $packet['token']);
         self::assertSame('', $packet['sign']);
-        self::assertSame(array(), $packet['data']);
+        self::assertSame([], $packet['data']);
     }
 
     public function testDecodeWrapsScalarData(): void
     {
         $packet = Message::decode('{"cmd":"data","data":"raw"}');
 
-        self::assertSame(array('value' => 'raw'), $packet['data']);
+        self::assertSame(['value' => 'raw'], $packet['data']);
     }
 
     /* ---------------------------------------------------------------------
@@ -197,11 +197,11 @@ class MessageTest extends TestCase
 
     public function testAckCastsSeqToString(): void
     {
-        $ack = Message::ack(12345, array('ok' => 1));
+        $ack = Message::ack(12345, ['ok' => 1]);
 
         self::assertSame(Message::CMD_ACK, $ack['cmd']);
         self::assertSame('12345', $ack['seq']);
-        self::assertSame(array('ok' => 1), $ack['data']);
+        self::assertSame(['ok' => 1], $ack['data']);
     }
 
     public function testErrorUsesDefaultMessage(): void
@@ -233,11 +233,11 @@ class MessageTest extends TestCase
 
     public function testVerifyAcceptsCorrectSignature(): void
     {
-        $config = array('sign_enable' => true, 'secret' => 'sec', 'clock_skew' => 300);
-        $packet = array(
+        $config = ['sign_enable' => true, 'secret' => 'sec', 'clock_skew' => 300];
+        $packet = [
             'cmd' => 'data', 'seq' => '1', 'ts' => time(),
-            'device_id' => 'd', 'token' => 't', 'data' => array(),
-        );
+            'device_id' => 'd', 'token' => 't', 'data' => [],
+        ];
         $packet['sign'] = Message::sign($packet, 'sec');
 
         self::assertTrue(Message::verify($packet, $config)['ok']);
@@ -245,15 +245,15 @@ class MessageTest extends TestCase
 
     public function testVerifyRejectsTamperedData(): void
     {
-        $config = array('sign_enable' => true, 'secret' => 'sec', 'clock_skew' => 300);
-        $packet = array(
+        $config = ['sign_enable' => true, 'secret' => 'sec', 'clock_skew' => 300];
+        $packet = [
             'cmd' => 'data', 'seq' => '1', 'ts' => time(),
-            'device_id' => 'd', 'token' => 't', 'data' => array(),
-        );
+            'device_id' => 'd', 'token' => 't', 'data' => [],
+        ];
         $packet['sign'] = Message::sign($packet, 'sec');
 
         $tampered         = $packet;
-        $tampered['data'] = array('injected' => 1);
+        $tampered['data'] = ['injected' => 1];
 
         $result = Message::verify($tampered, $config);
 
@@ -263,11 +263,11 @@ class MessageTest extends TestCase
 
     public function testVerifyRejectsStaleTimestamp(): void
     {
-        $config = array('sign_enable' => true, 'secret' => 'sec', 'clock_skew' => 10);
-        $packet = array(
+        $config = ['sign_enable' => true, 'secret' => 'sec', 'clock_skew' => 10];
+        $packet = [
             'cmd' => 'data', 'seq' => '1', 'ts' => time() - 1000,
-            'device_id' => 'd', 'token' => 't', 'data' => array(),
-        );
+            'device_id' => 'd', 'token' => 't', 'data' => [],
+        ];
         $packet['sign'] = Message::sign($packet, 'sec');
 
         $result = Message::verify($packet, $config);
@@ -278,8 +278,8 @@ class MessageTest extends TestCase
 
     public function testVerifyRejectsMissingSignField(): void
     {
-        $config = array('sign_enable' => true, 'secret' => 'sec', 'clock_skew' => 300);
-        $packet = array('cmd' => 'data', 'seq' => '1', 'ts' => time(), 'device_id' => 'd', 'token' => 't', 'data' => array());
+        $config = ['sign_enable' => true, 'secret' => 'sec', 'clock_skew' => 300];
+        $packet = ['cmd' => 'data', 'seq' => '1', 'ts' => time(), 'device_id' => 'd', 'token' => 't', 'data' => []];
 
         $result = Message::verify($packet, $config);
 
@@ -290,12 +290,12 @@ class MessageTest extends TestCase
 
     public function testVerifySkipsWhenSignatureDisabled(): void
     {
-        self::assertTrue(Message::verify(array('cmd' => 'data'), array('sign_enable' => false))['ok']);
+        self::assertTrue(Message::verify(['cmd' => 'data'], ['sign_enable' => false])['ok']);
     }
 
     public function testVerifyRejectsWhenSecretMissing(): void
     {
-        $result = Message::verify(array('cmd' => 'data'), array('sign_enable' => true, 'secret' => ''));
+        $result = Message::verify(['cmd' => 'data'], ['sign_enable' => true, 'secret' => '']);
 
         self::assertFalse($result['ok']);
         self::assertSame(Message::CODE_BAD_SIGN, $result['code']);

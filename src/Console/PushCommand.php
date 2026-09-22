@@ -23,6 +23,11 @@ use GatewayPush\Common\RedisClient;
 use Workerman\Timer;
 use Workerman\Worker;
 
+/**
+ * push 子命令：提交一条定向推送任务（调试 / 运维用）
+ *
+ * 只入队不投递，故可在服务未启动时执行；需 workerman 事件循环，单独成类。
+ */
 final class PushCommand
 {
     /**
@@ -32,6 +37,7 @@ final class PushCommand
      * @param array $gatewayConfig  config/gateway.php
      * @param array $businessConfig config/business.php
      * @param array $argvList       原始参数列表
+     *
      * @return int 退出码
      */
     public static function run(array $appConfig, array $gatewayConfig, array $businessConfig, array $argvList)
@@ -45,19 +51,21 @@ final class PushCommand
         if ($targetType === '' || $target === '') {
             fwrite(STDERR, "用法：php start.php push <uid|device|client> <target> [payload-json] [msg_id] [offline_mode]\n");
             fwrite(STDERR, "示例：php start.php push uid 1001 '{\"title\":\"hi\"}' msg-1\n");
+
             return 1;
         }
 
         $payload = json_decode($payloadRaw, true);
         if (!is_array($payload)) {
             fwrite(STDERR, '[FATAL] payload 不是合法 JSON 对象：' . $payloadRaw . "\n");
+
             return 1;
         }
 
         Push::init(
             $appConfig['push'],
             $businessConfig['push_queue'],
-            isset($gatewayConfig['udp']['out_queue']) ? $gatewayConfig['udp']['out_queue'] : array()
+            $gatewayConfig['udp']['out_queue'] ?? []
         );
 
         $exitCode = 0;
@@ -74,17 +82,18 @@ final class PushCommand
                 fwrite(STDERR, "[FATAL] 入队操作超时，请检查 Redis 连通性\n");
                 $exitCode = 1;
                 Worker::stopAll();
-            }, array(), false);
+            }, [], false);
 
-            Push::enqueue($targetType, $target, $payload, array(
+            Push::enqueue($targetType, $target, $payload, [
                 'msg_id'       => $msgId,
                 'offline_mode' => $offlineMode,
                 'source'       => 'cli',
-            ), function ($ok) use ($targetType, $target, $msgId, $offlineMode, $queueKey, &$exitCode) {
+            ], function ($ok) use ($targetType, $target, $msgId, $offlineMode, $queueKey, &$exitCode) {
                 if (!$ok) {
                     fwrite(STDERR, "[FATAL] 推送任务入队失败\n");
                     $exitCode = 1;
                     Worker::stopAll();
+
                     return;
                 }
 

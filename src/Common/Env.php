@@ -31,13 +31,18 @@ use Dotenv\Dotenv;
 use Dotenv\Repository\Adapter\PutenvAdapter;
 use Dotenv\Repository\RepositoryBuilder;
 
+/**
+ * 环境变量加载与类型化读取
+ *
+ * 多级 .env 叠加，真实环境变量最高优先；读取一律走类型化方法，不直接访问 $_ENV。
+ */
 class Env
 {
     /** 缺省环境标识 */
-    const DEFAULT_ENV = 'dev';
+    public const DEFAULT_ENV = 'dev';
 
     /** 密钥生成字节数（转为十六进制后长度为该值的 2 倍） */
-    const SECRET_BYTES = 32;
+    public const SECRET_BYTES = 32;
 
     /**
      * .env 文件槽位
@@ -46,26 +51,46 @@ class Env
      * 「外部已有变量不可覆盖，但本次加载写入的值允许被后续文件覆盖」，
      * 顺序倒置会导致高优先级文件被基础文件反向覆盖（曾踩坑）。
      */
-    const FILE_SLOTS = array(
+    public const FILE_SLOTS = [
         '.env',
         '.env.{env}',
         '.env.local',
         '.env.{env}.local',
-    );
+    ];
 
-    /** 是否已完成加载 */
+    /**
+     * 是否已完成加载
+     *
+     * @var bool
+     */
     protected static $loaded = false;
 
-    /** 实际读取到的文件（按优先级从高到低） */
-    protected static $files = array();
+    /**
+     * 实际读取到的文件（按优先级从高到低）
+     *
+     * @var array
+     */
+    protected static $files = [];
 
-    /** 当前环境标识 */
+    /**
+     * 当前环境标识
+     *
+     * @var string
+     */
     protected static $envName = self::DEFAULT_ENV;
 
-    /** 加载根目录 */
+    /**
+     * 加载根目录
+     *
+     * @var string
+     */
     protected static $basePath = '';
 
-    /** 加载阶段异常信息 */
+    /**
+     * 加载阶段异常信息
+     *
+     * @var string
+     */
     protected static $error = '';
 
     /* =================================================================
@@ -75,7 +100,8 @@ class Env
     /**
      * 加载环境变量文件（幂等，重复调用直接返回首次结果）
      *
-     * @param string|null $basePath 项目根目录，缺省为 src 的上两级
+     * @param null|string $basePath 项目根目录，缺省为 src 的上两级
+     *
      * @return array 实际读取到的文件名列表（按加载顺序，即优先级从低到高）
      */
     public static function load($basePath = null)
@@ -91,7 +117,7 @@ class Env
         self::$envName = self::detectEnvName(self::$basePath);
 
         // 收集真实存在的文件，保持「低优先级在前」的加载顺序
-        $files = array();
+        $files = [];
         foreach (self::FILE_SLOTS as $slot) {
             $name = str_replace('{env}', self::$envName, $slot);
             if (is_file(self::$basePath . '/' . $name)) {
@@ -104,7 +130,8 @@ class Env
                 $repository = RepositoryBuilder::createWithDefaultAdapters()
                     ->addReader(PutenvAdapter::class)   // 仅读，不写回 getenv()
                     ->immutable()                       // 已存在的值（含系统环境变量）不被覆盖
-                    ->make();
+                    ->make()
+                ;
 
                 // shortCircuit = false：读取全部命中文件。配合 immutable 实现
                 // 「外部环境变量不被覆盖，文件之间后者覆盖前者」
@@ -163,6 +190,7 @@ class Env
         if (!self::$loaded) {
             self::load();
         }
+
         return self::$envName;
     }
 
@@ -170,6 +198,7 @@ class Env
      * 生成高强度随机密钥（十六进制）
      *
      * @param int $bytes 随机字节数
+     *
      * @return string
      */
     public static function generateSecret($bytes = self::SECRET_BYTES)
@@ -195,6 +224,7 @@ class Env
      * 判断变量是否已定义（含空字符串）
      *
      * @param string $key
+     *
      * @return bool
      */
     public static function has($key)
@@ -207,6 +237,7 @@ class Env
      *
      * @param string $key
      * @param mixed  $default 变量不存在时返回的默认值
+     *
      * @return mixed
      */
     public static function get($key, $default = null)
@@ -214,6 +245,7 @@ class Env
         if (!self::$loaded) {
             self::load();
         }
+
         return self::lookup($key, $default);
     }
 
@@ -222,6 +254,7 @@ class Env
      *
      * @param string $key
      * @param string $default
+     *
      * @return string
      */
     public static function str($key, $default = '')
@@ -230,6 +263,7 @@ class Env
         if ($value === null || is_array($value)) {
             return (string)$default;
         }
+
         return (string)$value;
     }
 
@@ -238,6 +272,7 @@ class Env
      *
      * @param string $key
      * @param int    $default
+     *
      * @return int
      */
     public static function int($key, $default = 0)
@@ -246,6 +281,7 @@ class Env
         if ($value === null || $value === '' || is_array($value) || !is_numeric($value)) {
             return (int)$default;
         }
+
         return (int)$value;
     }
 
@@ -254,6 +290,7 @@ class Env
      *
      * @param string $key
      * @param float  $default
+     *
      * @return float
      */
     public static function float($key, $default = 0.0)
@@ -262,6 +299,7 @@ class Env
         if ($value === null || $value === '' || is_array($value) || !is_numeric($value)) {
             return (float)$default;
         }
+
         return (float)$value;
     }
 
@@ -273,6 +311,7 @@ class Env
      *
      * @param string $key
      * @param bool   $default
+     *
      * @return bool
      */
     public static function bool($key, $default = false)
@@ -290,7 +329,7 @@ class Env
             return (bool)$default;
         }
 
-        return in_array($normalized, array('1', 'true', 'yes', 'on'), true);
+        return in_array($normalized, ['1', 'true', 'yes', 'on'], true);
     }
 
     /**
@@ -298,16 +337,17 @@ class Env
      *
      * @param string $key
      * @param array  $default
+     *
      * @return array
      */
-    public static function list($key, $default = array())
+    public static function list($key, $default = [])
     {
         $value = self::get($key, null);
         if (!is_string($value) || trim($value) === '') {
             return (array)$default;
         }
 
-        $items = array();
+        $items = [];
         foreach (explode(',', $value) as $item) {
             $item = trim($item);
             if ($item !== '') {
@@ -329,6 +369,7 @@ class Env
      *
      * @param string $key
      * @param mixed  $default
+     *
      * @return mixed
      */
     protected static function lookup($key, $default = null)
@@ -358,6 +399,7 @@ class Env
      *
      * @param mixed $value
      * @param mixed $default
+     *
      * @return mixed
      */
     protected static function normalize($value, $default)
@@ -365,6 +407,7 @@ class Env
         if ($value === null) {
             return '';
         }
+
         return $value;
     }
 
@@ -375,6 +418,7 @@ class Env
      * 结果会被拼入文件名，因此严格限制为字母数字下划线，防止路径穿越
      *
      * @param string $basePath
+     *
      * @return string
      */
     protected static function detectEnvName($basePath)
@@ -401,6 +445,7 @@ class Env
      *
      * @param string $file
      * @param string $key
+     *
      * @return string
      */
     protected static function peek($file, $key)
@@ -420,7 +465,7 @@ class Env
         }
 
         // 剥离行内注释（# 前需有空白，避免误伤值内的 #）
-        $value = preg_replace('/[ \t]+#.*$/', '', (string)$matches[1]);
+        $value = preg_replace('/[ \t]+#.*$/', '', $matches[1]);
         $value = trim((string)$value);
 
         return trim($value, "\"'");

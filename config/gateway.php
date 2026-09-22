@@ -17,7 +17,6 @@ $basePath = defined('BASE_PATH') ? BASE_PATH : dirname(__DIR__);
 $registerListen = Env::str('REGISTER_LISTEN', '127.0.0.1:1238');
 
 return [
-
     /* ---------------------------------------------------------------
      | Register 注册中心（Gateway 与 BusinessWorker 的地址发现服务）
      |
@@ -42,9 +41,9 @@ return [
 
         // SSL（生产环境 WSS 必需）
         'ssl' => [
-            'enable'      => Env::bool('SSL_ENABLE', false),
-            'local_cert'  => Env::str('SSL_CERT', ''),
-            'local_pk'    => Env::str('SSL_PK', ''),
+            'enable'      => Env::bool('SSL_ENABLE'),
+            'local_cert'  => Env::str('SSL_CERT'),
+            'local_pk'    => Env::str('SSL_PK'),
             'verify_peer' => false,   // 自签 / 单域名证书场景下的固定策略
         ],
     ],

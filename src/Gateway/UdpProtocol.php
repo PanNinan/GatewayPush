@@ -20,6 +20,11 @@ use GatewayPush\Business\Message;
 use GatewayPush\Common\Logger;
 use Workerman\Connection\ConnectionInterface;
 
+/**
+ * UDP 应用层协议：拆包、编解码与合法性校验
+ *
+ * decode() 内部不可抛异常 —— workerman 会捕获协议异常并 stopAll()，导致网关进程退出。
+ */
 class UdpProtocol
 {
     /**
@@ -34,6 +39,7 @@ class UdpProtocol
      *
      * @param string              $buffer
      * @param ConnectionInterface $connection
+     *
      * @return int 正数表示包长，0 表示继续等待，-1 表示非法包
      */
     public static function input(string $buffer, ConnectionInterface $connection): int
@@ -45,6 +51,7 @@ class UdpProtocol
         if (self::$maxPacketSize > 0 && $length > self::$maxPacketSize) {
             return -1;
         }
+
         // UDP 单包一次到齐，不存在粘包，直接交给 decode
         return $length;
     }
@@ -54,6 +61,7 @@ class UdpProtocol
      *
      * @param string              $buffer
      * @param ConnectionInterface $connection
+     *
      * @return mixed 返回 false 时框架丢弃该包且不触发 onMessage
      */
     public static function decode(string $buffer, ConnectionInterface $connection): mixed
@@ -63,11 +71,12 @@ class UdpProtocol
             $packet = Message::decode($buffer, $error);
 
             if ($packet === null) {
-                Logger::warn('UDP 报文解析失败，已丢弃', array(
+                Logger::warn('UDP 报文解析失败，已丢弃', [
                     'remote' => $connection->getRemoteIp() . ':' . $connection->getRemotePort(),
                     'size'   => strlen($buffer),
                     'error'  => $error,
-                ));
+                ]);
+
                 return false;
             }
 
@@ -75,6 +84,7 @@ class UdpProtocol
         } catch (\Throwable $e) {
             // 兜底：协议层异常绝不外抛，避免拖垮整个 worker 进程
             Logger::exception($e, 'udp.protocol.decode');
+
             return false;
         }
     }
@@ -84,6 +94,7 @@ class UdpProtocol
      *
      * @param mixed               $data
      * @param ConnectionInterface $connection
+     *
      * @return string
      */
     public static function encode(mixed $data, ConnectionInterface $connection): string
@@ -92,6 +103,7 @@ class UdpProtocol
             return Message::encode($data);
         } catch (\Throwable $e) {
             Logger::exception($e, 'udp.protocol.encode');
+
             return '{}';
         }
     }

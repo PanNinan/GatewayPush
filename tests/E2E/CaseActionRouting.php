@@ -30,6 +30,7 @@ final class CaseActionRouting
      *   4) 缺 action        -> 4007 缺少参数
      *
      * @param Harness $h
+     *
      * @return void
      */
     public static function routeTable(Harness $h)
@@ -40,11 +41,11 @@ final class CaseActionRouting
 
         $connJ->onConnect = function ($con) use ($h, $c) {
             echo "[J] WebSocket 已连接\n";
-            $con->send($h->encode($h->buildPacket(Message::CMD_AUTH, 'j-auth-1', array(
+            $con->send($h->encode($h->buildPacket(Message::CMD_AUTH, 'j-auth-1', [
                 'uid'       => $c['uid'],
                 'device_id' => $c['device_id'],
                 'token'     => $c['token'],
-            ))));
+            ])));
             echo "[J] -> auth\n";
         };
 
@@ -65,34 +66,38 @@ final class CaseActionRouting
                 case 0:   // 等待鉴权 ack
                     if ($packet['cmd'] !== Message::CMD_ACK) {
                         $fail('鉴权阶段返回 ' . $packet['cmd']);
+
                         return;
                     }
                     $jStep = 1;
-                    $con->send($h->encode($h->buildPacket(Message::CMD_DATA, 'j-echo-1', array(
+                    $con->send($h->encode($h->buildPacket(Message::CMD_DATA, 'j-echo-1', [
                         'uid'       => $c['uid'],
                         'device_id' => $c['device_id'],
-                        'data'      => array('action' => 'echo', 'params' => array('k' => 'v', 'n' => 1)),
-                    ))));
+                        'data'      => ['action' => 'echo', 'params' => ['k' => 'v', 'n' => 1]],
+                    ])));
                     echo "[J] -> data / action=echo\n";
+
                     return;
 
                 case 1:   // 期望 echo 回显
                     $action = isset($packet['data']['action']) ? (string)$packet['data']['action'] : '';
-                    $params = isset($packet['data']['params']) ? $packet['data']['params'] : array();
+                    $params = $packet['data']['params'] ?? [];
                     if ($packet['cmd'] !== Message::CMD_ACK
                         || $action !== 'echo'
                         || !is_array($params)
                         || !isset($params['k']) || (string)$params['k'] !== 'v') {
                         $fail('echo 回显异常：' . $raw);
+
                         return;
                     }
                     $jStep = 2;
-                    $con->send($h->encode($h->buildPacket(Message::CMD_DATA, 'j-session-1', array(
+                    $con->send($h->encode($h->buildPacket(Message::CMD_DATA, 'j-session-1', [
                         'uid'       => $c['uid'],
                         'device_id' => $c['device_id'],
-                        'data'      => array('action' => 'session'),
-                    ))));
+                        'data'      => ['action' => 'session'],
+                    ])));
                     echo "[J] -> data / action=session\n";
+
                     return;
 
                 case 2:   // 期望会话摘要
@@ -102,42 +107,48 @@ final class CaseActionRouting
                     if ($packet['cmd'] !== Message::CMD_ACK || $action !== 'session'
                         || $uidGot !== $c['uid'] || $proto !== 'ws') {
                         $fail(sprintf('session 摘要异常：action=%s uid=%s protocol=%s', $action, $uidGot, $proto));
+
                         return;
                     }
                     $jStep = 3;
-                    $con->send($h->encode($h->buildPacket(Message::CMD_DATA, 'j-unknown-1', array(
+                    $con->send($h->encode($h->buildPacket(Message::CMD_DATA, 'j-unknown-1', [
                         'uid'       => $c['uid'],
                         'device_id' => $c['device_id'],
-                        'data'      => array('action' => 'no_such_action'),
-                    ))));
+                        'data'      => ['action' => 'no_such_action'],
+                    ])));
                     echo "[J] -> data / action=no_such_action（期望 4006）\n";
+
                     return;
 
                 case 3:   // 期望未注册 action -> 4006
                     $code = isset($packet['data']['code']) ? (int)$packet['data']['code'] : 0;
                     if ($packet['cmd'] !== Message::CMD_ERROR || $code !== Message::CODE_UNKNOWN_CMD) {
                         $fail(sprintf('未注册 action 未被拒绝（cmd=%s code=%d，期望 error/4006）', $packet['cmd'], $code));
+
                         return;
                     }
                     $jStep = 4;
-                    $con->send($h->encode($h->buildPacket(Message::CMD_DATA, 'j-noaction-1', array(
+                    $con->send($h->encode($h->buildPacket(Message::CMD_DATA, 'j-noaction-1', [
                         'uid'       => $c['uid'],
                         'device_id' => $c['device_id'],
-                        'data'      => array('params' => array('x' => 1)),
-                    ))));
+                        'data'      => ['params' => ['x' => 1]],
+                    ])));
                     echo "[J] -> data / 缺 action（期望 4007）\n";
+
                     return;
 
                 case 4:   // 期望缺 action -> 4007
                     $code = isset($packet['data']['code']) ? (int)$packet['data']['code'] : 0;
                     if ($packet['cmd'] !== Message::CMD_ERROR || $code !== Message::CODE_PARAM_MISSING) {
                         $fail(sprintf('缺 action 未返回 4007（cmd=%s code=%d）', $packet['cmd'], $code));
+
                         return;
                     }
                     echo "[J] <- 4006 / 4007 分支均按预期返回\n";
                     $h->state['J'] = true;
                     $con->close();
                     $h->finish();
+
                     return;
             }
         };
@@ -166,6 +177,7 @@ final class CaseActionRouting
      * 末步回查 Redis，确认 report 确实已写入（回执与落库一致）
      *
      * @param Harness $h
+     *
      * @return void
      */
     public static function actionContract(Harness $h)
@@ -176,11 +188,11 @@ final class CaseActionRouting
 
         $connM->onConnect = function ($con) use ($h, $c) {
             echo "[M] WebSocket 已连接\n";
-            $con->send($h->encode($h->buildPacket(Message::CMD_AUTH, 'm-auth-1', array(
+            $con->send($h->encode($h->buildPacket(Message::CMD_AUTH, 'm-auth-1', [
                 'uid'       => $c['uid'],
                 'device_id' => $c['device_id'],
                 'token'     => $c['token'],
-            ))));
+            ])));
             echo "[M] -> auth\n";
         };
 
@@ -190,7 +202,7 @@ final class CaseActionRouting
                 return;
             }
 
-            $data = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : array();
+            $data = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : [];
             $code = isset($data['code']) ? (int)$data['code'] : -1;
             $act  = isset($data['action']) ? (string)$data['action'] : '';
 
@@ -201,25 +213,27 @@ final class CaseActionRouting
                 $h->finish();
             };
             $send = function ($seq, array $dataBody) use ($h, $con, $c) {
-                $con->send($h->encode($h->buildPacket(Message::CMD_DATA, $seq, array(
+                $con->send($h->encode($h->buildPacket(Message::CMD_DATA, $seq, [
                     'uid'       => $c['uid'],
                     'device_id' => $c['device_id'],
                     'data'      => $dataBody,
-                ))));
+                ])));
             };
 
             switch ($mStep) {
                 case 0:
                     if ($packet['cmd'] !== Message::CMD_ACK) {
                         $fail('鉴权阶段返回 ' . $packet['cmd']);
+
                         return;
                     }
                     $mStep = 1;
-                    $send('m-echo-1', array(
+                    $send('m-echo-1', [
                         'action' => 'echo',
-                        'params' => array('k' => 'v', 'n' => 1, 'deep' => array('a' => 1)),
-                    ));
+                        'params' => ['k' => 'v', 'n' => 1, 'deep' => ['a' => 1]],
+                    ]);
                     echo "[M] -> data/action=echo（params 透传）\n";
+
                     return;
 
                 case 1:
@@ -229,63 +243,74 @@ final class CaseActionRouting
                         || !isset($data['params']['k']) || (string)$data['params']['k'] !== 'v'
                         || !isset($data['params']['deep']['a'])) {
                         $fail('echo 回显异常（期望透传含 channel=ws）：' . $raw);
+
                         return;
                     }
                     $mStep = 2;
-                    $send('m-report-1', array(
+                    $send('m-report-1', [
                         'action' => 'report',
-                        'params' => array('topic' => $c['topic'], 'count' => 3),
-                    ));
+                        'params' => ['topic' => $c['topic'], 'count' => 3],
+                    ]);
                     echo "[M] -> data/action=report（合法入参）\n";
+
                     return;
 
                 case 2:
                     if ($packet['cmd'] !== Message::CMD_ACK || $act !== 'report'
-                        || (int)(isset($data['accepted']) ? $data['accepted'] : 0) !== 3) {
+                        || (int)($data['accepted'] ?? 0) !== 3) {
                         $fail('report 回执异常：' . $raw);
+
                         return;
                     }
                     $mStep = 3;
-                    $send('m-report-bad-1', array('action' => 'report', 'params' => array('count' => 1)));
+                    $send('m-report-bad-1', ['action' => 'report', 'params' => ['count' => 1]]);
                     echo "[M] -> data/action=report（缺 topic，期望 4007）\n";
+
                     return;
 
                 case 3:
                     if ($packet['cmd'] !== Message::CMD_ERROR || $code !== Message::CODE_PARAM_MISSING) {
                         $fail(sprintf('缺 required 未返回 4007：cmd=%s code=%d', $packet['cmd'], $code));
+
                         return;
                     }
                     $mStep = 4;
-                    $send('m-report-bad-2', array(
+                    $send('m-report-bad-2', [
                         'action' => 'report',
-                        'params' => array('topic' => 'bad topic!'),
-                    ));
+                        'params' => ['topic' => 'bad topic!'],
+                    ]);
                     echo "[M] -> data/action=report（topic 非法字符，期望 4007）\n";
+
                     return;
 
                 case 4:
                     if ($packet['cmd'] !== Message::CMD_ERROR || $code !== Message::CODE_PARAM_MISSING) {
                         $fail(sprintf('非法 topic 未被拦截：cmd=%s code=%d', $packet['cmd'], $code));
+
                         return;
                     }
                     $mStep = 5;
-                    $send('m-unknown-1', array('action' => 'no_such_action'));
+                    $send('m-unknown-1', ['action' => 'no_such_action']);
                     echo "[M] -> data/action=no_such_action（期望 4006）\n";
+
                     return;
 
                 case 5:
                     if ($packet['cmd'] !== Message::CMD_ERROR || $code !== Message::CODE_UNKNOWN_CMD) {
                         $fail(sprintf('未知动作未返回 4006：cmd=%s code=%d', $packet['cmd'], $code));
+
                         return;
                     }
                     $mStep = 6;
-                    $send('m-noaction-1', array());
+                    $send('m-noaction-1', []);
                     echo "[M] -> data（缺 action，期望 4007）\n";
+
                     return;
 
                 case 6:
                     if ($packet['cmd'] !== Message::CMD_ERROR || $code !== Message::CODE_PARAM_MISSING) {
                         $fail(sprintf('缺 action 未返回 4007：cmd=%s code=%d', $packet['cmd'], $code));
+
                         return;
                     }
 
@@ -307,6 +332,7 @@ final class CaseActionRouting
                         $con->close();
                         $h->finish();
                     });
+
                     return;
             }
         };

@@ -23,14 +23,14 @@ use PHPUnit\Framework\TestCase;
 final class RoleCatalogTest extends TestCase
 {
     /** 角色顺序即依赖顺序，与管理脚本 / 横幅一致 */
-    const ROLE_ORDER = array('register', 'gateway', 'udp', 'business', 'api', 'dashboard');
+    public const ROLE_ORDER = ['register', 'gateway', 'udp', 'business', 'api', 'dashboard'];
 
     /**
      * 非角色级开关：控制的是「组件行为 / 队列」而非「某个角色是否启动」，
      * 因此不应出现在 RoleCatalog 中。显式白名单，新增此类开关时必须同步登记 ——
      * 这正是下方反向断言能发现「角色开关漏登记」的前提。
      */
-    const NON_ROLE_SWITCHES = array(
+    public const NON_ROLE_SWITCHES = [
         'SSL_ENABLE',              // WebSocket 是否走 TLS，网关角色照常启动
         'UDP_QUEUE_ENABLE',        // UDP 入站队列
         'UDP_OUT_QUEUE_ENABLE',    // UDP 出站队列
@@ -41,7 +41,8 @@ final class RoleCatalogTest extends TestCase
         'RATE_LIMIT_ENABLE',       // 限流
         'SUBSCRIBE_ENABLE',        // 订阅
         'MONITOR_ENABLE',          // 指标采集
-    );
+        'LOG_ARCHIVE_ENABLE',      // 日志归档（功能开关，角色照常启动）
+    ];
 
     /* ---------------------------------------------------------------------
      | 集成断言：roles 命令的输出契约
@@ -80,7 +81,7 @@ final class RoleCatalogTest extends TestCase
         $this->assertTrue($byRole['business']['enabled'], '业务进程不支持单独关闭');
         $this->assertSame('', $byRole['business']['env'], '业务进程的 env 必须为空串');
 
-        foreach (array('register', 'gateway', 'udp', 'api', 'dashboard') as $role) {
+        foreach (['register', 'gateway', 'udp', 'api', 'dashboard'] as $role) {
             $this->assertMatchesRegularExpression(
                 '/^[A-Z][A-Z0-9_]*_ENABLE$/',
                 $byRole[$role]['env'],
@@ -93,7 +94,7 @@ final class RoleCatalogTest extends TestCase
     {
         // 真实环境变量优先级最高（.env < .env.local < 真实环境变量）。这条语义正是
         // 管理脚本**不能**自行解析 .env 的原因：脚本读到的值可能与进程实际取值相反。
-        $byRole = $this->byRole(array('WS_ENABLE' => 'false', 'DASHBOARD_ENABLE' => 'false'));
+        $byRole = $this->byRole(['WS_ENABLE' => 'false', 'DASHBOARD_ENABLE' => 'false']);
 
         $this->assertFalse($byRole['gateway']['enabled'], 'WS_ENABLE=false 未被识别');
         $this->assertFalse($byRole['dashboard']['enabled'], 'DASHBOARD_ENABLE=false 未被识别');
@@ -144,7 +145,7 @@ final class RoleCatalogTest extends TestCase
         $ps1 = (string)file_get_contents($this->root('bin/start.ps1'));
 
         $this->assertMatchesRegularExpression(
-            "/start\.php'\) 'roles'/",
+            "/start\\.php'\\) 'roles'/",
             $ps1,
             'start.ps1 必须向 start.php 询问角色启用状态：.env 的叠加语义只有 Env 类能还原，'
             . '脚本自行解析会与实际取值漂移'
@@ -201,9 +202,10 @@ final class RoleCatalogTest extends TestCase
      * 以子进程执行而非同进程 require start.php —— 那会跑完整个启动流程。
      *
      * @param array $env 附加的环境变量（键 => 值），用于验证覆盖语义
+     *
      * @return array
      */
-    private function roles(array $env = array())
+    private function roles(array $env = [])
     {
         if (!function_exists('shell_exec')) {
             $this->markTestSkipped('shell_exec 不可用，跳过 roles 集成断言');
@@ -239,11 +241,12 @@ final class RoleCatalogTest extends TestCase
      * 角色名 => 记录
      *
      * @param array $env
+     *
      * @return array
      */
-    private function byRole(array $env = array())
+    private function byRole(array $env = [])
     {
-        $byRole = array();
+        $byRole = [];
         foreach ($this->roles($env)['roles'] as $item) {
             $byRole[$item['role']] = $item;
         }
@@ -259,7 +262,7 @@ final class RoleCatalogTest extends TestCase
     private function catalogSwitchNames()
     {
         $code = (string)file_get_contents($this->root('src/Common/RoleCatalog.php'));
-        preg_match_all("/'env'\s*=>\s*'([A-Z][A-Z0-9_]*_ENABLE)'/", $code, $matches);
+        preg_match_all("/'env'\\s*=>\\s*'([A-Z][A-Z0-9_]*_ENABLE)'/", $code, $matches);
 
         return array_values(array_unique($matches[1]));
     }
@@ -271,10 +274,10 @@ final class RoleCatalogTest extends TestCase
      */
     private function configSwitchNames()
     {
-        $keys = array();
-        foreach (array('config/gateway.php', 'config/app.php') as $file) {
+        $keys = [];
+        foreach (['config/gateway.php', 'config/app.php'] as $file) {
             $code = (string)file_get_contents($this->root($file));
-            preg_match_all("/Env::bool\('([A-Z][A-Z0-9_]*_ENABLE)'/", $code, $matches);
+            preg_match_all("/Env::bool\\('([A-Z][A-Z0-9_]*_ENABLE)'/", $code, $matches);
             $keys = array_merge($keys, $matches[1]);
         }
 
@@ -285,6 +288,7 @@ final class RoleCatalogTest extends TestCase
      * 解析项目根下的文件路径（不依赖当前工作目录）
      *
      * @param string $relative
+     *
      * @return string
      */
     private function root($relative)

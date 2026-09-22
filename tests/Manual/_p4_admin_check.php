@@ -16,6 +16,7 @@
  */
 
 define('BASE_PATH', dirname(__DIR__, 2));
+
 require BASE_PATH . '/vendor/autoload.php';
 
 use GatewayPush\Client\Error\ErrorCode;
@@ -30,19 +31,18 @@ $secret    = (string)$appConfig['auth']['secret'];
 echo "P4 AdminApi 实测\n" . str_repeat('=', 60) . "\n";
 echo "API 地址 : {$apiUrl}\n" . str_repeat('-', 60) . "\n";
 
-$state = array(
+$state = [
     'health'  => false,
     'stats'   => false,
     'push'    => false,
     'badsign' => false,
     'expired' => false,
-);
-$failMsg = array();
+];
+$failMsg = [];
 
 $worker = new Worker();
 
 $worker->onWorkerStart = function () use ($apiUrl, $secret, &$state, &$failMsg) {
-
     $api = new AdminApi($apiUrl, $secret, 5.0);
 
     // [1] /health
@@ -54,18 +54,20 @@ $worker->onWorkerStart = function () use ($apiUrl, $secret, &$state, &$failMsg) 
     // [2] /stats
     $api->stats(function ($ok, $data, $error) use (&$state) {
         $state['stats'] = $ok && isset($data['gauge']);
-        echo sprintf("[2] /stats  -> %s gauge 字段数=%d\n",
+        echo sprintf(
+            "[2] /stats  -> %s gauge 字段数=%d\n",
             $ok ? '200 ok' : ('FAIL ' . json_encode($error, JSON_UNESCAPED_UNICODE)),
             isset($data['gauge']) ? count($data['gauge']) : 0
         );
     });
 
     // [3] /push
-    $api->push('uid', 'p3-udp-run4', array('title' => 'p4-direct-push'), array(
+    $api->push('uid', 'p3-udp-run4', ['title' => 'p4-direct-push'], [
         'msg_id' => 'p4-push-' . bin2hex(random_bytes(4)),
-    ), function ($ok, $data, $error) use (&$state) {
+    ], function ($ok, $data, $error) use (&$state) {
         $state['push'] = $ok && isset($data['target_type']) && $data['target_type'] === 'uid';
-        echo sprintf("[3] /push   -> %s %s\n",
+        echo sprintf(
+            "[3] /push   -> %s %s\n",
             $ok ? '200 accepted' : 'FAIL ' . json_encode($error, JSON_UNESCAPED_UNICODE),
             $ok ? json_encode($data, JSON_UNESCAPED_UNICODE) : ''
         );
@@ -80,14 +82,15 @@ $worker->onWorkerStart = function () use ($apiUrl, $secret, &$state, &$failMsg) 
 
     // [5] 过期时间戳 -> 401 + 4002（HttpTransport 手写过期头）
     $ts   = time() - 9999; // 超出默认 300s 防重放窗口
-    $sign = hash_hmac('sha256', $ts . '|' . '', $secret);
-    (new HttpTransport($apiUrl, 5.0))->request('GET', '/stats', '', array(
+    $sign = hash_hmac('sha256', $ts . '|', $secret);
+    (new HttpTransport($apiUrl, 5.0))->request('GET', '/stats', '', [
         'X-Timestamp' => (string)$ts,
         'X-Sign'      => $sign,
-    ), function ($response) use (&$state) {
+    ], function ($response) use (&$state) {
         $json            = $response['json'];
         $state['expired'] = $response['status'] === 401 && is_array($json) && (int)$json['code'] === ErrorCode::HTTP_EXPIRED;
-        echo sprintf("[5] 过期    -> HTTP %d code=%s %s\n",
+        echo sprintf(
+            "[5] 过期    -> HTTP %d code=%s %s\n",
             $response['status'],
             is_array($json) ? $json['code'] : '?',
             is_array($json) ? $json['msg'] : ''
@@ -97,13 +100,13 @@ $worker->onWorkerStart = function () use ($apiUrl, $secret, &$state, &$failMsg) 
     // 汇总
     \Workerman\Timer::add(2.0, function () use (&$state, &$failMsg) {
         echo "\n" . str_repeat('=', 60) . "\n";
-        $checks = array(
+        $checks = [
             'health'  => '[1] /health 免鉴权 200',
             'stats'   => '[2] /stats 验签通过返回指标',
             'push'    => '[3] /push 验签通过受理推送',
             'badsign' => '[4] 错误密钥 -> 401/4001',
             'expired' => '[5] 过期时间戳 -> 401/4002',
-        );
+        ];
         $pass = true;
         foreach ($checks as $key => $label) {
             $ok   = $state[$key] === true;
@@ -116,8 +119,9 @@ $worker->onWorkerStart = function () use ($apiUrl, $secret, &$state, &$failMsg) 
         }
         echo str_repeat('=', 60) . "\n";
         echo $pass ? "P4 实测结论：全部通过\n" : "P4 实测结论：存在失败项\n";
+
         exit($pass ? 0 : 1);
-    }, array(), false);
+    }, [], false);
 };
 
 Worker::runAll();

@@ -22,6 +22,7 @@ final class CaseUdpLink
      * 用例 C：UDP 正常链路
      *
      * @param Harness $h
+     *
      * @return void
      */
     public static function normalLink(Harness $h)
@@ -32,12 +33,12 @@ final class CaseUdpLink
 
         $udpC->onConnect = function ($con) use ($h, $c) {
             echo "[C] UDP 通道已就绪\n";
-            $payload = $h->encode($h->buildPacket(Message::CMD_DATA, 'c-udp-1', array(
+            $payload = $h->encode($h->buildPacket(Message::CMD_DATA, 'c-udp-1', [
                 'uid'       => $c['uid'],
                 'device_id' => $c['device_id'],
                 'token'     => $c['token'],
-                'data'      => array('metric' => 42),
-            )));
+                'data'      => ['metric' => 42],
+            ]));
             $h->udpSendUntilAck($con, $payload, 'C');
         };
 
@@ -67,6 +68,7 @@ final class CaseUdpLink
      * 用例 D：UDP 签名拦截
      *
      * @param Harness $h
+     *
      * @return void
      */
     public static function badSign(Harness $h)
@@ -77,11 +79,11 @@ final class CaseUdpLink
 
         $udpD->onConnect = function ($con) use ($h, $c) {
             echo "[D] UDP 通道已就绪\n";
-            $packet = $h->buildPacket(Message::CMD_DATA, 'd-udp-1', array(
+            $packet = $h->buildPacket(Message::CMD_DATA, 'd-udp-1', [
                 'uid'       => $c['uid'],
                 'device_id' => $c['device_id'],
-                'data'      => array('tampered' => 1),
-            ));
+                'data'      => ['tampered' => 1],
+            ]);
             // 篡改签名，模拟伪造报文
             $packet['sign'] = str_repeat('0', 64);
             $h->udpSendUntilAck($con, $h->encode($packet), 'D');

@@ -47,12 +47,18 @@ namespace GatewayPush\Business;
 use GatewayPush\Common\Logger;
 use Workerman\Timer;
 
+/**
+ * 业务动作执行器（WS / UDP / HTTP 三通道共用）
+ *
+ * 把「取动作名 → 鉴权 → 校验参数 → 查处理器 → 执行 → 回执」抽成单一路径；
+ * 通道由 clientId 前缀推断，行为差异只体现在回执的下发方式上。
+ */
 class ActionRunner
 {
     /**
      * 默认回执超时（秒），0 表示不启用保护
      */
-    const DEFAULT_TIMEOUT = 5;
+    public const DEFAULT_TIMEOUT = 5;
 
     /**
      * params 取该值时表示原样透传，不做白名单过滤
@@ -60,21 +66,21 @@ class ActionRunner
      * 仅供 echo 这类以「原样回显」为目的的动作使用；
      * 业务动作必须显式声明参数规则，避免业务数据被无意透传。
      */
-    const PARAMS_PASSTHROUGH = '*';
+    public const PARAMS_PASSTHROUGH = '*';
 
     /**
      * 动作声明表：action => 归一化后的声明
      *
      * @var array
      */
-    protected static $declarations = array();
+    protected static $declarations = [];
 
     /**
      * 处理器实例缓存（处理器无状态，可复用）
      *
      * @var array
      */
-    protected static $instances = array();
+    protected static $instances = [];
 
     /**
      * 是否已装载
@@ -93,30 +99,31 @@ class ActionRunner
      * 幂等：重复调用会以最后一次为准重建声明表（便于测试与热改配置）。
      *
      * @param array $config ['defaults' => [...], 'actions' => [...]]
+     *
      * @return array 已装载的动作名列表
      */
     public static function load(array $config)
     {
-        self::$declarations = array();
-        self::$instances    = array();
+        self::$declarations = [];
+        self::$instances    = [];
         self::$loaded       = true;
 
-        $defaults = array(
+        $defaults = [
             'auth'    => true,                                          // 是否要求已鉴权
-            'reply'   => array(
+            'reply'   => [
                 ActionContext::CHANNEL_WS   => ActionContext::REPLY_SYNC,
                 ActionContext::CHANNEL_UDP  => ActionContext::REPLY_SYNC,
                 ActionContext::CHANNEL_HTTP => ActionContext::REPLY_SYNC,
-            ),
+            ],
             'timeout' => self::DEFAULT_TIMEOUT,
-            'params'  => array(),
+            'params'  => [],
             'http'    => false,                                         // 是否开放 HTTP 通道（默认关闭）
-        );
+        ];
         if (isset($config['defaults']) && is_array($config['defaults'])) {
             $defaults = array_merge($defaults, $config['defaults']);
         }
 
-        $actions = isset($config['actions']) && is_array($config['actions']) ? $config['actions'] : array();
+        $actions = isset($config['actions']) && is_array($config['actions']) ? $config['actions'] : [];
         foreach ($actions as $name => $decl) {
             $name = (string)$name;
             if ($name === '' || !is_array($decl)) {
@@ -125,17 +132,19 @@ class ActionRunner
 
             $handler = isset($decl['handler']) ? (string)$decl['handler'] : '';
             if ($handler === '' || !class_exists($handler)) {
-                Logger::warn('业务动作处理器不存在，已跳过注册', array(
+                Logger::warn('业务动作处理器不存在，已跳过注册', [
                     'action'  => $name,
                     'handler' => $handler,
-                ));
+                ]);
+
                 continue;
             }
             if (!in_array(ActionInterface::class, class_implements($handler), true)) {
-                Logger::warn('业务动作处理器未实现 ActionInterface，已跳过注册', array(
+                Logger::warn('业务动作处理器未实现 ActionInterface，已跳过注册', [
                     'action'  => $name,
                     'handler' => $handler,
-                ));
+                ]);
+
                 continue;
             }
 
@@ -152,18 +161,16 @@ class ActionRunner
             $item['description'] = isset($item['description']) ? (string)$item['description'] : '';
             // 动作私有配置：由声明携带、经 ActionContext::option() 读取，
             // 使「参数规则之外的少量行为参数」不必下沉到全局 config
-            $item['options']     = isset($item['options']) && is_array($item['options']) ? $item['options'] : array();
+            $item['options']     = isset($item['options']) && is_array($item['options']) ? $item['options'] : [];
 
             self::$declarations[$name] = $item;
         }
 
-        Logger::info('业务动作表装载完成', array(
+        Logger::info('业务动作表装载完成', [
             'count'   => count(self::$declarations),
-            'http'    => array_keys(array_filter(self::$declarations, function ($decl) {
-                return !empty($decl['http']);
-            })),
+            'http'    => array_keys(array_filter(self::$declarations, fn ($decl) => !empty($decl['http']))),
             'actions' => array_keys(self::$declarations),
-        ));
+        ]);
 
         return array_keys(self::$declarations);
     }
@@ -195,9 +202,9 @@ class ActionRunner
      */
     public static function declarations()
     {
-        $out = array();
+        $out = [];
         foreach (self::$declarations as $name => $decl) {
-            $out[$name] = array(
+            $out[$name] = [
                 'description' => $decl['description'],
                 'auth'        => !empty($decl['auth']),
                 'reply'       => $decl['reply'],
@@ -207,8 +214,9 @@ class ActionRunner
                 'params'      => $decl['params'] === self::PARAMS_PASSTHROUGH
                     ? self::PARAMS_PASSTHROUGH
                     : array_keys($decl['params']),
-            );
+            ];
         }
+
         return $out;
     }
 
@@ -216,6 +224,7 @@ class ActionRunner
      * 动作是否已注册
      *
      * @param string $action
+     *
      * @return bool
      */
     public static function has($action)
@@ -229,11 +238,13 @@ class ActionRunner
      * 未注册的动作一律返回 false（不存在「未注册但可调用」的中间态）。
      *
      * @param string $action
+     *
      * @return bool
      */
     public static function httpExposed($action)
     {
         $action = (string)$action;
+
         return isset(self::$declarations[$action]) && !empty(self::$declarations[$action]['http']);
     }
 
@@ -244,12 +255,13 @@ class ActionRunner
      */
     public static function httpActions()
     {
-        $names = array();
+        $names = [];
         foreach (self::$declarations as $name => $decl) {
             if (!empty($decl['http'])) {
                 $names[] = $name;
             }
         }
+
         return $names;
     }
 
@@ -257,11 +269,13 @@ class ActionRunner
      * 取动作声明
      *
      * @param string $action
-     * @return array|null
+     *
+     * @return null|array
      */
     public static function declaration($action)
     {
         $action = (string)$action;
+
         return self::$declarations[$action] ?? null;
     }
 
@@ -280,6 +294,7 @@ class ActionRunner
      * @param string $uid
      * @param string $deviceId
      * @param string $protocol ws | udp | http
+     *
      * @return void
      */
     public static function run($clientId, array $packet, $uid = '', $deviceId = '', $protocol = '')
@@ -289,12 +304,14 @@ class ActionRunner
         $action = isset($packet['data']['action']) ? (string)$packet['data']['action'] : '';
         if ($action === '') {
             self::fail($clientId, $packet, $channel, Message::CODE_PARAM_MISSING, '缺少 data.action');
+
             return;
         }
 
         $decl = self::declaration($action);
         if ($decl === null) {
             self::fail($clientId, $packet, $channel, Message::CODE_UNKNOWN_CMD, '未知业务动作：' . $action);
+
             return;
         }
 
@@ -310,6 +327,7 @@ class ActionRunner
                 '动作未开放 HTTP 通道：' . $action,
                 $action
             );
+
             return;
         }
 
@@ -319,19 +337,20 @@ class ActionRunner
         if (!empty($decl['auth']) && (string)$uid === '' && Auth::enabled()) {
             Monitor::incr('action_fail');
             self::incrChannel($channel, 'fail');
-            Logger::warn('动作要求鉴权但身份缺失，已拒绝', array(
+            Logger::warn('动作要求鉴权但身份缺失，已拒绝', [
                 'action'    => $action,
                 'client_id' => $clientId,
                 'channel'   => $channel,
-            ));
+            ]);
             self::emitError($clientId, $packet, $channel, Message::CODE_UNAUTHORIZED, '请先完成鉴权');
+
             return;
         }
 
         // 参数校验：规则外的一律丢弃，处理器拿到的一定是归一化参数
         $raw = isset($packet['data']['params']) && is_array($packet['data']['params'])
             ? $packet['data']['params']
-            : array();
+            : [];
 
         if ($decl['params'] === self::PARAMS_PASSTHROUGH) {
             $params = $raw;
@@ -340,6 +359,7 @@ class ActionRunner
             $params = ParamValidator::validate($decl['params'], $raw, $reason);
             if ($params === null) {
                 self::fail($clientId, $packet, $channel, Message::CODE_PARAM_MISSING, $reason, $action);
+
                 return;
             }
         }
@@ -350,12 +370,12 @@ class ActionRunner
             $action,
             $packet,
             $params,
-            array(
+            [
                 'client_id' => (string)$clientId,
                 'uid'       => (string)$uid,
                 'device_id' => (string)$deviceId,
                 'protocol'  => (string)$protocol,
-            ),
+            ],
             $channel,
             $replyMode,
             self::sender($channel, $clientId),
@@ -367,10 +387,11 @@ class ActionRunner
 
         // 超时保护：处理器可能走 Redis 异步回执，若回调始终不来，
         // 客户端会永久等待。定时器在首次回执时由钩子注销，未回执则兜底。
+        /** @var null|int $timerId 先声明、下方按需赋值：回执钩子必须按引用捕获它 */
         $timerId = null;
         $ctx->setReplyHook(function () use (&$timerId) {
             if ($timerId !== null) {
-                Timer::del((int)$timerId);
+                Timer::del($timerId);
                 $timerId = null;
             }
         });
@@ -383,14 +404,14 @@ class ActionRunner
                 }
                 Monitor::incr('action_timeout');
                 self::incrChannel($ctx->channel(), 'timeout');
-                Logger::warn('业务动作超时未回执', array(
+                Logger::warn('业务动作超时未回执', [
                     'action'    => $ctx->action(),
                     'client_id' => $ctx->clientId(),
                     'channel'   => $ctx->channel(),
                     'timeout'   => $timeout,
-                ));
+                ]);
                 $ctx->replyError(Message::CODE_SERVER_ERROR, '动作处理超时');
-            }, array(), false);
+            }, [], false);
         }
 
         try {
@@ -398,14 +419,14 @@ class ActionRunner
             Monitor::incr('action_ok');
             self::incrChannel($channel, 'ok');
 
-            Logger::debug('业务动作已执行', array(
+            Logger::debug('业务动作已执行', [
                 'action'    => $action,
                 'client_id' => $clientId,
                 'channel'   => $channel,
                 'uid'       => $uid,
                 'reply'     => $replyMode,
                 'replied'   => $ctx->isReplied() ? 1 : 0,
-            ));
+            ]);
         } catch (\Throwable $e) {
             Monitor::incr('action_fail');
             self::incrChannel($channel, 'fail');
@@ -425,6 +446,7 @@ class ActionRunner
      * emitError 等分支的判断结构。
      *
      * @param string $clientId
+     *
      * @return string
      */
     protected static function channelOf($clientId)
@@ -450,6 +472,7 @@ class ActionRunner
      *
      * @param string $channel
      * @param string $suffix  in | ok | fail | timeout
+     *
      * @return void
      */
     protected static function incrChannel($channel, $suffix)
@@ -464,6 +487,7 @@ class ActionRunner
      *
      * @param string $channel
      * @param string $clientId
+     *
      * @return callable function (array $packet): void
      */
     protected static function sender($channel, $clientId)
@@ -490,6 +514,7 @@ class ActionRunner
      *
      * @param string $action
      * @param array  $decl
+     *
      * @return ActionInterface
      */
     protected static function instance($action, array $decl)
@@ -515,23 +540,24 @@ class ActionRunner
      * 即自动获得 HTTP 通道的 sync 语义。
      *
      * @param mixed $reply
+     *
      * @return array ['ws' => .., 'udp' => .., 'http' => ..]
      */
     protected static function normalizeReply($reply)
     {
         if (is_array($reply)) {
-            return array(
+            return [
                 ActionContext::CHANNEL_WS   => self::pickReply($reply[ActionContext::CHANNEL_WS] ?? null),
                 ActionContext::CHANNEL_UDP  => self::pickReply($reply[ActionContext::CHANNEL_UDP] ?? null),
                 ActionContext::CHANNEL_HTTP => self::pickReply($reply[ActionContext::CHANNEL_HTTP] ?? null),
-            );
+            ];
         }
 
-        return array(
+        return [
             ActionContext::CHANNEL_WS   => self::pickReply($reply),
             ActionContext::CHANNEL_UDP  => self::pickReply($reply),
             ActionContext::CHANNEL_HTTP => self::pickReply($reply),
-        );
+        ];
     }
 
     /**
@@ -540,6 +566,7 @@ class ActionRunner
      * '*' -> 透传标记；数组 -> 原样；其余非法值 -> 空规则（拒绝一切参数）
      *
      * @param mixed $params
+     *
      * @return array|string
      */
     protected static function normalizeParams($params)
@@ -547,11 +574,13 @@ class ActionRunner
         if ($params === self::PARAMS_PASSTHROUGH) {
             return self::PARAMS_PASSTHROUGH;
         }
-        return is_array($params) ? $params : array();
+
+        return is_array($params) ? $params : [];
     }
 
     /**
      * @param mixed $value
+     *
      * @return string
      */
     protected static function pickReply($value)
@@ -570,6 +599,7 @@ class ActionRunner
      * @param int    $code
      * @param string $msg
      * @param string $action
+     *
      * @return void
      */
     protected static function fail($clientId, array $packet, $channel, $code, $msg = '', $action = '')
@@ -578,13 +608,13 @@ class ActionRunner
         self::incrChannel($channel, 'fail');
         Monitor::incr('msg_fail');
 
-        Logger::warn('业务动作执行前失败', array(
+        Logger::warn('业务动作执行前失败', [
             'client_id' => $clientId,
             'channel'   => $channel,
             'action'    => $action !== '' ? $action : (isset($packet['data']['action']) ? (string)$packet['data']['action'] : ''),
             'code'      => $code,
             'msg'       => $msg,
-        ));
+        ]);
 
         self::emitError($clientId, $packet, $channel, $code, $msg);
     }
@@ -604,6 +634,7 @@ class ActionRunner
      * @param string $channel
      * @param int    $code
      * @param string $msg
+     *
      * @return void
      */
     protected static function emitError($clientId, array $packet, $channel, $code, $msg = '')
@@ -612,7 +643,8 @@ class ActionRunner
             return;
         }
 
-        call_user_func(self::sender($channel, $clientId), Message::error(
+        $sender = self::sender($channel, $clientId);
+        $sender(Message::error(
             $code,
             $msg,
             isset($packet['seq']) ? (string)$packet['seq'] : '',

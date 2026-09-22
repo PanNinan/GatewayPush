@@ -55,6 +55,7 @@
  */
 
 define('BASE_PATH', dirname(__DIR__));
+
 require BASE_PATH . '/vendor/autoload.php';
 
 use GatewayPush\Common\RedisClient;
@@ -82,7 +83,7 @@ CaseHttpAction::run($harness);
 // tests/ 里凭空多出一个 tests/workerman.log。显式收敛到 runtime/logs，
 // 与服务端 start.php 的 Worker::$logFile 同一处，运行时产物不散落在源码树里。
 $logDir = BASE_PATH . '/runtime/logs';
-if (!is_dir($logDir) && !@mkdir($logDir, 0755, true) && !is_dir($logDir)) {
+if (!is_dir($logDir) && !@mkdir($logDir, 0o755, true) && !is_dir($logDir)) {
     fwrite(STDERR, "[WARN] 日志目录创建失败：{$logDir}\n");
 }
 Worker::$logFile = $logDir . '/e2e_check.log';

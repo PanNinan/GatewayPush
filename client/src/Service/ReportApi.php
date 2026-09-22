@@ -12,21 +12,27 @@
 
 namespace GatewayPush\Client\Service;
 
+/**
+ * report 动作：数据上报（按主题累加计数）
+ *
+ * UDP 侧服务端刻意静默不回执，回调只能等本地超时（ok=false, code=10001）。
+ */
 final class ReportApi extends AbstractApi
 {
     /**
      * @param string        $topic 主题名（字母数字与 _ : . - ，1~64 字符）
      * @param int           $count 累加计数，1~10000（默认 1）
      * @param mixed         $value 附加 JSON 值（可空）
-     * @param callable|null $cb    function (bool $ok, array $data, ?array $error): void
+     * @param null|callable $cb    function (bool $ok, array $data, ?array $error): void
+     *
      * @return string 本请求 seq
      */
     public function report($topic, $count = 1, $value = null, $cb = null)
     {
-        return $this->call('report', array(
+        return $this->call('report', [
             'topic' => (string)$topic,
             'count' => (int)$count,
             'value' => $value,
-        ), $cb);
+        ], $cb);
     }
 }

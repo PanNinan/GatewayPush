@@ -19,10 +19,16 @@ use GatewayPush\Business\Message;
 use GatewayPush\Business\Monitor;
 use GatewayPush\Business\Subscribe;
 
+/**
+ * 业务动作 subscribe：订阅主题
+ *
+ * 状态管理型；与 unsubscribe / topics 共用 Subscribe 服务，投递入口在 Push::enqueueTopic()。
+ */
 class SubscribeAction implements ActionInterface
 {
     /**
      * @param ActionContext $ctx
+     *
      * @return void
      */
     public function handle(ActionContext $ctx)
@@ -34,6 +40,7 @@ class SubscribeAction implements ActionInterface
 
         if ($uid === '') {
             $ctx->replyError(Message::CODE_UNAUTHORIZED, '缺少用户身份');
+
             return;
         }
 
@@ -41,18 +48,19 @@ class SubscribeAction implements ActionInterface
             if (!$ok) {
                 Monitor::incr('action_fail');
                 $ctx->replyError(Message::CODE_PARAM_MISSING, $msg);
+
                 return;
             }
 
             // 回执带上当前订阅者数量，便于调用方确认广播规模
             Subscribe::count($topic, function ($count) use ($ctx, $uid, $topic) {
-                $ctx->reply(array(
+                $ctx->reply([
                     'action'      => 'subscribe',
                     'uid'         => $uid,
                     'topic'       => $topic,
                     'subscribers' => $count,
                     'at'          => time(),
-                ));
+                ]);
             });
         });
     }

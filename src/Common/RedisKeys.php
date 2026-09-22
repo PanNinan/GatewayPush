@@ -87,6 +87,11 @@
 
 namespace GatewayPush\Common;
 
+/**
+ * Redis 键空间统一声明（全部逻辑键名的唯一权威来源）
+ *
+ * 此处声明的是不含前缀的逻辑键名；改键名即破坏存量兼容，须配 RENAME 迁移并全角色重启。
+ */
 final class RedisKeys
 {
     /* ---------------------------------------------------------------------
@@ -94,105 +99,105 @@ final class RedisKeys
      --------------------------------------------------------------------- */
 
     /** 会话主体前缀，`+ clientId` */
-    const SESSION = 'session:';
+    public const SESSION = 'session:';
 
     /** 心跳时间戳前缀，`+ clientId`（高频写入，单独成键） */
-    const HEARTBEAT = 'heartbeat:';
+    public const HEARTBEAT = 'heartbeat:';
 
     /** uid -> clientId 集合前缀，`+ uid` */
-    const UID_CLIENTS = 'uid:clients:';
+    public const UID_CLIENTS = 'uid:clients:';
 
     /** deviceId -> clientId 前缀，`+ deviceId` */
-    const DEVICE_CLIENT = 'device:client:';
+    public const DEVICE_CLIENT = 'device:client:';
 
     /** 全量在线 clientId 集合（完整键名，无后缀） */
-    const ONLINE_CLIENTS = 'online:clients';
+    public const ONLINE_CLIENTS = 'online:clients';
 
     /** 协议维度在线集合前缀，`+ protocol`（ws / udp） */
-    const ONLINE_PREFIX = 'online:';
+    public const ONLINE_PREFIX = 'online:';
 
     /* ---------------------------------------------------------------------
      | 二、鉴权
      --------------------------------------------------------------------- */
 
     /** Token 撤销名单前缀，`+ tokenFingerprint` */
-    const AUTH_REVOKED = 'auth:revoked:';
+    public const AUTH_REVOKED = 'auth:revoked:';
 
     /** uid -> deviceId 绑定前缀，`+ uid` */
-    const AUTH_BIND = 'auth:bind:';
+    public const AUTH_BIND = 'auth:bind:';
 
     /* ---------------------------------------------------------------------
      | 三、队列（跨进程共享，键名一致性由常量保证）
      --------------------------------------------------------------------- */
 
     /** 入站队列：UDP 网关 -> 业务进程 */
-    const QUEUE_UDP_IN = 'queue:udp:in';
+    public const QUEUE_UDP_IN = 'queue:udp:in';
 
     /** 入站队列：Api -> BusinessWorker（HTTP 动作） */
-    const QUEUE_ACTION_IN = 'queue:action:in';
+    public const QUEUE_ACTION_IN = 'queue:action:in';
 
     /** 出站队列：业务进程 -> UDP 网关 */
-    const QUEUE_UDP_OUT = 'queue:udp:out';
+    public const QUEUE_UDP_OUT = 'queue:udp:out';
 
     /** 出站队列：推送任务汇合点 */
-    const QUEUE_PUSH_OUT = 'queue:push:out';
+    public const QUEUE_PUSH_OUT = 'queue:push:out';
 
     /* ---------------------------------------------------------------------
      | 四、推送
      --------------------------------------------------------------------- */
 
     /** 离线消息列表前缀，`+ uid` */
-    const PUSH_OFFLINE = 'push:offline:';
+    public const PUSH_OFFLINE = 'push:offline:';
 
     /** 幂等去重标记前缀，`+ md5(msgId)` */
-    const PUSH_DEDUP = 'push:dedup:';
+    public const PUSH_DEDUP = 'push:dedup:';
 
     /* ---------------------------------------------------------------------
      | 五、订阅
      --------------------------------------------------------------------- */
 
     /** 正向索引前缀，`+ uid` */
-    const SUBSCRIBE_UID = 'subscribe:uid:';
+    public const SUBSCRIBE_UID = 'subscribe:uid:';
 
     /** 反向索引前缀，`+ topic` */
-    const SUBSCRIBE_TOPIC = 'subscribe:topic:';
+    public const SUBSCRIBE_TOPIC = 'subscribe:topic:';
 
     /* ---------------------------------------------------------------------
      | 六、动作
      --------------------------------------------------------------------- */
 
     /** HTTP 动作回执报文前缀，`+ requestId` */
-    const ACTION_RESULT = 'action:result:';
+    public const ACTION_RESULT = 'action:result:';
 
     /** report 动作累计计数前缀，`+ topic` */
-    const ACTION_REPORT = 'action:report:';
+    public const ACTION_REPORT = 'action:report:';
 
     /* ---------------------------------------------------------------------
      | 七、指标
      --------------------------------------------------------------------- */
 
     /** 累加型指标 Hash 前缀，`+ YYYYMMDD` */
-    const METRICS_COUNTER = 'metrics:counter:';
+    public const METRICS_COUNTER = 'metrics:counter:';
 
     /** 瞬时指标 Hash（完整键名，无后缀） */
-    const METRICS_GAUGE = 'metrics:gauge';
+    public const METRICS_GAUGE = 'metrics:gauge';
 
     /* ---------------------------------------------------------------------
      | 八、限流
      --------------------------------------------------------------------- */
 
     /** L2 令牌桶前缀，`+ dim + ':' + md5(id)` */
-    const RATE_LIMIT_BUCKET = 'rl:';
+    public const RATE_LIMIT_BUCKET = 'rl:';
 
     /** HTTP 侧单 IP 分钟窗口前缀，`+ md5(ip) + ':' + 分钟序号` */
-    const RATE_LIMIT_API = 'api:rate:';
+    public const RATE_LIMIT_API = 'api:rate:';
 
     /* ---------------------------------------------------------------------
      | 九、运维
      --------------------------------------------------------------------- */
 
     /** 连通性探测键（仅 EXISTS，不写入） */
-    const HEALTH_PROBE = 'health:probe';
+    public const HEALTH_PROBE = 'health:probe';
 
     /* =====================================================================
      | 构造方法
@@ -205,44 +210,48 @@ final class RedisKeys
      * 会话主体键
      *
      * @param string $clientId
+     *
      * @return string
      */
     public static function session($clientId)
     {
-        return self::SESSION . (string)$clientId;
+        return self::SESSION . $clientId;
     }
 
     /**
      * 心跳时间戳键
      *
      * @param string $clientId
+     *
      * @return string
      */
     public static function heartbeat($clientId)
     {
-        return self::HEARTBEAT . (string)$clientId;
+        return self::HEARTBEAT . $clientId;
     }
 
     /**
      * uid -> clientId 集合键
      *
      * @param string $uid
+     *
      * @return string
      */
     public static function uidClients($uid)
     {
-        return self::UID_CLIENTS . (string)$uid;
+        return self::UID_CLIENTS . $uid;
     }
 
     /**
      * deviceId -> clientId 键
      *
      * @param string $deviceId
+     *
      * @return string
      */
     public static function deviceClient($deviceId)
     {
-        return self::DEVICE_CLIENT . (string)$deviceId;
+        return self::DEVICE_CLIENT . $deviceId;
     }
 
     /**
@@ -252,6 +261,7 @@ final class RedisKeys
      * 二者由同一方法产出，避免调用方在两套前缀间手工二选一。
      *
      * @param string $protocol 空 = 全量；否则 Session::PROTOCOL_WS / PROTOCOL_UDP
+     *
      * @return string
      */
     public static function online($protocol = '')
@@ -268,39 +278,43 @@ final class RedisKeys
      * 不由键空间类裁定。
      *
      * @param string $fingerprint
+     *
      * @return string
      */
     public static function authRevoked($fingerprint)
     {
-        return self::AUTH_REVOKED . (string)$fingerprint;
+        return self::AUTH_REVOKED . $fingerprint;
     }
 
     /**
      * uid -> deviceId 绑定键
      *
      * @param string $uid
+     *
      * @return string
      */
     public static function authBind($uid)
     {
-        return self::AUTH_BIND . (string)$uid;
+        return self::AUTH_BIND . $uid;
     }
 
     /**
      * 离线消息列表键
      *
      * @param string $uid
+     *
      * @return string
      */
     public static function pushOffline($uid)
     {
-        return self::PUSH_OFFLINE . (string)$uid;
+        return self::PUSH_OFFLINE . $uid;
     }
 
     /**
      * 幂等去重键
      *
      * @param string $msgId
+     *
      * @return string
      */
     public static function pushDedup($msgId)
@@ -312,50 +326,55 @@ final class RedisKeys
      * 用户订阅主题集合键（正向）
      *
      * @param string $uid
+     *
      * @return string
      */
     public static function subscribeUid($uid)
     {
-        return self::SUBSCRIBE_UID . (string)$uid;
+        return self::SUBSCRIBE_UID . $uid;
     }
 
     /**
      * 主题订阅者集合键（反向）
      *
      * @param string $topic
+     *
      * @return string
      */
     public static function subscribeTopic($topic)
     {
-        return self::SUBSCRIBE_TOPIC . (string)$topic;
+        return self::SUBSCRIBE_TOPIC . $topic;
     }
 
     /**
      * HTTP 动作回执键
      *
      * @param string $requestId
+     *
      * @return string
      */
     public static function actionResult($requestId)
     {
-        return self::ACTION_RESULT . (string)$requestId;
+        return self::ACTION_RESULT . $requestId;
     }
 
     /**
      * report 动作累计计数键
      *
      * @param string $topic
+     *
      * @return string
      */
     public static function actionReport($topic)
     {
-        return self::ACTION_REPORT . (string)$topic;
+        return self::ACTION_REPORT . $topic;
     }
 
     /**
      * 当日累加指标键
      *
-     * @param string|null $date YYYYMMDD，空则取当日
+     * @param null|string $date YYYYMMDD，空则取当日
+     *
      * @return string
      */
     public static function metricsCounter($date = null)
@@ -372,18 +391,20 @@ final class RedisKeys
      *
      * @param string $dim 维度（RateLimiter::DIM_*）
      * @param string $id  主体标识（clientId / uid / ip）
+     *
      * @return string
      */
     public static function rateBucket($dim, $id)
     {
-        return self::RATE_LIMIT_BUCKET . (string)$dim . ':' . md5((string)$id);
+        return self::RATE_LIMIT_BUCKET . $dim . ':' . md5((string)$id);
     }
 
     /**
      * HTTP 侧单 IP 分钟窗口键
      *
      * @param string   $ip
-     * @param int|null $minute 分钟序号，空则取当前（floor(time() / 60)）
+     * @param null|int $minute 分钟序号，空则取当前（floor(time() / 60)）
+     *
      * @return string
      */
     public static function rateApi($ip, $minute = null)

@@ -25,10 +25,16 @@ use GatewayPush\Common\Logger;
 use GatewayPush\Common\RedisClient;
 use GatewayPush\Common\RedisKeys;
 
+/**
+ * 业务动作 report：按主题累加计数
+ *
+ * 写入型；示范「同一处理器在 WS 回执、在 UDP 静默」的通道差异化策略。
+ */
 class ReportAction implements ActionInterface
 {
     /**
      * @param ActionContext $ctx
+     *
      * @return void
      */
     public function handle(ActionContext $ctx)
@@ -42,35 +48,36 @@ class ReportAction implements ActionInterface
 
         RedisClient::hIncrBy($key, 'count', $count, function ($total) use ($ctx, $key, $topic, $count, $ttl) {
             if (!is_int($total)) {
-                Logger::error('上报计数写入失败', array('topic' => $topic));
+                Logger::error('上报计数写入失败', ['topic' => $topic]);
                 $ctx->replyError(Message::CODE_SERVER_ERROR, '上报写入失败');
+
                 return;
             }
 
-            RedisClient::hMSet($key, array(
+            RedisClient::hMSet($key, [
                 'last_at'  => time(),
                 'last_uid' => $ctx->uid(),
                 'last_dev' => $ctx->deviceId(),
                 'last_seq' => $ctx->seq(),
-            ), function () use ($ctx, $key, $topic, $count, $total, $ttl) {
+            ], function () use ($ctx, $key, $topic, $count, $total, $ttl) {
                 if ($ttl > 0) {
                     RedisClient::expire($key, $ttl);
                 }
 
-                Logger::debug('数据上报已受理', array(
+                Logger::debug('数据上报已受理', [
                     'topic'   => $topic,
                     'count'   => $count,
                     'total'   => $total,
                     'channel' => $ctx->channel(),
-                ));
+                ]);
 
-                $ctx->reply(array(
+                $ctx->reply([
                     'action'   => 'report',
                     'topic'    => $topic,
                     'accepted' => $count,
                     'total'    => $total,
                     'at'       => time(),
-                ));
+                ]);
             });
         });
     }
