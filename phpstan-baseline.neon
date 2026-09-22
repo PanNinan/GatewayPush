@@ -1,12 +1,6 @@
 parameters:
 	ignoreErrors:
 		-
-			message: '#^Anonymous function has an unused use \$uid\.$#'
-			identifier: closure.unusedUse
-			count: 1
-			path: src/Business/Auth.php
-
-		-
 			message: '#^PHPDoc tag @throws with type Random\\RandomException is not subtype of Throwable$#'
 			identifier: throws.notThrowable
 			count: 1

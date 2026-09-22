@@ -2072,7 +2072,7 @@ class OrderQueryAction implements ActionInterface
 ### 13.1 命令
 
 ```bash
-composer analyse        # PHPStan（level 5；baseline 冻结存量：生产代码 10 条 + 测试 57 条目）
+composer analyse        # PHPStan（level 5；baseline 冻结存量：生产代码 9 条 + 测试 51 条目）
 composer test           # PHPUnit（467 tests / 1317 assertions；含 client/tests/Unit）
 composer lint           # phpcs 审计：注释 / 命名 / 业务红线（只读，不写文件）
 composer lint:self      # phpcs 自定义嗅探器自检（RedisKeys 漂移 + 作用域/豁免矩阵）
@@ -2103,11 +2103,11 @@ composer test:client-e2e # 客户端 SDK 端到端对齐（A~O 共 15 个用例�
 | ---------- | ------------------------------------------------------------------------ |
 | PHPStan 版本 | `^2.0`                                                                   |
 | 内存         | **必须带 `--memory-limit=512M`**（本机 php.ini 仅 128M，否则子进程崩溃）；已写入 composer 脚本 |
-| 分析范围       | `paths` = `src`、`client/src`、`start.php`、`tests`、`client/tests`（共 112 文件）。**`tests` 必须在列**，否则 `phpstan-phpunit` 的断言 / mock 规则不会生效 |
+| 分析范围       | `paths` = `src`、`client/src`、`start.php`、`tests`、`client/tests`（共 114 文件）。**`tests` 必须在列**，否则 `phpstan-phpunit` 的断言 / mock 规则不会生效 |
 | 分析口径       | `phpVersion: 80100` —— 刻意设置用于**拦截 8.2+ 语法误用**，保证 8.1 兼容性                 |
 | 扩展         | `phpstan-strict-rules` + `phpstan-phpunit`，**在 `includes` 里显式声明**（本项目未装 `phpstan/extension-installer`，不写 `includes` 则规则一条都不生效） |
 | strict-rules | `strictRules.allRules: true`，仅刻意关闭 3 条：`disallowedEmpty`、`booleansInConditions`(+`booleansInLoopConditions`)、`dynamicCallOnStaticMethod`（理由见 `phpstan.neon` 内的逐条注释） |
-| 收敛策略       | **两份 baseline**：`phpstan-baseline.neon`（生产代码，10 条）/ `phpstan-tests-baseline.neon`（测试存量，57 条目）。两份都**只减不增**；**不为让工具通过而改业务代码** |
+| 收敛策略       | **两份 baseline**：`phpstan-baseline.neon`（生产代码，9 条）/ `phpstan-tests-baseline.neon`（测试存量，51 条目）。两份都**只减不增**；**不为让工具通过而改业务代码** |
 
 > **⚠ `level` 与 baseline 必须同源**：baseline 是用哪个 level 生成的，`parameters.level` 就得是哪个值。
 > 二者不一致时，PHPStan 会对每条不再命中的条目报 `ignore.unmatched (non-ignorable)` ——
