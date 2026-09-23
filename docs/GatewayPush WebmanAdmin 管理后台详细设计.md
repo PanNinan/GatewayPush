@@ -25,7 +25,7 @@
 - [8. 测试计划](#8-测试计划)
 - [9. 风险与未决项](#9-风险与未决项)
 - [10. 变更同步约定](#10-变更同步约定)
-- [11. P0 实施记录与实测偏差（2026-09-23）](#11-p0-实施记录与实测偏差2026-09-23)
+- [11. 实施记录与实测偏差（2026-09-23）](#11-实施记录与实测偏差2026-09-23)
 
 ---
 
@@ -897,6 +897,7 @@ ADMIN_REDIS_PREFIX=gwpush:
 | 任务 | ① `MetricsAggregator`（含派生率、分母为 0 处理、跨日拼接）；② 进程存活判定用 `interval×2`；③ Layui 图表（轻量，不上构建链）；④ 队列深度阈值标红（读 `admin_settings`） |
 | 验收 | 每个数字可与 `http://127.0.0.1:8291/metrics.json` 逐项对齐（**这是唯一可验证的锚点**） |
 | 风险 | `MONITOR_ENABLE=false` 时采集整条链路短路（不只是文案），后台必须显式展示「指标采集已关闭」而非显示 0 |
+| **实测修订** | ⚠ 本行推翻前两行两处：**`metrics:counter:{yesterday}` 跨日拼接不可行**（主项目不存历史，见 **D17**）；**Layui 2.8.12 无 chart 模块**故图表改**手绘 SVG**（见 **D16**）。另：轮询改为**分层快慢 tick** 属故障模式隔离决策（**D19**）。落地见 **§11.4** |
 
 ### P2 会话只读（侵入性 **0**）
 
@@ -942,8 +943,12 @@ ADMIN_REDIS_PREFIX=gwpush:
 composer analyse && composer test && composer lint && composer lint:self && composer cs:check
 
 # 后台单列
-cd admin && composer test && composer analyse
+cd admin && composer test && composer analyse && composer test:frontend
 ```
+
+P1 后新增的 `composer test:frontend` 是**运行期前端渲染校验**（144 项，无需浏览器 / jsdom / 服务端），
+与 `composer test`（PHPUnit，静态契约）互补；本地若已起后台，可另跑 `composer test:acceptance`。
+**改过 `dashboard.js` 或视图后这两个都要跑** —— 只跑 PHPUnit 只能证明「名字都对」，证明不了「渲染正确」。
 
 P4 若落地 `channels` 与 3 个动作，**必须**补跑：
 `composer test:sign`、`composer demo:http`、`composer test:e2e`。
@@ -1066,9 +1071,11 @@ P4 若落地 `channels` 与 3 个动作，**必须**补跑：
 
 ---
 
-## 11. P0 实施记录与实测偏差（2026-09-23）
+## 11. 实施记录与实测偏差（2026-09-23）
 
-### 11.1 状态
+> §11.1~§11.3 为 **P0**；§11.4 为 **P1**。偏差表 **D1~D21 累计**，冲突一律以本表为准。
+
+### 11.1 P0 状态
 
 | 项 | 状态 |
 |---|---|
@@ -1101,7 +1108,7 @@ P4 若落地 `channels` 与 3 个动作，**必须**补跑：
 | 后台门禁 | ✅ PHPStan L6 **0 errors**（无 baseline） · PHPUnit **6 tests / 24 assertions** · 冒烟 **13 PASS / 0 FAIL** |
 | 主项目门禁未被污染 | ✅ `composer lint` 0 errors 且结果中 0 处 `admin/`；`git status` 仅 `docs/` 改动 + `admin/` 未跟踪，`src/` 与 `config/` 零改动 |
 
-### 11.2 与本文档前文的偏差（**以本表为准**）
+### 11.2 P0 与本文档前文的偏差（**以本表为准**）
 
 | # | 前文表述 | 实测事实 | 影响 |
 |---|---|---|---|
@@ -1120,8 +1127,14 @@ P4 若落地 `channels` 与 3 个动作，**必须**补跑：
 | **D13** | §7「P0：MySQL 迁移」隐含 `install.sql` 可直接执行 | `install.sql` **不幂等**：`wa_options` / `wa_roles` 用的是**裸 `INSERT` + 固定主键**，非空库重复执行必报 `1062 Duplicate entry`。官方安装页 step1 在「表已存在」时也只会要求「强制覆盖（= `DROP TABLE`）」 | 本项目**不走安装页**，由 `scripts/install.php` 复刻其动作并加幂等语义：按「表是否齐全」决定是否执行，执行前把 `INSERT INTO` 改写为 `INSERT IGNORE INTO` |
 | **D14** | 未预见（视图层未设计） | 视图引擎 `Raw` 的默认后缀是 **`.html`**（`config('view.options.view_suffix')` 默认 `html`）**但内容是原生 PHP**（`Raw::render()` 直接 `include`）；且根视图路径是 **`app_path()/view/`**（即 `admin/app/view/`），不是 `admin/view/` | 页面文件为 `admin/app/view/dashboard/index.html`（内写 PHP），控制器 `view('dashboard/index', $vars)` |
 | **D15** | 未预见 | webman 的 `json()` 助手把 HTTP 状态码**硬编码为 200**（`support/helpers.php:183-186`，签名里没有 status 参数） | `AdminAuth::deny()` 改为**自建 Response**，同时给出真实状态码（401/403）与业务码 `code`；返回 `200 + code=401` 属「用 200 掩盖失败」，会让前端无法按状态码统一拦截 |
+| **D16**（P1） | §7 P1 任务 ③ 写「Layui 图表（轻量，不上构建链）」 | **Layui 2.8.12 没有 chart 模块** —— `grep -c chart layui.js` = **0**（chart 自 layui 2.x 起被拆为独立 `layui-chart`，本项目未引入）。照原方案写必然是运行期 `undefined` | 趋势图改**手绘 SVG**（零依赖、无构建链，反而更贴「轻量」原意）：`viewBox="0 0 300 88"` + `preserveAspectRatio="none"` 铺满容器，**必须配 `vector-effect="non-scaling-stroke"`**，否则非等比缩放会把描边一起拉变形 |
+| **D17**（P1） | §7 P1 数据源写 `metrics:counter:{yesterday}`「拼接 24h 曲线」 | **主项目没有任何历史指标存储**：Redis 只有当前 `metrics:gauge` 与**按日分桶**的 `metrics:counter:{Ymd}`（保留 7 天，但只有「当日累计」一个数），`GET /stats` 也只回当前快照。要画 24h 曲线，得先在主项目新增采样表 + 采样进程 | 趋势改为**浏览器端环形缓冲**（`history_points` 点，默认 120），**刷新即清零**。UI 必须如实标注「本次会话（页面打开以来）」——把「会话内趋势」说成「24 小时趋势」是虚假功能 |
+| **D18**（P1） | §7 P1 交付物写「推送成功率/鉴权成功率/错误率」，措辞暗示是瞬时速率 | `metrics:counter:{Ymd}` 是 `HINCRBY` **累加**的**当日累计**值 → 由它派生的比率口径是「**今日累计 %**」，不是瞬时成功率 | 派生率表上方固定写明口径 = 今日累计；`den = 0` 时值为 **`null` → 显示 `—`（无样本）**，与 `0.00%`（有样本、零失败）**语义不同、不可合并**。今日累计口径另有一个直接后果：零点后子键从 0 开始，`cur - prev` 为负 ⇒ **必须识别日切并清空趋势**，否则会画出一条负速率折线 |
+| **D19**（P1） | §7 未提轮询分层；实现时容易顺手把 `/health` `/stats` 并进同一个 tick | **分层是故障模式隔离，不是性能优化**：`GatewayPushClient` 的 `connect_timeout=3s`、总超时 `8s`，若把主项目 HTTP 并进 5s 快 tick，主项目一慢/一挂，**面板会在最需要它的时候正好卡住** | 快 tick（5s）→ `/api/monitor/live`：**只碰 Redis**，返回值里**刻意不含 `api` 段**（验收脚本 `p1_acceptance.php` 已把这条钉成硬断言，防止后人"顺手"合并）；慢 tick（30s）→ `/api/monitor/summary`：才做 `selfCheck + dbsize + /health + /stats` |
+| **D20**（P1） | 未预见 | **未注册的路由返回 HTTP 200**，响应体才是 `{"code":404,"msg":"404 Not Found","data":[]}`（webman-admin 插件的异常处理器把 404 包成了 200）—— 与 D15 同类问题 | 前端判成败**一律看响应体 `code`**，不看 HTTP 状态码（`fetchJson()` 已是此约定）。这也意味着「HTTP 200」在本项目**不等于**成功 |
+| **D21**（P1） | P0 用 `static` 属性缓存 `admin_settings`，并声称「调参不需要重启后台」 | **webman 是常驻进程，PHP 静态属性跨请求存活**（与 PHP-FPM 每请求重置不同）→ 该缓存**永不过期**，P0 的承诺是假的：改了库里的阈值，页面一直到重启都不变 | 加 `CACHE_TTL = 5`（键存 `[时间戳, 数据]`），并**把失败结果也缓存**（避免 MySQL 挂掉时每个请求都去撞）。⚠ **常驻进程里凡是 `static` 缓存都必须自带 TTL**，否则等于把配置冻结在启动那一刻 |
 
-### 11.3 其他实测要点（易再犯）
+### 11.3 P0 其他实测要点（易再犯）
 
 - **`process.php` 里不能写 `config('...')`**：该文件本身被 `Config::load()` 递归 include，此刻配置尚未就绪，会取到 `null`。监听地址需**直接读 `getenv()`**。
 - **`config('plugin.admin.database')` 必须非空**：`plugin/admin/app/controller/AccountController.php:255` 用它判断「是否已安装」，为空会抛「请重启webman」。
@@ -1135,6 +1148,100 @@ P4 若落地 `channels` 与 3 个动作，**必须**补跑：
 - **插件侧与项目侧的配置同名时，插件侧胜**（加载顺序决定，见 D5）。判断某个 `config('plugin.x.*')` 到底从哪来，要看 `Config::loadFromDir()` 的两次扫描顺序，不能只看文件是否存在。
 - **`RedisReader::dbIndex()` / `prefix()` 必须由后台自读配置**：主项目 `/health` 的 data 里**没有** DB 号字段（早期版本误取它，导致页面恒显示「DB 0」，而实际连的是 DB 9 —— 典型的静默错配）。
 
+### 11.4 P1 实施记录与实测偏差（2026-09-23）
+
+> P1 相对 P0 的唯一结构性变化：**页面由「服务端整页渲染 + `<meta refresh>`」改为「服务端只出骨架 + 浏览器轮询渲染」**。
+> 驱动原因是 D17（趋势必须跨刷新累积，而主项目无历史指标存储）；整页重建还会丢掉 DOM 状态，
+> 并在主项目 API 卡住时把整个页面一起拖死。**实时日志 tail 经拍板不做**（红线 ㉙ 同向：阻塞式读取不入该链路）。
+
+#### 11.4.1 状态
+
+| 项 | 状态 |
+|---|---|
+| `MetricsDeriver`（纯函数派生层，**零 IO**、阈值注入） | ✅ 9 条派生率 + 进程存活判定 + 4 类告警来源；阈值可被 `admin_settings` 覆盖，**非法值静默回落默认** |
+| 分层轮询（快 5s **只碰 Redis** / 慢 30s 含主项目 HTTP） | ✅ 新增 `GET /api/monitor/live`；`/api/monitor/summary` 保留 |
+| 前端（骨架 + 自绘 SVG + 环形缓冲） | ✅ `admin/public/static/dashboard.js`（784 行）+ `dashboard.css`；零外部依赖、无构建链 |
+| 四项轮询优化 | ✅ 单 tick 分发（两个定时器） / 链式 `setTimeout` / 失败指数退避（封顶 60s） / `visibilitychange` 隐藏即停并在途作废 |
+| RBAC | ✅ 新增权限点 `mon.live`（`wa_rules` **id 120**，type 2）；只读角色 rules = `64,120,65,66` |
+| 配置项 | ✅ `admin_settings` **7 行**（新增 `monitor.slow_interval`、`monitor.ratio_thresholds`） |
+| P0 遗留缺陷修复 | ✅ `Settings` 静态缓存永不失效 → 加 `CACHE_TTL = 5`（**D21**） |
+| 后台门禁 | ✅ PHPStan L6 **0 errors** · PHPUnit **40 tests / 187 assertions** · 前端渲染校验 **144 项全绿** |
+| P1 验收脚本 | ✅ `tests/Manual/p1_acceptance.php`：**41 PASS / 0 FAIL / 1 SKIP**（viewer 越权矩阵需可选环境变量，默认 SKIP） |
+| 主项目零改动 | ✅ `src/`、`config/`、`tests/` 零改动；`composer lint` 结果中 **0 处** `admin/` |
+
+#### 11.4.2 交付文件
+
+| 文件 | 变更 | 说明 |
+|---|---|---|
+| `admin/app/service/MetricsDeriver.php` | **新增** | 纯函数派生层。9 条派生率用表驱动（`RATIOS` 常量：`{label, formula, num, den, kind, warn, bad}`）；3 个 phpstan 类型别名（`RatioRow`/`ProcessRow`/`AlertRow`）由测试 `@phpstan-import-type` 复用，保证只有一处真源 |
+| `admin/app/service/MonitorAggregator.php` | 重写 | 新增 `live()`（**Redis-only**）、`derived()`、`reportAt()`；`collect()` 仍返回 `ts/redis/api/derived` |
+| `admin/app/service/Settings.php` | 修改 | `CACHE_TTL = 5` + 缓存失败结果；新增 `json()` 读取器（供 `ratio_thresholds` 用） |
+| `admin/app/controller/api/MonitorController.php` | 修改 | 新增 `live()` |
+| `admin/app/controller/DashboardController.php` | 重写 | **不再采集数据**，只注入 `config`（含 `HISTORY_POINTS = 120`） |
+| `admin/app/view/dashboard/index.html` | 重写 | 纯骨架：无数据、无 `<meta refresh>`；`#dashboard-config` 以 `JSON_HEX_TAG\|JSON_HEX_AMP\|JSON_HEX_APOS\|JSON_HEX_QUOT` 注入 |
+| `admin/public/static/dashboard.js` | **新增** | 784 行 IIFE，见 §11.4.3 |
+| `admin/public/static/dashboard.css` | **新增** | 沿用 P0 调色板，补 `.chart` `.bars` `.bar-*` `.jobs` |
+| `admin/config/route.php` | 修改 | `/api` 组内增 `/monitor/live` |
+| `admin/scripts/install.php` | 修改 | 增 `mon.live` 权限点（id 120）；**只读角色必须同步加该 rule**，漏加的症状是「页面永远停在骨架 + 浏览器控制台一个 403」 |
+| `admin/database/001_gw_tables.sql` | 修改 | `admin_settings` 种子 5 → **7 行**；`monitor.ratio_thresholds` 刻意留 `'{}'`，使默认阈值**只存在于 `MetricsDeriver::RATIOS` 一处** |
+| `admin/tests/Unit/MetricsDeriverTest.php` | **新增** | 33 tests：边界「到点即算」、缺分母 → `null` 而非 `0.0`、不可信时间戳、乱序 JSON、告警 4 源 |
+| `admin/tests/Unit/DashboardContractTest.php` | **新增** | 7 tests：视图 ↔ JS 静态契约（JS 引用的 DOM id 全部存在、`cfg.*` 键全部由控制器注入、无 `meta refresh`、无 `innerHTML =`、无 `setInterval`、恰好 2 处 `window.setTimeout(`） |
+| `admin/tests/Frontend/dashboard_render_check.js` | **新增** | **144 项**运行期渲染校验，见 §11.4.4 |
+| `admin/tests/Manual/p1_acceptance.php` | **新增** | 三段式验收（服务层真连 Redis / HTTP 层走 curl + 验证码登录 / RBAC 静态断言 + 可选越权矩阵） |
+| `admin/composer.json` | 修改 | 增 `test:frontend`（跑渲染校验）与 `test:acceptance`（跑 P1 验收脚本） |
+
+#### 11.4.3 关键不变量（改 `dashboard.js` / `live()` 前必读）
+
+1. **`live()` 里不许出现任何主项目 HTTP 调用。** `GatewayPushClient` 的 `connect_timeout=3s`、总超时 `8s`；
+   把它并进 5s 快 tick，主项目一慢或一挂，面板就在**最需要它的时候**正好卡住（D19）。
+   验收脚本已把「`live()` 返回值不含 `api` 段」钉成硬断言。
+2. **`counter` 是「今日累计」，不是瞬时速率**（D18）。派生率一律标注为今日累计口径。
+3. **`den = 0` ⇒ 值 `null` ⇒ 显示 `—`**，与 `0.00%` 严格区分；**这条必须同时体现在文本与结构上**
+   （`span.tag` vs `b`），只比文本会漏掉「把 null 抹成 0」的回归（§11.4.4 的变异 D）。
+4. **边界方向：一律「到点即算」。** 进程存活 `age_secs <= staleSecs`（与主项目 `Monitor::staleFields()`
+   的 `$at >= $deadline` 同向）；队列积压 `depth >= warnDepth`；比率档位 `value >= threshold`。
+5. **`report_at` 必须同时出现在 `redisSnapshot()` 的成功与 catch 两个分支**，否则慢 tick 会把页面上的
+   「指标上报于」擦回 `—`（快 tick 正常、慢 tick 一到就丢，很容易误判成快慢 tick 冲突）。
+6. **`stopAll()` 里 `liveSeq/slowSeq` 的自增不可省。** 看似冗余（`fetchJson` 自己也会自增），
+   但它真正防的是**响应在页面隐藏期间落地**这条路径：此时没有新请求去顶替，序号不变 ⇒ 不被判陈旧
+   ⇒ 响应会一路走到续排分支，把后台标签页「复活」成继续轮询，直接推翻「隐藏即停」的承诺。
+   **这正是变异测试发现的盲区**（§11.4.4 变异 B）。
+7. **服务端返回的任何字符串只走 `textContent` / `createTextNode`**，绝不进 `innerHTML`；
+   SVG 属性只放数值，故 `setAttribute` 安全。
+8. **判成败看响应体 `code`，不看 HTTP 状态码**（D20）。
+9. **趋势只能在浏览器端累积**（D17），UI 必须写「本次会话」，且零点后 `cur - prev < 0` 要**识别为日切并清空历史**，
+   而不是把负速率画进图里。
+
+#### 11.4.4 测试工程化：变异测试（10/10 检出）
+
+新增的 `admin/tests/Frontend/dashboard_render_check.js` 不用浏览器、不用 jsdom、不需要服务端：
+它把 `dashboard.js` 的 IIFE **整体真跑一遍**，只把 `document` / `window` / `fetch` 三个自由变量换成受控替身
+（假 DOM 直接由视图 HTML 里的 `id="..."` 列表构建，因此**视图删 id 会立刻暴露**；假 `setTimeout` 只登记不执行，
+由测试用 `fire('runLive')` 手动推进一跳，于是退避倍数、定时器计数都成了可断言对象）。
+
+为确认它「不是空转」，对被测文件注入 10 个变异体逐个验证检出能力：
+
+| # | 变异 | 被检出的断言 | 结论 |
+|---|---|---|---|
+| A | （原始，无变异） | — | **144/144 全绿** |
+| B | `stopAll()` 去掉 `liveSeq/slowSeq` 自增 | 「S9 隐藏期间落地的响应不渲染 / 不续排」 | ✅ 2 FAIL |
+| C | `backoff()` 恒返回 `baseMs` | S7/S8 的退避间隔 10s/20s/40s/60s | ✅ 6 FAIL |
+| D | `renderRatios` 的 null 分支被抹平（只输出 `<b>`） | 「无样本单元格用静默 tag 呈现」 | ✅ 1 FAIL（**补了结构断言后才检出**） |
+| E | `window.setTimeout` → `setInterval` | 45 项连带失败 + 「全程未使用 setInterval」 | ✅ 45 FAIL |
+| F | 日切检测恒 `false`（负增量照画） | S6 日切告警与趋势清空 | ✅ 4 FAIL |
+| G | 告警详情改走 `innerHTML` | 「S11 全程零 innerHTML 赋值」等 | ✅ 6 FAIL |
+| H | 残留进程不再标 `bad` | 「已退出进程状态标签 / 样式」 | ✅ 2 FAIL |
+| I | 队列阈值 `>=` 改 `>` | 「深度恰等于阈值时即判积压」 | ✅ 1 FAIL |
+| J | 移除 `series()` 的 `isFinite` 过滤（NaN 进图） | 「S3 首个采样点速率显示 —」 | ✅ 1 FAIL |
+
+> **B / H / I 三个变异最初是漏检的**，即裸跑「全绿」并不等于覆盖到位：
+> B 暴露出我把「尚未恢复」与「恢复后旧响应」两类陈旧场景混为一谈，漏掉了**隐藏期间落地**这条唯一
+> 能区分死活的路径；H 暴露出只断言了行淡出、没断言状态标签本身；I 暴露出用例里深度恰好等于阈值的
+> **边界点**根本没出现。三者补测后重新检出。
+> D 则是「只比文本、不比结构」导致——`null` 与 `0.00%` 在文本上都是可分辨的，
+> 但「静默 tag」与「加粗数值」的差别只有结构断言能看见。
+> **结论：这类前端校验必须配变异测试，否则「PASS」只是「没崩」。**
+
 ---
 
 *本文件为设计方案，落地实现以代码为准。§3 的 6 处主项目改动（C1~C6）需逐项确认后再实施；
@@ -1142,5 +1249,14 @@ P4 若落地 `channels` 与 3 个动作，**必须**补跑：
 （落地清单 A1~A5 尚未执行，须在 C1~C6 上线前完成，见 §9.2 的 R11）。*
 
 ***P0 已完成（2026-09-23）**：`admin/` 骨架、RBAC 三角色、健康卡片页与 4 个只读 API 全部实测通过，
-主项目 `src/`、`config/` 零改动。§11 的实施记录与实测偏差 **D1~D15 覆盖前文表述，冲突以 §11 为准**。
-下一步为 P1（监控仪表盘：AJAX 轮询 + 图表 + 指标派生率）。*
+主项目 `src/`、`config/` 零改动。*
+
+***P1 已完成（2026-09-23）**：监控仪表盘改为「服务端骨架 + 浏览器分层轮询（5s Redis-only / 30s 含主项目 HTTP）
++ 自绘 SVG + 环形缓冲」；新增 `MetricsDeriver` 纯函数派生层与 `mon.live` 权限点；
+后台门禁 PHPStan L6 **0 errors** / PHPUnit **40 tests** / 前端渲染校验 **144 项**，
+P1 验收脚本 **41 PASS / 0 FAIL / 1 SKIP**。**主项目 `src/`、`config/`、`tests/` 仍为零改动。** §11 的实施记录与实测偏差 **D1~D21 覆盖前文表述，冲突以 §11 为准**。*
+
+***P1 明确不做**：实时日志 tail（需另开一条 SSE 通道，见红线 ㉙ 同向的阻塞式读取约束），
+若要上须作为独立阶段单独立项。*
+
+*下一步为 **P2 会话只读**（会话列表 / 详情 / 反查 / 订阅 / 离线队列只读 / Token 撤销名单）。*

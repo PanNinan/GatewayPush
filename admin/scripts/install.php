@@ -307,6 +307,7 @@ $group = upsertRule($pdo, [
 // 菜单（type=1，出现在左侧菜单）与按钮级权限点（type=2，仅作权限）
 $nodeSpecs = [
     'dashboard' => ['title' => '健康总览', 'key' => 'app\\controller\\DashboardController', 'href' => '/dashboard', 'type' => 1, 'weight' => 100],
+    'mon.live' => ['title' => '实时快照（API）', 'key' => 'app\\controller\\api\\MonitorController@live', 'href' => '', 'type' => 2, 'weight' => 95],
     'mon.summary' => ['title' => '指标聚合（API）', 'key' => 'app\\controller\\api\\MonitorController@summary', 'href' => '', 'type' => 2, 'weight' => 90],
     'mon.health' => ['title' => '健康探测（API）', 'key' => 'app\\controller\\api\\MonitorController@health', 'href' => '', 'type' => 2, 'weight' => 80],
     'ops.scan' => ['title' => 'Redis 键巡检（API）', 'key' => 'app\\controller\\api\\OpsController@redisScan', 'href' => '', 'type' => 2, 'weight' => 70],
@@ -346,7 +347,14 @@ function upsertRole(PDO $pdo, string $name, array $ruleIds, string $now): int
     return (int)$pdo->lastInsertId();
 }
 
-$viewerRules = [$nodeIds['dashboard'], $nodeIds['mon.summary'], $nodeIds['mon.health']];
+// 「只读」角色必须包含 mon.live —— 面板的 5s 快 tick 走的就是它；
+// 漏掉会让只读账号打开面板后永远停在骨架（且只在浏览器控制台报 403，极易漏查）。
+$viewerRules = [
+    $nodeIds['dashboard'],
+    $nodeIds['mon.live'],
+    $nodeIds['mon.summary'],
+    $nodeIds['mon.health'],
+];
 $operatorRules = array_merge($viewerRules, [$nodeIds['ops.scan'], $nodeIds['ops.probe']]);
 
 $viewerId = upsertRole($pdo, '只读', $viewerRules, $now);

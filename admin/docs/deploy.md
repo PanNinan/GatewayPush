@@ -99,14 +99,18 @@ php start.php stop           # Linux 停止
 | 角色 | `wa_roles.id` | `rules` | 能访问 |
 |---|---|---|---|
 | 超级管理员 | 1 | `*` | 全部（含 webman-admin 自带的管理面） |
-| 运维 | 3 | 5 个节点 | GatewayPush 全部 5 个端点（含 `ops/*`） |
-| 只读 | 2 | 3 个节点 | 仅 `/dashboard` 与 `/api/monitor/*`；`/api/ops/*` 返回 **403** |
+| 运维 | 3 | 6 个节点 | GatewayPush 全部 6 个端点（含 `ops/*`） |
+| 只读 | 2 | 4 个节点 | 仅 `/dashboard` 与 `/api/monitor/*`（含 `mon.live`）；`/api/ops/*` 返回 **403** |
 
 - **新建管理员**：登录后走「权限管理 → 账户管理」（webman-admin 自带页面）。
   命令行创建也可，但**没有**免验证码的创建接口。
 - **权限节点形态是 `{控制器全类名}[@{action}]`，不是语义键**
   （`plugin/admin/api/Auth.php::canAccess`）—— 新增端点时必须同步往 `wa_rules` 加节点，
   否则只读/运维角色访问会被 403，而超管因 `rules='*'` 察觉不到。
+  ⚠ **典型症状是「静默」的**：漏加节点时仪表盘页面**不报错**，只是永远停在骨架
+  （所有卡片都是 `—`、趋势显示「采样中…」），**唯一的线索是浏览器控制台里一个 403**。
+  P1 的 `mon.live`（`wa_rules` id **120**）就是这一类，`scripts/install.php` 已把它同时加进
+  超管/运维/只读三个角色。
 - **验证码**：登录**强制**校验（`session('captcha-login')`）。自动化脚本需先
   `GET /app/admin/account/captcha/login` 建 session，再从 `runtime/sessions/session_{PHPSID}`
   （file 驱动、PHP serialize）读明文。
@@ -184,15 +188,26 @@ mysql -h "$ADMIN_DB_HOST" -u "$ADMIN_DB_USER" -p gateway_push_admin < gwadmin-YY
 
 ```bash
 cd admin
-composer test      # PHPUnit：tests/Unit
-composer analyse    # PHPStan L6，**刻意不引入 baseline**（新代码零容忍）
+composer test           # PHPUnit：tests/Unit（P1 后 40 tests / 187 assertions）
+composer analyse        # PHPStan L6，**刻意不引入 baseline**（新代码零容忍）
+composer test:frontend  # 运行期前端渲染校验（144 项；无需浏览器 / jsdom / 服务端）
 ```
 
-`tests/Manual/` 下的脚本需真实服务在线，**刻意不纳入套件**（判据口径与主项目一致：
-环境不可用时标 SKIP 而非 FAIL），避免 CI 因主项目未启动而变红：
+`composer test` 与 `composer test:frontend` **不可互相替代**：
+前者是**静态契约**（`DashboardContractTest`：JS 引用的 DOM id 是否都在视图里、`cfg.*` 是否都由控制器注入、
+有没有 `innerHTML` 赋值），后者是把 `dashboard.js` **真跑一遍**断言渲染结果
+（卡片取值、派生率 `null ≠ 0.00%`、队列条宽、进程表格式化、日切清空、失败退避倍数、
+`visibilitychange` 陈旧响应作废）。
+**只跑前者只能证明「名字都对」，证明不了「渲染正确」。**
+后端 API 契约改动另需 `php tests/Manual/p1_acceptance.php`（P1 验收，含硬断言「`live()` 不含 `api` 段」）。
+
+`tests/Manual/` 与 `tests/Frontend/` 下的脚本需真实服务在线（后者其实不需要），
+**刻意不纳入套件**（判据口径与主项目一致：环境不可用时标 SKIP 而非 FAIL），
+避免 CI 因主项目未启动而变红：
 
 ```bash
 php tests/Manual/p0_acceptance.php    # P0 验收冒烟：配置 / Redis / API / 指标交叉比对
+php tests/Manual/p1_acceptance.php    # P1 验收：服务层(真连 Redis) / HTTP 层(curl+验证码登录) / RBAC
 ```
 
 ---
@@ -266,3 +281,30 @@ ADMIN_ROLES_CMD="php ../start.php roles"   # 正确
 | 存活探测 | `GET /health`（免签） | — |
 | 指标快照 | `GET /stats`（需签）/ `GET http://127.0.0.1:8291/metrics.json`（免签，多 `meta` 段） | 面板新鲜度展示优先用后者 |
 | 角色清单 | `php ../start.php roles`（JSON 契约） | **不得自行解析 `.env`** —— 后者只表示「配置是否开启」，不等于「进程是否在跑」 |
+
+---
+
+## 9. 仪表盘（P1）的数据流与两条红线
+
+```
+浏览器 /dashboard  ──(1) 只取一次骨架（无数据、无 <meta refresh>）
+                    └─(2) /static/dashboard.js + dashboard.css（静态中间件，**无鉴权**）
+                            ├─ 快 tick 5s  → GET /api/monitor/live      只碰 Redis，不碰主项目 HTTP
+                            └─ 慢 tick 30s → GET /api/monitor/summary   selfCheck + dbsize + /health + /stats
+```
+
+- **红线 1：快 tick 里不许出现主项目 HTTP。** `GatewayPushClient` 的 `connect_timeout=3s`、总超时 `8s`，
+  并进 5s 快 tick 会让面板「在主项目最慢的时候正好卡住」。`live()` 的返回值**刻意不含 `api` 段**，
+  `tests/Manual/p1_acceptance.php` 已把这条钉成硬断言。
+- **红线 2：`/static/*` 是无鉴权静态目录。** `dashboard.js` / `dashboard.css` 由 webman 静态中间件直接返回，
+  **不得写入任何密钥或内网凭据**；页面数据一律经 `/api/*`（走 `AdminAuth`）取回。
+  ⚠ `/api/monitor/nope` 这类未注册路由会返回 **HTTP 200** + `{"code":404,...}`（插件异常处理器包裹），
+  因此**判成败一律看响应体 `code`，不看 HTTP 状态码**。
+
+**调参**：`admin_settings` 里 `monitor.*` 改名/改值**无需重启后台**（`Settings` 有 5s 缓存）。
+但 `monitor.gauge_stale_secs` 是**面板展示**判据（`MONITOR_INTERVAL × 2`，默认 10s），
+**与主项目清理 gauge 残留用的 `MONITOR_TTL`（600s）刻意不同、不可互换** —— 混用会导致
+「进程早已退出但面板仍显示存活」或反之。
+
+**删了 `admin_settings` 里的 `monitor.ratio_thresholds` 也没事**：默认阈值只存在于
+`MetricsDeriver::RATIOS` 一处，该键刻意留空 `{}`，非法值静默回落默认。

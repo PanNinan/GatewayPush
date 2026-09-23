@@ -57,6 +57,8 @@
       "support\\Setup::run"
     ],
     "test": "phpunit --colors=always",
+    "test:frontend": "node tests/Frontend/dashboard_render_check.js",
+    "test:acceptance": "php tests/Manual/p1_acceptance.php",
     "analyse": "phpstan analyse --memory-limit=512M"
   },
   "minimum-stability": "dev",

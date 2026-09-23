@@ -1,236 +1,205 @@
 <?php
 /**
- * GatewayPush 健康总览页。
+ * GatewayPush 健康总览页（P1：服务端骨架 + 浏览器轮询渲染）。
  *
  * ⚠ 本文件后缀是 .html 但内容是**原生 PHP**：`support\view\Raw::render()` 直接 include 它
  *   （webman 的 Raw 引擎默认 view_suffix = html）。不要按纯静态页改。
  *
- * 数据在服务端一次采齐后渲染（见 app/controller/DashboardController.php），
- * 因此本页**不依赖任何 JS**；`<meta refresh>` 按 admin_settings.monitor.poll_interval 整页重载。
- * P1 会改为 AJAX 轮询 + Layui 图表，届时本文件只保留骨架。
+ * ⚠ 本页**不含任何数据**，只输出骨架与一份 `#dashboard-config` JSON。
+ *   所有数值由 `/static/dashboard.js` 经 `/api/monitor/live`（快 tick）与
+ *   `/api/monitor/summary`（慢 tick）填充。改动数据结构时要同步改 JS，否则界面会静默留白。
+ *
+ * 之所以不做服务端渲染：趋势需要跨刷新累积（服务端无历史指标存储），
+ * 且整页重建会丢掉 DOM 状态、也无法在主项目 API 卡住时保持可用。
  *
  * @var string $title
  * @var array{
- *     ts: int,
- *     redis: array{
- *         ok: bool, msg: string, latency_ms: float, online: int, db_size: int,
- *         db: int, prefix: string,
- *         gauge: array<string, string>, counter: array<string, string>,
- *         queues: array<string, int>,
- *         self_check: array{ok: bool, checks: list<array<string, mixed>>, hint: string}
- *     },
- *     api: array{
- *         ok: bool, status: int, code: int, msg: string, url: string,
- *         has_secret: bool, health: array<string, mixed>, stats: array<string, mixed>
- *     }
- * } $snapshot
- * @var string $dashboard_url
- * @var int $refresh_secs
- * @var int $queue_warn_depth
+ *     live_url: string,
+ *     summary_url: string,
+ *     live_interval_ms: int,
+ *     slow_interval_ms: int,
+ *     history_points: int,
+ *     queue_warn_depth: int,
+ *     gauge_stale_secs: int,
+ *     dashboard_url: string
+ * } $config
  */
 
 $h = static fn (mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
-$redis = $snapshot['redis'];
-$api = $snapshot['api'];
-$selfCheck = $redis['self_check'];
-$allOk = $redis['ok'] && $api['ok'] && $selfCheck['ok'];
+
+// 注入 JSON：除常规转义外必须加 JSON_HEX_TAG —— 否则配置里若出现 `</script`
+// 会直接闭合 script 标签，把后面的内容当 HTML 解析（XSS 面）。
+$json = json_encode(
+    $config,
+    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+    | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+);
 ?>
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta http-equiv="refresh" content="<?= (int)$refresh_secs ?>">
     <title><?= $h($title) ?></title>
-    <style>
-        :root {
-            --bg: #f4f6f9; --card: #fff; --line: #e6e9ef; --fg: #1f2430; --muted: #6b7280;
-            --ok: #16a34a; --bad: #dc2626; --warn: #d97706; --accent: #2d8cf0;
-        }
-        * { box-sizing: border-box; }
-        body { margin: 0; padding: 20px 24px 40px; background: var(--bg); color: var(--fg);
-               font: 14px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
-        h1 { font-size: 19px; margin: 0; }
-        h2 { font-size: 15px; margin: 26px 0 10px; }
-        a { color: var(--accent); text-decoration: none; }
-        a:hover { text-decoration: underline; }
-        .head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-bottom: 4px; }
-        .head .meta { color: var(--muted); font-size: 12px; }
-        .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
-                background: #eef2f7; font-size: 12px; }
-        .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--muted); }
-        .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); }
-        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 16px; }
-        .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
-        .card .k { color: var(--muted); font-size: 12px; }
-        .card .v { font-size: 24px; font-weight: 600; margin-top: 2px; }
-        .card .v small { font-size: 12px; font-weight: 400; color: var(--muted); }
-        table { width: 100%; border-collapse: collapse; background: var(--card);
-                border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-        th, td { padding: 7px 12px; text-align: left; border-bottom: 1px solid var(--line); font-size: 13px; }
-        th { background: #fafbfd; color: var(--muted); font-weight: 500; }
-        tr:last-child td { border-bottom: none; }
-        td.num { text-align: right; font-variant-numeric: tabular-nums; }
-        .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
-        .tag { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 12px; }
-        .tag.ok { background: #e8f7ee; color: var(--ok); }
-        .tag.bad { background: #fdeced; color: var(--bad); }
-        .tag.warn { background: #fdf4e3; color: var(--warn); }
-        .note { margin: 8px 0 0; padding: 10px 14px; border-radius: 8px; font-size: 13px; }
-        .note.bad { background: #fdeced; color: #8a1c1c; border: 1px solid #f6c9cb; }
-        .note.warn { background: #fdf4e3; color: #7a4c05; border: 1px solid #f0dcae; }
-        .empty { color: var(--muted); padding: 10px 12px; font-size: 13px; }
-        .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; align-items: start; }
-    </style>
+    <link rel="stylesheet" href="/static/dashboard.css">
 </head>
 <body>
 
+<noscript>
+    <div class="note bad">
+        <strong>本页需要 JavaScript。</strong>
+        数据由浏览器轮询 <span class="mono"><?= $h($config['live_url']) ?></span> 填充；
+        禁用 JS 时只能看到骨架。若需要免 JS 的只读视图，请访问主项目 Dashboard
+        <a href="<?= $h($config['dashboard_url']) ?>" target="_blank" rel="noopener"><?= $h($config['dashboard_url']) ?></a>。
+    </div>
+</noscript>
+
 <div class="head">
     <h1><?= $h($title) ?></h1>
-    <span class="pill"><?= $redis['ok'] ? '<span class="dot ok"></span>' : '<span class="dot bad"></span>' ?>Redis</span>
-    <span class="pill"><?= $api['ok'] ? '<span class="dot ok"></span>' : '<span class="dot bad"></span>' ?>主项目 API</span>
+    <span class="pill" id="pill-redis"><span class="dot"></span>Redis</span>
+    <span class="pill" id="pill-api"><span class="dot"></span>主项目 API</span>
     <span class="meta">
-        采集于 <?= $h(date('Y-m-d H:i:s', $snapshot['ts'])) ?> ·
-        每 <?= (int)$refresh_secs ?>s 自动刷新 ·
-        <a href="<?= $h($dashboard_url) ?>" target="_blank" rel="noopener">主项目 Dashboard ↗</a>
+        <span id="meta-ts">等待首次采集…</span>
+        · 快 <b id="meta-live">—</b>s / 慢 <b id="meta-slow">—</b>s
+        · 指标上报于 <span id="meta-report">—</span>
+        · <a href="<?= $h($config['dashboard_url']) ?>" target="_blank" rel="noopener">主项目 Dashboard ↗</a>
+        · <a href="/app/admin" rel="noopener">后台首页</a>
     </span>
 </div>
 
-<?php if (!$allOk): ?>
-    <div class="note bad">
-        <strong>存在异常：</strong>
-        <?php if (!$redis['ok']): ?>Redis 不可用（<?= $h($redis['msg']) ?>）。<?php endif; ?>
-        <?php if (!$selfCheck['ok'] && $selfCheck['hint'] !== ''): ?><?= $h($selfCheck['hint']) ?><?php endif; ?>
-        <?php if (!$api['ok']): ?>主项目 API HTTP <?= (int)$api['status'] ?>：<?= $h($api['msg']) ?><?php endif; ?>
-    </div>
-<?php endif; ?>
+<div id="alerts"></div>
 
 <div class="cards">
     <div class="card">
         <div class="k">在线连接数</div>
-        <div class="v"><?= (int)$redis['online'] ?> <small>online:clients</small></div>
+        <div class="v" id="c-online">—</div>
+        <div class="sub" id="c-online-sub">&nbsp;</div>
     </div>
     <div class="card">
         <div class="k">Redis 延迟</div>
-        <div class="v"><?= $h(number_format($redis['latency_ms'], 2)) ?> <small>ms</small></div>
+        <div class="v" id="c-latency">—<small>ms</small></div>
+        <div class="sub">&nbsp;</div>
     </div>
     <div class="card">
-        <div class="k">Redis 键总数</div>
-        <div class="v"><?= (int)$redis['db_size'] ?> <small>DB <?= (int)$redis['db'] ?> · <?= $h($redis['prefix']) ?></small></div>
+        <div class="k">活跃进程</div>
+        <div class="v" id="c-procs">—</div>
+        <div class="sub" id="c-procs-sub">&nbsp;</div>
     </div>
     <div class="card">
         <div class="k">今日指标项</div>
-        <div class="v"><?= count($redis['counter']) ?> <small>counter</small></div>
+        <div class="v" id="c-counter">—<small>counter</small></div>
+        <div class="sub">&nbsp;</div>
     </div>
     <div class="card">
         <div class="k">进程指标字段</div>
-        <div class="v"><?= count($redis['gauge']) ?> <small>gauge</small></div>
+        <div class="v" id="c-gauge">—<small>gauge</small></div>
+        <div class="sub">&nbsp;</div>
+    </div>
+    <div class="card" id="card-dbsize">
+        <div class="k">Redis 键总数</div>
+        <div class="v" id="c-dbsize">—</div>
+        <div class="sub" id="c-dbsize-sub">&nbsp;</div>
     </div>
 </div>
 
-<h2>队列深度（阈值 <?= (int)$queue_warn_depth ?>）</h2>
-<?php if (!$redis['queues']): ?>
-    <div class="empty">读不到队列键 —— 队列为空时 Redis 会自动删除空列表，属正常；若长期为空请核对 DB / PREFIX。</div>
-<?php else: ?>
-    <table>
-        <thead><tr><th>队列</th><th style="text-align:right">深度</th><th>状态</th></tr></thead>
-        <tbody>
-        <?php foreach ($redis['queues'] as $name => $depth): ?>
-            <?php $warn = $depth >= $queue_warn_depth; ?>
-            <tr>
-                <td class="mono"><?= $h($name) ?></td>
-                <td class="num"><?= (int)$depth ?></td>
-                <td>
-                    <?php if ($depth === 0): ?>
-                        <span class="tag ok">空</span>
-                    <?php elseif ($warn): ?>
-                        <span class="tag bad">积压超阈值</span>
-                    <?php else: ?>
-                        <span class="tag warn">有待处理</span>
-                    <?php endif; ?>
-                </td>
-            </tr>
-        <?php endforeach; ?>
-        </tbody>
-    </table>
-<?php endif; ?>
+<h2>
+    趋势
+    <span class="hint">
+        本次会话（页面打开以来）· 最多 <span id="hint-points">—</span> 点
+        —— 主项目无历史指标存储，刷新即清零
+    </span>
+</h2>
+<div class="charts">
+    <div class="chart">
+        <div class="chart-h"><span>在线连接数</span><b id="t-online">—</b></div>
+        <div class="chart-b" id="chart-online"></div>
+    </div>
+    <div class="chart">
+        <div class="chart-h"><span>消息入站 <span class="unit">msg_in</span></span><b id="t-msg">—</b></div>
+        <div class="chart-b" id="chart-msg"></div>
+    </div>
+    <div class="chart">
+        <div class="chart-h"><span>推送入队 <span class="unit">push_in</span></span><b id="t-push">—</b></div>
+        <div class="chart-b" id="chart-push"></div>
+    </div>
+</div>
 
-<h2>Redis 键自检<?= $selfCheck['ok'] ? '' : '（未通过）' ?></h2>
+<h2>
+    派生率
+    <span class="hint">口径 = <b>今日累计</b>（不是瞬时）。分母为 0 时显示 <span class="mono">—</span>（无样本），与 <span class="mono">0.00%</span> 语义不同</span>
+</h2>
 <table>
-    <thead><tr><th>逻辑键</th><th>存在</th><th>类型</th><th>TTL</th><th>期望</th><th>提示</th></tr></thead>
-    <tbody>
-    <?php foreach ($selfCheck['checks'] as $c): ?>
-        <?php
-        $exists = (bool)($c['exists'] ?? false);
-        $ttl = (int)($c['ttl'] ?? -2);
-        $typeOk = ($c['type'] ?? '') === ($c['expect'] ?? '');
-        ?>
-        <tr>
-            <td class="mono"><?= $h($c['key'] ?? '') ?></td>
-            <td><?= $exists ? '<span class="tag ok">是</span>' : '<span class="tag bad">否</span>' ?></td>
-            <td class="mono"><?= $h($c['type'] ?? '') ?><?= $exists && !$typeOk ? ' <span class="tag bad">≠' . $h($c['expect'] ?? '') . '</span>' : '' ?></td>
-            <td class="num"><?= $ttl === -1 ? '永久' : ($ttl === -2 ? '—' : (int)$ttl) ?></td>
-            <td class="mono"><?= $h($c['expect'] ?? '') ?></td>
-            <td><?= $h($c['hint'] ?? '') ?></td>
-        </tr>
-    <?php endforeach; ?>
-    </tbody>
+    <thead>
+    <tr>
+        <th>指标</th>
+        <th class="num">值</th>
+        <th>档位</th>
+        <th>算式</th>
+        <th class="num">分子 / 分母</th>
+    </tr>
+    </thead>
+    <tbody id="tb-ratios"></tbody>
+</table>
+
+<h2>队列深度 <span class="hint">阈值 <span class="mono" id="q-threshold">—</span> · 队列为空时 Redis 会自动删除空列表，读不到属正常</span></h2>
+<div class="bars" id="q-bars"></div>
+<table>
+    <thead>
+    <tr><th>队列</th><th class="num">深度</th><th>状态</th></tr>
+    </thead>
+    <tbody id="tb-queues"></tbody>
+</table>
+
+<h2>进程 <span class="hint">存活判据 = 最后上报距今 ≤ <span class="mono" id="p-stale">—</span>s（MONITOR_INTERVAL × 2，与主项目清理用的 MONITOR_TTL 刻意不同）</span></h2>
+<table>
+    <thead>
+    <tr>
+        <th>PID</th>
+        <th>角色</th>
+        <th class="num">Worker</th>
+        <th class="num">内存</th>
+        <th class="num">最后上报</th>
+        <th>状态</th>
+        <th>定时任务</th>
+    </tr>
+    </thead>
+    <tbody id="tb-procs"></tbody>
 </table>
 
 <div class="two">
     <div>
         <h2>进程指标（gauge）</h2>
-        <?php if (!$redis['gauge']): ?>
-            <div class="empty">无数据 —— 主项目 <span class="mono">MONITOR_ENABLE=false</span> 时采集整条短路。</div>
-        <?php else: ?>
-            <table>
-                <thead><tr><th>字段</th><th style="text-align:right">值</th></tr></thead>
-                <tbody>
-                <?php foreach ($redis['gauge'] as $k => $v): ?>
-                    <tr><td class="mono"><?= $h($k) ?></td><td class="num"><?= $h($v) ?></td></tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
-        <?php endif; ?>
+        <table>
+            <thead><tr><th>字段</th><th class="num">值</th></tr></thead>
+            <tbody id="tb-gauge"></tbody>
+        </table>
     </div>
     <div>
         <h2>累计指标（今日 counter）</h2>
-        <?php if (!$redis['counter']): ?>
-            <div class="empty">无数据 —— 今日尚无指标写入，或 DB / PREFIX 配错。</div>
-        <?php else: ?>
-            <table>
-                <thead><tr><th>指标</th><th style="text-align:right">值</th></tr></thead>
-                <tbody>
-                <?php foreach ($redis['counter'] as $k => $v): ?>
-                    <tr><td class="mono"><?= $h($k) ?></td><td class="num"><?= $h($v) ?></td></tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
-        <?php endif; ?>
+        <table>
+            <thead><tr><th>指标</th><th class="num">值</th></tr></thead>
+            <tbody id="tb-counter"></tbody>
+        </table>
     </div>
 </div>
 
-<h2>主项目 API 自报口径（GET <?= $h($api['url']) ?>/stats）</h2>
-<?php if (!$api['ok']): ?>
-    <div class="empty">
-        HTTP <?= (int)$api['status'] ?>，业务码 <?= (int)$api['code'] ?>：<?= $h($api['msg']) ?>
-        <?php if (!$api['has_secret']): ?><br>未配置 <span class="mono">ADMIN_API_SECRET</span>，由服务端回退 <span class="mono">AUTH_SECRET</span>。<?php endif; ?>
-    </div>
-<?php elseif (!$api['stats']): ?>
-    <div class="empty">/stats 无数据（可能返回非 JSON，或该实例未开放统计）。</div>
-<?php else: ?>
-    <table>
-        <thead><tr><th>字段</th><th style="text-align:right">值</th></tr></thead>
-        <tbody>
-        <?php foreach ($api['stats'] as $k => $v): ?>
-            <tr>
-                <td class="mono"><?= $h($k) ?></td>
-                <td class="num"><?= $h(is_scalar($v) ? (string)$v : json_encode($v, JSON_UNESCAPED_UNICODE)) ?></td>
-            </tr>
-        <?php endforeach; ?>
-        </tbody>
-    </table>
-<?php endif; ?>
+<h2>Redis 键自检 <span class="hint">慢 tick 采集（默认 30s）· 只对骨架键做 EXISTS/TYPE/TTL，不 SCAN 全库</span></h2>
+<div id="selfcheck-note"></div>
+<table>
+    <thead>
+    <tr><th>逻辑键</th><th>存在</th><th>类型</th><th class="num">TTL</th><th>期望</th><th>提示</th></tr>
+    </thead>
+    <tbody id="tb-selfcheck"></tbody>
+</table>
 
+<h2>主项目 API 自报口径 <span class="hint" id="api-url">—</span></h2>
+<div id="api-note"></div>
+<table>
+    <thead><tr><th>字段</th><th class="num">值</th></tr></thead>
+    <tbody id="tb-apistats"></tbody>
+</table>
+
+<script type="application/json" id="dashboard-config"><?= $json ?></script>
+<script src="/static/dashboard.js"></script>
 </body>
 </html>

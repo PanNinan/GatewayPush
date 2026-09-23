@@ -100,9 +100,17 @@ CREATE TABLE IF NOT EXISTS `admin_settings` (
   COMMENT='后台自身设置';
 
 -- 初始值：INSERT IGNORE 保证重复执行不会覆盖运维手工调整过的值
+--
+-- ⚠ monitor.ratio_thresholds 刻意留空 `{}`，**不**把默认阈值抄一份进来：
+--   默认值只存在于 MetricsDeriver::RATIOS 常量（单一真源）。若把数值抄进本文件，
+--   将来改类常量时这条 seed 不会跟着变（INSERT IGNORE 不覆盖既有行），
+--   就会出现「代码里写着 1.0，库里还留着 2.0」的静默漂移。
+--   留空 = 全部走类常量；要调哪项就只写哪项，其余自动继承。
 INSERT IGNORE INTO `admin_settings` (`k`, `v`, `remark`) VALUES
-  ('monitor.poll_interval',    '5',    '监控页轮询间隔（秒）'),
+  ('monitor.poll_interval',    '5',    '监控页快 tick 轮询间隔（秒）'),
+  ('monitor.slow_interval',    '30',   '监控页慢 tick 间隔（秒）：selfCheck / dbsize / 主项目 API'),
   ('monitor.queue_warn_depth', '1000', '队列深度告警阈值'),
-  ('monitor.gauge_stale_secs', '10',   '进程存活展示判据 = MONITOR_INTERVAL × 2'),
+  ('monitor.gauge_stale_secs', '10',   '进程存活展示判据 = MONITOR_INTERVAL × 2（勿用 MONITOR_TTL）'),
+  ('monitor.ratio_thresholds', '{}',   '派生率阈值覆盖；{} = 全走类常量默认。可覆盖键：msg_fail_rate/auth_fail_rate/action_fail_rate/action_timeout_rate/push_fail_rate/udp_out_fail_rate/heartbeat_timeout_rate，形如 {"msg_fail_rate":{"warn":1,"bad":5}}'),
   ('session.page_size',        '20',   '会话列表分页大小'),
   ('ops.log_tail_lines',       '500',  '日志尾读默认行数');

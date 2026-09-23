@@ -41,10 +41,13 @@ Route::get('/dashboard', [DashboardController::class, 'index'])->middleware([Adm
 
 // ---- JSON API（全部只读；写操作永远走主项目 HTTP API，不在此暴露）----
 Route::group('/api', static function (): void {
-    // 高频探活：只打主项目 /health，不读 Redis
-    Route::get('/monitor/health', [MonitorController::class, 'health']);
-    // 完整快照：Redis（在线数 / gauge / counter / 队列 / 键自检）+ 主项目 API
+    // 快 tick（默认 5s）：Redis 直读 + 派生率 + 进程表。**不打主项目 HTTP** ——
+    // 高频路径必须永远快，否则主项目 API 一挂、面板反而开始卡顿。
+    Route::get('/monitor/live', [MonitorController::class, 'live']);
+    // 慢 tick（默认 30s）/ 首屏：完整快照（含 selfCheck + dbsize + 主项目 /health 与 /stats）
     Route::get('/monitor/summary', [MonitorController::class, 'summary']);
+    // 独立探针：只打主项目 /health，用于区分「Redis 腿断」与「主项目 HTTP 腿断」
+    Route::get('/monitor/health', [MonitorController::class, 'health']);
     // 运维自检
     Route::get('/ops/redis/scan', [OpsController::class, 'redisScan']);
     Route::get('/ops/api/probe', [OpsController::class, 'apiProbe']);
