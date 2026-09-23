@@ -62,7 +62,9 @@
       "node tests/Frontend/session_render_check.js",
       "node tests/Frontend/push_render_check.js",
       "node tests/Frontend/action_render_check.js",
-      "node tests/Frontend/ops_render_check.js"
+      "node tests/Frontend/ops_render_check.js",
+      "node tests/Frontend/metrics_render_check.js",
+      "node tests/Frontend/trace_render_check.js"
     ],
     "test:acceptance": "php tests/Manual/p1_acceptance.php",
     "test:acceptance:p2": "php tests/Manual/p2_acceptance.php",

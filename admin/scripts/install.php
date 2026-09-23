@@ -350,6 +350,13 @@ $nodeSpecs = [
     // 属「主动对生产连接施加行为」，与只读查询不是一个风险级别。
     'actions' => ['title' => '动作调试', 'key' => 'app\\controller\\ActionController', 'href' => '/actions', 'type' => 1, 'weight' => 90],
     'opsPage' => ['title' => '运维', 'key' => 'app\\controller\\OpsPageController', 'href' => '/ops', 'type' => 1, 'weight' => 89],
+    // ---- 2.0 指标趋势 + uid 一站式排查 ----
+    // 监测/排查均属只读能力：页面菜单与 2 个 metric API 节点都进 $viewerRules（只读+运维同授）。
+    // trace 页无新 API 节点 —— 页内复用 sess.* 既有端点，权限边界就是那些端点自身。
+    'metricsPage' => ['title' => '指标趋势', 'key' => 'app\\controller\\MetricsPageController', 'href' => '/metrics', 'type' => 1, 'weight' => 99],
+    'metric.range' => ['title' => '指标趋势查询（API）', 'key' => 'app\\controller\\api\\MetricController@range', 'href' => '', 'type' => 2, 'weight' => 98],
+    'metric.latest' => ['title' => '指标最新采样（API）', 'key' => 'app\\controller\\api\\MetricController@latest', 'href' => '', 'type' => 2, 'weight' => 97],
+    'tracePage' => ['title' => 'uid 排查', 'key' => 'app\\controller\\TracePageController', 'href' => '/trace', 'type' => 1, 'weight' => 96],
     'push.create' => ['title' => '发起推送（API）', 'key' => 'app\\controller\\api\\PushController@create', 'href' => '', 'type' => 2, 'weight' => 48],
     'push.history' => ['title' => '推送历史（API）', 'key' => 'app\\controller\\api\\PushController@history', 'href' => '', 'type' => 2, 'weight' => 47],
     'push.tplList' => ['title' => '模板列表（API）', 'key' => 'app\\controller\\api\\PushController@templateList', 'href' => '', 'type' => 2, 'weight' => 46],
@@ -428,6 +435,11 @@ $viewerRules = [
     $nodeIds['push'],
     $nodeIds['push.history'],
     $nodeIds['push.tplList'],
+    // ---- 2.0 指标趋势 + uid 排查：只读能力，与 dashboard / sessions 同级 ----
+    $nodeIds['metricsPage'],
+    $nodeIds['metric.range'],
+    $nodeIds['metric.latest'],
+    $nodeIds['tracePage'],
 ];
 // 运维角色在只读之上追加：运维自检 + 动作调试 + 推送写路径。
 $operatorRules = array_merge($viewerRules, [

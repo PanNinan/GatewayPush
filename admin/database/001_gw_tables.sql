@@ -120,3 +120,29 @@ INSERT IGNORE INTO `admin_settings` (`k`, `v`, `remark`) VALUES
   ('session.scan_max_rounds',  '50',   'SCAN 轮次上限（防御游标不收敛）'),
   ('session.scan_max_keys',    '2000', 'SCAN 累计键数上限（超限则 truncated=true）'),
   ('ops.log_tail_lines',       '500',  '日志尾读默认行数');
+
+-- ---------------------------------------------------------------------------
+-- 2.0 指标趋势采样（MetricSampler 进程每 60s 落一行）
+--
+-- 设计取舍：
+--   * 每行 = 一次采样快照；counter 全量进 JSON 列（键集合可能随主项目演进而变，
+--     列化反而每次演进都要 ALTER —— 快照列 + 前端/服务端按需取键更抗漂移）。
+--   * uk_sampled_at 防重复：采样进程与 webman HTTP 进程共享 autoload，
+--     万一被误起两套（Windows 重复 bind 不报错，红线 ㊳），唯一键保证每秒最多一行，
+--     后写者静默失败而不是数据翻倍。
+--   * 保留天数由 ADMIN_METRIC_KEEP_DAYS 控制（MetricService::cleanup 按天删）。
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `gw_metric_samples` (
+  `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `sampled_at` INT UNSIGNED    NOT NULL COMMENT '采样时刻(unix 秒)',
+  `conn_ws`    INT UNSIGNED    NOT NULL DEFAULT 0 COMMENT 'WS 在线连接数(gauge.conn_ws)',
+  `conn_udp`   INT UNSIGNED    NOT NULL DEFAULT 0 COMMENT 'UDP 在线连接数(gauge.conn_udp)',
+  `conn_total` INT UNSIGNED    NOT NULL DEFAULT 0 COMMENT '总在线(gauge.conn_total)',
+  `queues`     TEXT            NOT NULL COMMENT '队列深度 JSON（queue:udp:in/out 等）',
+  `counters`   MEDIUMTEXT      NOT NULL COMMENT 'counter 全量 JSON 快照（累计值，速率由查询侧差分）',
+  `created_at` INT UNSIGNED    NOT NULL COMMENT '写入时刻(unix 秒)',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_sampled_at` (`sampled_at`),
+  KEY `idx_sampled_at` (`sampled_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+  COMMENT='主项目指标采样趋势（2.0，只增不改，过期由采样进程按天清理）';

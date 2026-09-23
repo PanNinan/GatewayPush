@@ -1,0 +1,37 @@
+/* GatewayPush uid 一站式排查页（2.0 §3.2）—— 复用 ops.css 的设计变量与版式约定 */
+:root {
+    --fg: #1c2430;
+    --muted: #68758a;
+    --line: #dbe1ea;
+    --accent: #2b6cb0;
+    --bg-warn: #fff7e6;
+    --fg-bad: #c0392b;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; padding: 20px; font: 14px/1.6 "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--fg); background: #f5f7fa; }
+.wrap { max-width: 1080px; margin: 0 auto; }
+h1 { font-size: 20px; margin: 0 0 16px; }
+h2 { font-size: 16px; margin: 24px 0 8px; }
+
+.note { border: 1px solid var(--line); border-radius: 6px; background: #fff; padding: 8px 12px; margin: 8px 0; }
+.note.bad { border-color: var(--fg-bad); color: var(--fg-bad); }
+.muted { color: var(--muted); font-size: 13px; }
+
+.form { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 8px 0; }
+.form label { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+input { padding: 5px 8px; border: 1px solid var(--line); border-radius: 5px; font: inherit; width: 220px; }
+
+.btn { padding: 6px 14px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--fg); font: inherit; font-size: 13px; cursor: pointer; }
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { opacity: 0.9; color: #fff; }
+
+.tbl { border-collapse: collapse; background: #fff; border: 1px solid var(--line); border-radius: 6px; width: 100%; margin-bottom: 4px; }
+.tbl th, .tbl td { border-bottom: 1px solid var(--line); padding: 6px 12px; text-align: left; font-size: 13px; }
+.tbl th { color: var(--muted); font-weight: 500; white-space: nowrap; }
+.tbl td { font-variant-numeric: tabular-nums; }
+.tbl tr:last-child th, .tbl tr:last-child td { border-bottom: none; }
+.tag { display: inline-block; padding: 0 8px; border-radius: 10px; font-size: 12px; border: 1px solid var(--line); }
+.tag.on { border-color: #2f9e44; color: #2f9e44; }
+.tag.off { border-color: var(--fg-bad); color: var(--fg-bad); }
