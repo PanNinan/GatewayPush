@@ -200,7 +200,7 @@ GatewayPush/
 │   ├── src/Error/                     错误码与统一异常
 │   ├── bin/gwclient.php               CLI 调试器入口（一次性命令 / shell REPL / listen）
 │   ├── tests/Unit/                    客户端单元测试
-│   ├── tests/E2E/ClientE2E.php        客户端端到端对齐（与服务端 e2e 同口径 A~O）
+│   ├── tests/E2E/ClientE2E.php        客户端端到端（覆盖服务端 A~O 共 15 用例，服务端另有 P）
 │   └── README.md                      客户端使用说明与里程碑
 ├── tests/
 │   ├── E2E/                          端到端用例（Harness + 10 个 Case 模块）
@@ -793,7 +793,10 @@ composer lint:errors    # phpcs 仅错误（--warning-severity=0）
 composer lint:self      # phpcs 自定义嗅探器自检（RedisKeys 漂移检测 + 作用域/豁免矩阵）
 composer test           # phpunit
 composer test:e2e       # php tests/e2e_check.php
-composer test:client-e2e # php client/tests/E2E/ClientE2E.php（客户端 SDK 同口径 15 用例）
+composer test:client-e2e # php client/tests/E2E/ClientE2E.php（覆盖服务端 A~O 共 15 用例，服务端另有 P）
+composer test:frontend  # 面板自动刷新语义（注入假 DOM，无需服务端）
+composer test:sign      # HTTP 验签 8 形态（需 api + business 在线）
+composer test:docs      # 文档关键数字只读核对（baseline 条目 / 测试数 / 过期字面量 / CI 门禁）
 composer demo:http      # php tests/Api/http_demo.php（HTTP 接口调用示例，需 api/business 在跑）
 ```
 
@@ -2086,12 +2089,12 @@ class OrderQueryAction implements ActionInterface
 
 ```bash
 composer analyse        # PHPStan（level 6；生产 baseline 已清空，测试 baseline 301 条目/311 条 = 273 missingType + 38 语义）
-composer test           # PHPUnit（510 tests / 1431 assertions；含 client/tests/Unit）
+composer test           # PHPUnit（519 tests / 1465 assertions；含 client/tests/Unit）
 composer lint           # phpcs 审计：注释 / 命名 / 业务红线（只读，不写文件）
 composer lint:self      # phpcs 自定义嗅探器自检（RedisKeys 漂移 + 作用域/豁免矩阵）
 composer cs:check       # php-cs-fixer 排版体检（只报不改；落地用 composer cs）
 composer test:e2e       # 端到端自检（16 个用例）
-composer test:client-e2e # 客户端 SDK 端到端对齐（A~O 共 15 个用例，需五角色 + Redis）
+composer test:client-e2e # 客户端 SDK 端到端（覆盖服务端 A~O 共 15 用例，服务端另有 P；需五角色 + Redis）
 ```
 
 > **风格工具分工（刻意不重叠）**：**排版**归 `php-cs-fixer`，只有 `composer cs` 会写文件；
@@ -2116,7 +2119,7 @@ composer test:client-e2e # 客户端 SDK 端到端对齐（A~O 共 15 个用例�
 | ---------- | ------------------------------------------------------------------------ |
 | PHPStan 版本 | `^2.0`                                                                   |
 | 内存         | **必须带 `--memory-limit=512M`**（本机 php.ini 仅 128M，否则子进程崩溃）；已写入 composer 脚本 |
-| 分析范围       | `paths` = `src`、`client/src`、`start.php`、`tests`、`client/tests`（共 117 文件）。**`tests` 必须在列**，否则 `phpstan-phpunit` 的断言 / mock 规则不会生效 |
+| 分析范围       | `paths` = `src`、`client/src`、`start.php`、`tests`、`client/tests`（共 119 文件）。**`tests` 必须在列**，否则 `phpstan-phpunit` 的断言 / mock 规则不会生效 |
 | 分析口径       | `phpVersion: 80200` —— 刻意锚定在**项目下限**，用于**拦截 8.3+ 语法误用**，保证 8.2 兼容性                 |
 | 扩展         | `phpstan-strict-rules` + `phpstan-phpunit`，**在 `includes` 里显式声明**（本项目未装 `phpstan/extension-installer`，不写 `includes` 则规则一条都不生效） |
 | strict-rules | `strictRules.allRules: true`，仅刻意关闭 4 条：`disallowedEmpty`、`booleansInConditions`(+`booleansInLoopConditions`)、`dynamicCallOnStaticMethod`（理由见 `phpstan.neon` 内的逐条注释） |
@@ -2140,9 +2143,10 @@ composer test:client-e2e # 客户端 SDK 端到端对齐（A~O 共 15 个用例�
 >   冻结进 `phpstan-tests-baseline.neon`** ——
 >   测试替身补 `: void` 之类收益低且有 TypeError 风险，沿用「测试噪音单独一份」的既有设计。
 >
-> 补标注时**只加 phpdoc、不加原生类型**（原生返回类型会改变运行期行为）；且以
-> `array<string, mixed>` 为主，精确 `array{...}` shape 会解锁键存在性检查、可能引出新告警，
-> 留作独立后续任务。
+> 补标注纪律：**生产代码可补原生类型**（`: void` / 明确标量 / 数组形参，接口与实现须同步；
+> 2026-09-23 已落地属性与方法原生类型）；**测试侧仍只加 phpdoc、不加原生返回类型**
+>（冻结进 baseline，见上）。phpdoc 以 `array<string, mixed>` 为主，精确 `array{...}` shape
+> 会解锁键存在性检查、可能引出新告警，留作独立后续任务。
 
 > **`ignore.unmatched` 是修复的免费验证器**：baseline 中不再匹配任何实际错误的 `ignore`  
 > 条目会触发 `ignore.unmatched (non-ignorable)` 报错。因此「删掉 baseline 条目 → 分析干净通过」  
@@ -2152,7 +2156,7 @@ composer test:client-e2e # 客户端 SDK 端到端对齐（A~O 共 15 个用例�
 
 ```bash
 # 用不同 PHP 版本各跑一轮（最低 8.2；8.1 及以下无法运行，原因见第 4 节）
-/usr/local/php81/bin/php vendor/bin/phpunit
+/usr/local/php82/bin/php vendor/bin/phpunit
 /usr/local/php83/bin/php vendor/bin/phpstan analyse --memory-limit=512M
 /usr/local/php85/bin/php tests/e2e_check.php e2e-ver-85
 ```
@@ -2216,7 +2220,7 @@ php tests/e2e_check.php <uid> [device_id] [timeout]
 
 ```bash
 composer test
-# OK (510 tests, 1431 assertions)
+# OK (519 tests, 1465 assertions)
 ```
 
 **只测「纯函数 / 零 IO」组件**：
@@ -2276,13 +2280,14 @@ diff <(grep -E '^\[(PASS|FAIL|SKIP)\]' _old_out.txt) \
 配置文件：**`.github/workflows/ci.yml`**（唯一入口）。触发：向 `main` / `master` 推送、面向这两个分支的 PR，以及手动 `workflow_dispatch`。
 
 **设计原则：CI 不发明第二套口径。** workflow 里所有门禁都直接调 `composer.json` 的 script
-（`analyse` / `test` / `lint` / `lint:self` / `cs:check` / `test:client-e2e` / `demo:http`），
+（`analyse` / `test` / `lint` / `lint:self` / `cs:check` / `test:frontend` / `test:docs` /
+`test:client-e2e` / `demo:http`），
 **不在 YAML 里重写** `php vendor/bin/phpstan ...` —— 否则出现「本地绿、CI 红」时，
 无法区分是环境差异还是命令差异。
 
 | 作业 | PHP | 外部依赖 | 内容 |
 | --- | --- | --- | --- |
-| `static` | 8.2（单版本） | 无 | `composer validate --strict` → `analyse` → `lint` → `lint:self` → `cs:check` |
+| `static` | 8.2（单版本） | 无 | `composer validate --strict` → `analyse` → `lint` → `lint:self` → `cs:check` → `test:frontend` → `test:docs` |
 | `test` | **8.2 ~ 8.5 矩阵** | 无 | `composer test` |
 | `e2e` | 8.2 | **Redis 7 service + 全部 6 个角色** | `tests/e2e_check.php`（用例 A~P）→ `test:client-e2e` → `api_sign_check.js` → `demo:http` |
 

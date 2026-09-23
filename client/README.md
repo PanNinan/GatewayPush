@@ -54,8 +54,8 @@ client/
 └── tests/
     ├── Support/                   FakeTransport / FakeUdpConnection / FakeHttpConnection /
     │                              FakeTcpConnection / FakeTimers（测试共享基建）
-    ├── Unit/                      11 个测试类
-    └── E2E/ClientE2E.php          与服务端 e2e 同口径的 A~O 用例（P6）
+    ├── Unit/                      12 个测试类
+    └── E2E/ClientE2E.php          覆盖服务端 A~O 共 15 用例（服务端另有 P）（P6）
 ```
 
 ## 快速开始
@@ -300,13 +300,13 @@ REPL 行为：
 > Windows 控制台不支持对 stdin 做 `stream_select`，此时输入降级为阻塞读：
 > 推送会在下一次回车时渲染，功能不受影响；建议先执行 `chcp 65001` 以免中文乱码。
 
-## 端到端对齐（P6）
+## 端到端自检（P6）
 
 ```bash
 composer test:client-e2e      # php client/tests/E2E/ClientE2E.php
 ```
 
-与 `tests/e2e_check.php` 同口径的 15 个用例（A~O），前置条件相同（五角色 + Redis）。
+覆盖服务端 `tests/e2e_check.php` 的 A~O 共 15 个用例（服务端另有 P），前置条件相同（五角色 + Redis）。
 客户端视角的四处必要调整已写入该文件头部注释：B 走裸传输层、D 用错误密钥签发、
 K 改为「建会话前入队」、O 以订阅关系闭环对齐（HTTP 不支持主题广播目标）。
 
