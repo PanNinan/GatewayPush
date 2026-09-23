@@ -25,6 +25,7 @@
 - [8. 测试计划](#8-测试计划)
 - [9. 风险与未决项](#9-风险与未决项)
 - [10. 变更同步约定](#10-变更同步约定)
+- [11. P0 实施记录与实测偏差（2026-09-23）](#11-p0-实施记录与实测偏差2026-09-23)
 
 ---
 
@@ -1065,6 +1066,81 @@ P4 若落地 `channels` 与 3 个动作，**必须**补跑：
 
 ---
 
+## 11. P0 实施记录与实测偏差（2026-09-23）
+
+### 11.1 状态
+
+| 项 | 状态 |
+|---|---|
+| `admin/` 骨架 + 依赖 | ✅ 已落地（webman-framework 2.2.4 / workerman 5.2.2 / `webman/admin` **2.1.8**） |
+| psr-4 复用 `GatewayPush\Common\RedisKeys` | ✅ **已实测验证**（`ReflectionClass::getFileName()` 指向主项目 `src/Common/RedisKeys.php`） |
+| 后台自有配置（database / redis / gateway_push） | ✅ 已落地 |
+| `RedisReader`（只读门面）+ `GatewayPushClient`（HTTP 签名） | ✅ 已落地 |
+| 签名同源金标测试 | ✅ `tests/Unit/SignerParityTest.php`：6 tests / 24 assertions 全绿 |
+| 后台门禁 | ✅ PHPStan L6 **0 errors**（无 baseline）· PHPUnit 全绿 · 冒烟 13 PASS |
+| MySQL 建库建号 + 迁移（`install.sql` + `database/001_gw_tables.sql`） | ✅ **已完成**（本机 MySQL **8.0.46**；库 `gateway_push_admin`；专用账号 `gw_admin`，仅授权本库） |
+| RBAC 三角色 + 权限点 | ✅ **已完成**（`wa_rules` 共 66 节点 = 插件菜单 61 + GatewayPush 5；角色：超管 `*`、运维 5 节点、只读 3 节点） |
+| 安装 / 初始化脚本 | ✅ `admin/scripts/install.php`（7 步、幂等、可重复执行；含「已安装标记」重建） |
+| 登录 + 健康卡片页 + 4 个只读 API | ✅ **已完成**（`php windows.php` 起 :8292；登录后 `/dashboard` 可见健康卡片） |
+| 未登录 / 越权访问防护 | ✅ 已实测：页面 302 → 登录页；API 返回真实 **HTTP 401 / 403** |
+| 后台 ↔ 主项目数据交叉验证 | ✅ 后台 Redis 直读（gauge 12 项 / counter 空）与主项目 `GET /stats` **逐项一致** |
+
+#### 11.1.1 P0 验收结果（2026-09-23 实测）
+
+| 验收项 | 结果 |
+|---|---|
+| 后台监听 | ✅ `127.0.0.1:8292` LISTENING（回环，与设计一致） |
+| `GET /` | ✅ 302 → `/app/admin` |
+| `GET /app/admin` | ✅ 200，渲染**登录页**（非安装页 ⇒「已安装」标记生效） |
+| 登录（带验证码） | ✅ `{"code":0,"msg":"登录成功"}` |
+| `GET /dashboard` | ✅ 200；健康卡片：在线数 / Redis 延迟 / 键总数（**DB 9 · gwpush:**）/ 队列深度 / 键自检 / gauge 12 项 / counter |
+| `GET /api/monitor/summary` | ✅ `redis.ok=true db=9 prefix=gwpush: selfcheck=true`；`api.ok=true status=200 has_secret=false`（回退 `AUTH_SECRET`，符合设计） |
+| `GET /api/ops/redis/scan` | ✅ 骨架键自检 4 项；`metrics:gauge` exists=hash ttl≈600 |
+| 权限矩阵（viewer = 只读角色） | ✅ `/dashboard`、`/api/monitor/*` → **200**；`/api/ops/redis/scan`、`/api/ops/api/probe` → **403** |
+| 未登录保护 | ✅ 页面 302 → `/app/admin`；API（`Accept: application/json`）→ **HTTP 401** + `{"code":401,"msg":"请登录"}` |
+| 后台门禁 | ✅ PHPStan L6 **0 errors**（无 baseline） · PHPUnit **6 tests / 24 assertions** · 冒烟 **13 PASS / 0 FAIL** |
+| 主项目门禁未被污染 | ✅ `composer lint` 0 errors 且结果中 0 处 `admin/`；`git status` 仅 `docs/` 改动 + `admin/` 未跟踪，`src/` 与 `config/` 零改动 |
+
+### 11.2 与本文档前文的偏差（**以本表为准**）
+
+| # | 前文表述 | 实测事实 | 影响 |
+|---|---|---|---|
+| **D1** | §7 写「装 webman-admin」 | composer 包名是 **`webman/admin`**（不是 `workerman/webman-admin`，后者 404）；实装 **v2.1.8** | 安装命令按 `composer require -W webman/admin` |
+| **D2** | §5.3.1 列 `admin_user` / `admin_role` / `admin_permission` / `admin_user_role` / `admin_role_permission` / `admin_log` | 实际是 **`wa_*` 七表**：`wa_admins` `wa_admin_roles` `wa_roles` `wa_rules` `wa_options` `wa_uploads` `wa_users`。**没有** `admin_log` 表 | 后台自有表设计不受影响；「与自带表分工」的表述需改 |
+| **D3** | §6 的 16 个权限点形如 `admin.monitor.view` | RBAC 是**控制器维度**：权限键 = `{controller}@{action}`，存 `wa_rules.key`；`wa_roles.rules` 存 **rule ID 列表**（`*` = 全权），非键名列表。鉴权实现在 `plugin/admin/api/Auth.php:40-125` | **16 个语义权限点须改写为 `app\controller\...@action` 形态**；`wa_rules` 同时承担菜单树（含 `href`/`icon`/`type`/`pid`） |
+| **D4** | §5.4 假定 `.env` 直接可用 | webman 骨架**不带 phpdotenv**；`support/bootstrap.php:45` 的判据是 `class_exists('Dotenv\Dotenv')` → 未装时 **`.env` 静默失效**（配置全取默认值，不报错） | `composer.json` **必须** require `vlucas/phpdotenv`（已加） |
+| **D5** | §2.3 目录树示意 `config/plugin/webman/admin/` | 插件配置覆盖的正确落点是 **`config/plugin/admin/`**，且**必须**配套 `config/plugin/admin/app.php` 带 `enable => true`，否则被 `Config::loadFromDir()` 静默跳过。加载顺序（`vendor/workerman/webman-framework/src/support/App.php:155-165`）：`config/` 先 → `plugin/*/config/` **后**，故**插件自带同名文件会反向覆盖项目侧** | ⚠ 先前结论「**切勿**手工创建 `plugin/admin/config/database.php`」**已被 D10 修正** —— 该文件**必须存在**（是「已安装」判据），但内容应写成**转发**，凭据不得落在插件目录 |
+| **D6** | §4.2 建议「复用 `client` 的 Signer 逻辑」/ 曾拟用 `workerman/redis` | `workerman/redis` 是**异步回调**式，在 webman 控制器里取同步结果很别扭 → 改用 **`webman/redis` + `predis/predis`**（本机无 phpredis）。⚠ `client` 键必须放 `config/redis.php` 的**顶层**：`support/Redis::instance()` 读的是 `config('redis')['client']`，放在 `redis.default` 里会被**静默忽略**并回退 phpredis（报 `Class "Redis" not found`） | 签名仍是两份实现，漂移由 `SignerParityTest` 锁死 |
+| **D7** | 未预见 | **环境变量 `http_proxy` 会破坏对主项目 API 的访问**：Guzzle 遵循它，代理在**复用连接的第 2 个请求**上返回 400 → 表现为同一连接 `200/400/200/400` 交替，极易误判成主项目 API 的长连接缺陷（裸 socket 直连 8290 连发 3 次全部 200，API 正常） | `GatewayPushClient` 已显式 `'proxy' => ''`；**新增任何访问主项目的客户端都要同样处理** |
+| **D8** | 曾担心 `admin/` 会被主项目工具扫到 | 实测主项目三套工具**均显式列目录**（phpcs 列 `src`/`client/*`/`config`/`tests`/`start.php`；php-cs-fixer `Finder->in([...])`；PHPStan `paths` 列 3 项），**都不扫仓库根** → `admin/` 落根目录**不会污染主项目门禁**，「侵入性 0」成立，无需加排除项 | — |
+| **D9** | §5.3 写「库 `utf8mb4` / `utf8mb4_unicode_ci`，MySQL 8.x」 | ①本机 MySQL 实为 **8.0.46**（设计时探到的 5.7.26 已被更换）；②**webman-admin 自带 7 张 `wa_*` 表在 `install.sql` 里每张都写死 `COLLATE=utf8mb4_general_ci`** | 库默认与后台自有 4 表**统一为 `utf8mb4_general_ci`**（若用 unicode_ci，跨表 JOIN/UNION 会报 `Illegal mix of collations`，且只在跑到具体 SQL 时才暴露）。已同步 `config/database.php` 与 `database/001_gw_tables.sql` |
+| **D10** | D5 曾写「**切勿**手工创建 `plugin/admin/config/database.php`」 | 该文件**必须存在**：`IndexController.php:39` 与 `InstallController.php:31` 都用 `is_file()` 判「是否已安装」，缺失时后台根路径直接渲染**安装页**。但它在插件目录内（已 gitignore、会被 composer 覆盖），且安装器写入的是**明文连接参数** | 本项目做法：插件侧文件**只做一层转发**（`return require config_path().'/database.php';`），凭据仍只存在于版本库内的 `config/database.php`（读 `.env`）；`scripts/install.php` 步骤 0 会**全量覆写**它，故插件重装后可一键重建 |
+| **D11** | §7「P0 骨架：登录/RBAC」未提验证码 | 登录**强制校验验证码**（`AccountController::login` 比对 `session('captcha-login')`，不符直接返回「验证码错误」） | 自动化验收路径：先 `GET /app/admin/account/captcha/login` 建立 session → 从 `runtime/sessions/session_{PHPSID}`（file 驱动、PHP serialize 格式）读出明文 → 再 POST 登录。**同理：管理员账号只能经脚本/SQL 创建，纯 API 走不通** |
+| **D12** | §7 写「webman 独立进程（`php start.php start`）」 | Windows 下 `php start.php start` 立即退出，提示 `Please run 'windows.php' on windows system.` | Windows 启动方式 = **`php windows.php`**（前台常驻 + 文件变更热重载）；`start.php start` 仅 Unix 可用 |
+| **D13** | §7「P0：MySQL 迁移」隐含 `install.sql` 可直接执行 | `install.sql` **不幂等**：`wa_options` / `wa_roles` 用的是**裸 `INSERT` + 固定主键**，非空库重复执行必报 `1062 Duplicate entry`。官方安装页 step1 在「表已存在」时也只会要求「强制覆盖（= `DROP TABLE`）」 | 本项目**不走安装页**，由 `scripts/install.php` 复刻其动作并加幂等语义：按「表是否齐全」决定是否执行，执行前把 `INSERT INTO` 改写为 `INSERT IGNORE INTO` |
+| **D14** | 未预见（视图层未设计） | 视图引擎 `Raw` 的默认后缀是 **`.html`**（`config('view.options.view_suffix')` 默认 `html`）**但内容是原生 PHP**（`Raw::render()` 直接 `include`）；且根视图路径是 **`app_path()/view/`**（即 `admin/app/view/`），不是 `admin/view/` | 页面文件为 `admin/app/view/dashboard/index.html`（内写 PHP），控制器 `view('dashboard/index', $vars)` |
+| **D15** | 未预见 | webman 的 `json()` 助手把 HTTP 状态码**硬编码为 200**（`support/helpers.php:183-186`，签名里没有 status 参数） | `AdminAuth::deny()` 改为**自建 Response**，同时给出真实状态码（401/403）与业务码 `code`；返回 `200 + code=401` 属「用 200 掩盖失败」，会让前端无法按状态码统一拦截 |
+
+### 11.3 其他实测要点（易再犯）
+
+- **`process.php` 里不能写 `config('...')`**：该文件本身被 `Config::load()` 递归 include，此刻配置尚未就绪，会取到 `null`。监听地址需**直接读 `getenv()`**。
+- **`config('plugin.admin.database')` 必须非空**：`plugin/admin/app/controller/AccountController.php:255` 用它判断「是否已安装」，为空会抛「请重启webman」。
+- **根 `config/database.php` 才是 Eloquent 的真源**：`vendor/webman/database/src/Initializer.php:113` 是**文件级**执行 `Initializer::init(config('database', []))`。`config/plugin/admin/database.php` 只是镜像（本项目用 `require` 保证同源）。
+- **`plugin/admin/` 是 composer 包纯副本**（`Install.php` 的 `pathRelation` = `['plugin/admin' => 'plugin/admin']`，经 `copy_dir` 重建）→ **已 gitignore**，不得手工修改。
+- **`.env` 中含空格的值必须加引号**，否则 phpdotenv 抛 `Encountered unexpected whitespace`。
+- **`app/process/` 是 webman 骨架脚手架**，不从属于本项目维护；PHPStan 已将其排除（并在配置里写明「若真正定制则该排除必须删除」）。
+- **PHP 块注释里勿出现形如 `plugin/*/config/` 的路径** —— 其中的 `*/` 会**提前闭合块注释**，后半句变成代码，报 `Parse error: unexpected identifier "config"`。本项目已实际踩过：该文件同时导致 `windows.php` 启动失败。注释里要写通配路径时改用 `{插件名}` 占位。
+- **`PDO::ATTR_EMULATE_PREPARES => false` 时同名占位符不可重复**：`... VALUES (:now, :now)` 会报 `SQLSTATE[HY093] Invalid parameter number`，必须写成 `:created_at` / `:updated_at` 两个不同占位符。
+- **`install.sql` 不是幂等的**（见 D13）—— 任何「重跑安装」的工具都需自行补 `IF NOT EXISTS` / `INSERT IGNORE` 语义，不能直接 `exec` 整个文件。
+- **插件侧与项目侧的配置同名时，插件侧胜**（加载顺序决定，见 D5）。判断某个 `config('plugin.x.*')` 到底从哪来，要看 `Config::loadFromDir()` 的两次扫描顺序，不能只看文件是否存在。
+- **`RedisReader::dbIndex()` / `prefix()` 必须由后台自读配置**：主项目 `/health` 的 data 里**没有** DB 号字段（早期版本误取它，导致页面恒显示「DB 0」，而实际连的是 DB 9 —— 典型的静默错配）。
+
+---
+
 *本文件为设计方案，落地实现以代码为准。§3 的 6 处主项目改动（C1~C6）需逐项确认后再实施；
 其推荐取值见 §0.4；「运维动作的信任域」已于 2026-09-23 拍板为**选项 A**
 （落地清单 A1~A5 尚未执行，须在 C1~C6 上线前完成，见 §9.2 的 R11）。*
+
+***P0 已完成（2026-09-23）**：`admin/` 骨架、RBAC 三角色、健康卡片页与 4 个只读 API 全部实测通过，
+主项目 `src/`、`config/` 零改动。§11 的实施记录与实测偏差 **D1~D15 覆盖前文表述，冲突以 §11 为准**。
+下一步为 P1（监控仪表盘：AJAX 轮询 + 图表 + 指标派生率）。*

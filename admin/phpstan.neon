@@ -1,0 +1,27 @@
+parameters:
+    level: 6
+
+    # 只分析后台自有代码。刻意**不含** ../src（主项目由主项目自己的门禁负责），
+    # 避免同一份代码被两套配置分析出两套结论。
+    paths:
+        - app
+        - tests/Unit
+
+    # 主项目与 client 的复用点（RedisKeys / AdminApi）由 composer 的 psr-4 映射解析，
+    # 不需要 scanFiles；此处仅显式声明排除项，避免 PHPStan 顺藤摸瓜扫进 ../src。
+    excludePaths:
+        - vendor
+        - runtime
+        - plugin
+        # app/process 是 webman 骨架自带的进程脚手架（Http / Monitor），**不由本项目维护**：
+        # 它们的类型标注由上游决定，且被框架更新覆盖。与 plugin/ 同一口径排除。
+        # ⚠ 若将来真正定制了该目录下的文件，必须把这条排除删掉，否则改动会逃过门禁。
+        - app/process
+
+    phpVersion: 80200
+
+    # 新代码零容忍：**不引入任何 baseline**。
+    # 若出现 missingType 告警，补 phpdoc 而不是冻结。
+    treatPhpDocTypesAsCertain: false
+
+    reportUnmatchedIgnoredErrors: true
