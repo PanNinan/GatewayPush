@@ -18,9 +18,9 @@
 namespace GatewayPush\Console;
 
 use GatewayPush\Api\Bootstrap;
+use GatewayPush\Business\ActionInterface;
 use GatewayPush\Common\Env;
 use RuntimeException;
-use GatewayPush\Business\ActionInterface;
 
 /**
  * 运行环境自检（任何 workerman 命令之前强制执行）
@@ -98,7 +98,7 @@ final class EnvChecker
         // 运行时目录
         foreach (['runtime_path', 'log_path', 'pid_path'] as $key) {
             $dir = $runtime[$key];
-            if (! is_dir($dir) && ! mkdir($dir, 0o755, true) && ! is_dir($dir)) {
+            if (!is_dir($dir) && !mkdir($dir, 0o755, true) && !is_dir($dir)) {
                 throw new RuntimeException(sprintf('Directory "%s" was not created', $dir));
             }
             $writable = is_dir($dir) && is_writable($dir);
