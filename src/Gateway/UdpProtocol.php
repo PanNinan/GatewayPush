@@ -32,7 +32,7 @@ class UdpProtocol
      *
      * @var int
      */
-    public static $maxPacketSize = 8192;
+    public static int $maxPacketSize = 8192;
 
     /**
      * 判断包长

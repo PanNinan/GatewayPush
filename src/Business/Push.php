@@ -71,7 +71,7 @@ class Push
      *
      * @var array<string, mixed>
      */
-    protected static $config = [
+    protected static array $config = [
         'enable'         => true,
         'offline_mode'   => self::MODE_QUEUE,
         'offline_ttl'    => 86400,
@@ -87,7 +87,7 @@ class Push
      *
      * @var array<string, mixed>
      */
-    protected static $queueConfig = [
+    protected static array $queueConfig = [
         'key'     => RedisKeys::QUEUE_PUSH_OUT,
         'batch'   => 200,
         'enable'  => true,
@@ -99,7 +99,7 @@ class Push
      *
      * @var array<string, mixed>
      */
-    protected static $udpOutConfig = [
+    protected static array $udpOutConfig = [
         'enable' => true,
         'key'    => RedisKeys::QUEUE_UDP_OUT,
     ];

@@ -45,14 +45,14 @@ class Router
      *
      * @var array<string, mixed>
      */
-    protected static $commands = [];
+    protected static array $commands = [];
 
     /**
      * 二级路由表：action => callable
      *
      * @var array<string, mixed>
      */
-    protected static $actions = [];
+    protected static array $actions = [];
 
     /* ---------------------------------------------------------------------
      | 注册

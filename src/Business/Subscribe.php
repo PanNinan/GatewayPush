@@ -41,7 +41,7 @@ class Subscribe
      *
      * @var array<string, mixed>
      */
-    protected static $config = [
+    protected static array $config = [
         'enable'             => true,
         'ttl'                => 0,     // 订阅关系过期时间（秒），0 = 永不过期
         'max_topics_per_uid' => 100,   // 单用户订阅主题数上限，0 = 不限

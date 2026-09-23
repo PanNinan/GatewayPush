@@ -40,14 +40,14 @@ class Bootstrap
      *
      * @var array<string, mixed>
      */
-    protected static $config = [];
+    protected static array $config = [];
 
     /**
      * app.php 配置
      *
      * @var array<string, mixed>
      */
-    protected static $appConfig = [];
+    protected static array $appConfig = [];
 
     /**
      * 初始化网关层 Worker
@@ -220,6 +220,10 @@ class Bootstrap
             Logger::info('Register 注册中心已启动', [
                 'listen' => $worker->getSocketName(),
             ]);
+        };
+
+        $register->onWorkerStop = function ($worker) {
+            Logger::info('Register 注册中心正在停止', ['id' => $worker->id]);
         };
 
         // 连接级异常与背压观测（注册中心为内部 TCP，无背压压力，仅绑错误事件）

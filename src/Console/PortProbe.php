@@ -28,7 +28,7 @@ final class PortProbe
      *
      * @var array<string,array<int,bool>>
      */
-    private static $netstatCache = [];
+    private static array $netstatCache = [];
 
     /**
      * 判断监听地址对应的端口是否已被占用

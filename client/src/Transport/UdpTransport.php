@@ -53,85 +53,85 @@ final class UdpTransport implements TransportInterface
      *
      * @var string
      */
-    private $url;
+    private string $url;
 
     /** @var float 预热窗口（秒） */
-    private $firstSendDelay;
+    private float $firstSendDelay;
 
     /** @var float 重传间隔（秒） */
-    private $retransmitInterval;
+    private float $retransmitInterval;
 
     /** @var int 最大发送次数 */
-    private $maxAttempts;
+    private int $maxAttempts;
 
     /**
      * 底层连接（默认 AsyncUdpConnection，单测为假连接；关闭后置 null）
      *
      * @var null|object
      */
-    private $conn;
+    private ?object $conn = null;
 
     /**
      * 连接工厂 function (): object
      *
      * @var callable
      */
-    private $connFactory;
+    private mixed $connFactory;
 
     /** @var bool 连接可用状态 */
-    private $connected = false;
+    private bool $connected = false;
 
     /**
      * 预热窗口标记：true 时 send() 一律入队
      *
      * @var bool
      */
-    private $warmup = false;
+    private bool $warmup = false;
 
     /**
      * 预热窗口内缓冲的帧
      *
      * @var array<string, mixed>
      */
-    private $queue = [];
+    private array $queue = [];
 
     /**
      * 在途报文：frame => 已发送次数（收到下行即确认最旧一笔）
      *
      * @var array<string, mixed>
      */
-    private $inflight = [];
+    private array $inflight = [];
 
     /**
      * 累计放弃的报文数（重传耗尽）
      *
      * @var int
      */
-    private $dropped = 0;
+    private int $dropped = 0;
 
     /** @var null|int 预热定时器 id */
-    private $warmupTimerId;
+    private ?int $warmupTimerId = null;
 
     /** @var null|int 重传定时器 id */
-    private $retransmitTimerId;
+    private ?int $retransmitTimerId = null;
 
     /** @var callable 计时器创建 function (float $interval, bool $persistent, callable $fn): int */
-    private $timerAdd;
+    private mixed $timerAdd;
 
     /** @var callable 计时器删除 function (int $timerId): void */
-    private $timerDel;
+    private mixed $timerDel;
 
     /** @var null|callable function (): void */
-    private $onOpenCb;
+    private mixed $onOpenCb = null;
 
     /** @var null|callable function (string $frame): void */
-    private $onMessageCb;
+    private mixed $onMessageCb = null;
 
     /** @var null|callable function (): void */
-    private $onCloseCb;
+    private mixed $onCloseCb = null;
 
     /** @var null|callable function (int $code, string $message): void */
-    private $onErrorCb;
+    private mixed $onErrorCb = null;
 
     /**
      * @param string               $url         udp://host:port

@@ -93,7 +93,7 @@ class RedisClient
      *
      * @var array<string, mixed>
      */
-    protected static $config = [
+    protected static array $config = [
         'host'       => '127.0.0.1',
         'port'       => 6379,
         'password'   => '',
@@ -109,28 +109,28 @@ class RedisClient
      *
      * @var Client[]
      */
-    protected static $pool = [];
+    protected static array $pool = [];
 
     /**
      * 轮询游标
      *
      * @var int
      */
-    protected static $cursor = 0;
+    protected static int $cursor = 0;
 
     /**
      * 是否已初始化
      *
      * @var bool
      */
-    protected static $inited = false;
+    protected static bool $inited = false;
 
     /**
      * 绑定连接（pipeline() 执行期间非空，connection() 优先返回它）
      *
      * @var null|Client
      */
-    protected static $pinned;
+    protected static ?Client $pinned = null;
 
     /**
      * 连接预设结果（spl_object_id => bool）
@@ -139,7 +139,7 @@ class RedisClient
      *
      * @var array<string, mixed>
      */
-    protected static $primed = [];
+    protected static array $primed = [];
 
     /**
      * 初始化连接配置

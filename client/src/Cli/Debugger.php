@@ -51,22 +51,22 @@ class Debugger
      *
      * @var array<string, mixed>
      */
-    private $config;
+    private array $config;
 
     /** @var null|SessionManager */
-    private $session;
+    private ?SessionManager $session = null;
 
     /** @var null|PushReceiver */
-    private $receiver;
+    private ?PushReceiver $receiver = null;
 
     /** @var array<string,object> 已装配的业务 API */
-    private $apis = [];
+    private array $apis = [];
 
     /** @var bool REPL 模式（输出需保护输入行） */
-    private $repl = false;
+    private bool $repl = false;
 
     /** @var null|resource */
-    private $stdin;
+    private mixed $stdin = null;
 
     /**
      * @param array<string, mixed> $config uid / device_id / secret / proto / ws_url / udp_url / api_url /

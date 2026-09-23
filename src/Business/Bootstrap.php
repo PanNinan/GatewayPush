@@ -45,14 +45,14 @@ class Bootstrap
      *
      * @var array<string, mixed>
      */
-    protected static $config = [];
+    protected static array $config = [];
 
     /**
      * app.php 配置
      *
      * @var array<string, mixed>
      */
-    protected static $appConfig = [];
+    protected static array $appConfig = [];
 
     /**
      * 已通过鉴权的连接：clientId => uid（进程内，随连接生命周期）
@@ -62,28 +62,28 @@ class Bootstrap
      *
      * @var array<string, mixed>
      */
-    protected static $authed = [];
+    protected static array $authed = [];
 
     /**
      * 鉴权超时定时器
      *
      * @var array<string, mixed>
      */
-    protected static $authTimers = [];
+    protected static array $authTimers = [];
 
     /**
      * 指令路由表是否已注册
      *
      * @var bool
      */
-    protected static $routesRegistered = false;
+    protected static bool $routesRegistered = false;
 
     /**
      * 已调度「延迟关闭」的连接（防止同一连接重复触发）
      *
      * @var array<string, mixed>
      */
-    protected static $closingClients = [];
+    protected static array $closingClients = [];
 
     /* ---------------------------------------------------------------------
      | 初始化

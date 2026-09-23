@@ -27,7 +27,7 @@ abstract class AbstractApi
     /**
      * @var SessionManager
      */
-    protected $session;
+    protected SessionManager $session;
 
     /**
      * @param SessionManager $session 须已处于 ready 状态才能发请求

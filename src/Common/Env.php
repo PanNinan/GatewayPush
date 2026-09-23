@@ -63,35 +63,35 @@ class Env
      *
      * @var bool
      */
-    protected static $loaded = false;
+    protected static bool $loaded = false;
 
     /**
      * 实际读取到的文件（按优先级从高到低）
      *
      * @var array<int|string, mixed>
      */
-    protected static $files = [];
+    protected static array $files = [];
 
     /**
      * 当前环境标识
      *
      * @var string
      */
-    protected static $envName = self::DEFAULT_ENV;
+    protected static string $envName = self::DEFAULT_ENV;
 
     /**
      * 加载根目录
      *
      * @var string
      */
-    protected static $basePath = '';
+    protected static string $basePath = '';
 
     /**
      * 加载阶段异常信息
      *
      * @var string
      */
-    protected static $error = '';
+    protected static string $error = '';
 
     /* =================================================================
      | 加载

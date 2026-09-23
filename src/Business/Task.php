@@ -52,21 +52,21 @@ class Task
      *
      * @var array<string, mixed>
      */
-    protected static $jobs = [];
+    protected static array $jobs = [];
 
     /**
      * 当前 worker 进程 id
      *
      * @var int
      */
-    protected static $workerId = 0;
+    protected static int $workerId = 0;
 
     /**
      * 当前 worker 名称
      *
      * @var string
      */
-    protected static $workerName = '';
+    protected static string $workerName = '';
 
     /**
      * 批量注册任务

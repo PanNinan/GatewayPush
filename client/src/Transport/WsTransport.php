@@ -30,40 +30,40 @@ final class WsTransport implements TransportInterface
      *
      * @var string
      */
-    private $url;
+    private string $url;
 
     /**
      * 连接工厂 function (string $url): object（单测注入假连接）
      *
      * @var null|callable
      */
-    private $connFactory;
+    private mixed $connFactory = null;
 
     /**
      * 底层连接（断开后置 null，重连时新建）
      *
      * @var null|AsyncTcpConnection|object
      */
-    private $conn;
+    private ?object $conn = null;
 
     /**
      * 连接可用状态
      *
      * @var bool
      */
-    private $connected = false;
+    private bool $connected = false;
 
     /** @var null|callable function (): void */
-    private $onOpenCb;
+    private mixed $onOpenCb = null;
 
     /** @var null|callable function (string $frame): void */
-    private $onMessageCb;
+    private mixed $onMessageCb = null;
 
     /** @var null|callable function (): void */
-    private $onCloseCb;
+    private mixed $onCloseCb = null;
 
     /** @var null|callable function (int $code, string $message): void */
-    private $onErrorCb;
+    private mixed $onErrorCb = null;
 
     /**
      * @param string        $url         ws://host:port 或 wss://host:port

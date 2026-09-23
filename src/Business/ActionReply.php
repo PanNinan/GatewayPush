@@ -78,7 +78,7 @@ class ActionReply
      *
      * @var int
      */
-    protected static $ttl = self::DEFAULT_TTL;
+    protected static int $ttl = self::DEFAULT_TTL;
 
     /**
      * 初始化

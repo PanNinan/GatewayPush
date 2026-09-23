@@ -73,7 +73,7 @@ class RateLimiter
      *
      * @var array<string, mixed>
      */
-    protected static $config = [
+    protected static array $config = [
         'enable'          => true,
         'conn'            => ['rate' => 20, 'burst' => 40],
         'uid'             => ['rate' => 50, 'burst' => 100],
@@ -91,14 +91,14 @@ class RateLimiter
      *
      * @var array<string, mixed>
      */
-    protected static $buckets = [];
+    protected static array $buckets = [];
 
     /**
      * 超限日志采样时间戳：{ dim => float(秒) }
      *
      * @var array<string, mixed>
      */
-    protected static $logAt = [];
+    protected static array $logAt = [];
 
     /**
      * 初始化

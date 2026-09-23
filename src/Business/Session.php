@@ -45,7 +45,7 @@ class Session
      *
      * @var array<string, mixed>
      */
-    protected static $config = [
+    protected static array $config = [
         'ttl'           => 7200,
         'heartbeat_ttl' => 90,
         'restore'       => true,

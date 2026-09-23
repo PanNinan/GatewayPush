@@ -99,11 +99,29 @@ class Bootstrap
     public const POLL_MAX_MS = 150;
 
     /**
+     * 访问日志中请求体最大记录长度（字节）
+     *
+     * Logger 单条 context 上限约 2000 字符，头 + 元信息约占数百字符，
+     * 体截到 1KB 后整条日志仍能完整落盘，不会被 stringifyContext 硬截。
+     */
+    public const ACCESS_LOG_BODY_MAX = 1024;
+
+    /**
+     * 访问日志中需脱敏的请求头（小写名）
+     *
+     * 签名 / 凭据类头一旦明文进日志，翻日志即可重放或仿冒调用方。
+     * X-Timestamp 不在此列 —— 它本身是公开值，且与 X-Sign 对照才有意义。
+     *
+     * @var array<int, string>
+     */
+    protected static array $redactHeaders = ['x-sign', 'authorization', 'cookie', 'proxy-authorization'];
+
+    /**
      * api 配置（app.api）
      *
      * @var array<string, mixed>
      */
-    protected static $config = [
+    protected static array $config = [
         'enable'      => true,
         'listen'      => 'http://127.0.0.1:8290',
         'name'        => 'GW-API',
@@ -120,14 +138,14 @@ class Bootstrap
      *
      * @var array<string, mixed>
      */
-    protected static $appConfig = [];
+    protected static array $appConfig = [];
 
     /**
      * business.php 配置（动作队列）
      *
      * @var array<string, mixed>
      */
-    protected static $businessConfig = [];
+    protected static array $businessConfig = [];
 
     /**
      * 已开放 HTTP 通道的动作中最长的回执超时（秒）
@@ -136,7 +154,7 @@ class Bootstrap
      *
      * @var int
      */
-    protected static $actionTimeoutMax = 0;
+    protected static int $actionTimeoutMax = 0;
 
     /**
      * 初始化 HTTP 接口进程
@@ -250,6 +268,11 @@ class Bootstrap
 
                 return;
             }
+
+            // 访问日志：方法 / 路径 / 查询串 / 客户端 IP / 脱敏请求头 / 截断请求体。
+            // 放在路由与鉴权之前 —— 401 / 404 / 429 等失败请求同样要有完整入站记录，
+            // 否则排障时最需要上下文的恰恰是这些「没走到业务」的请求。
+            self::accessLog($request);
 
             $method = $request->method();
             $path   = $request->path();
@@ -402,12 +425,21 @@ class Bootstrap
             'source'       => 'http',
         ];
 
-        Push::enqueue($targetType, $target, $payload, $opts, function ($ok) use ($connection, $targetType, $target, $opts) {
+        Push::enqueue($targetType, $target, $payload, $opts, function ($ok) use ($connection, $targetType, $target, $opts, $payload) {
             if (!$ok) {
                 $connection->send(self::json(500, self::CODE_SERVER_ERROR, '推送任务入队失败', null, 500));
 
                 return;
             }
+
+            Logger::debug('HTTP 推送已受理', [
+                'target_type'  => $targetType,
+                'target'       => $target,
+                'msg_id'       => $opts['msg_id'],
+                'offline_mode' => $opts['offline_mode'],
+                'payload'      => $payload,
+            ]);
+
             $connection->send(self::json(200, self::CODE_OK, 'accepted', [
                 'target_type'  => $targetType,
                 'target'       => $target,
@@ -520,7 +552,14 @@ class Bootstrap
 
         $requestId = bin2hex(random_bytes(8));
 
-        self::admitAction($requestId, $packet, function ($code, $msg) use ($connection, $requestId, $action) {
+        self::admitAction($requestId, $packet, function ($code, $msg) use (
+            $connection,
+            $requestId,
+            $action,
+            $uid,
+            $deviceId,
+            $params
+        ) {
             if ($code !== self::CODE_OK) {
                 $connection->send(self::json(503, $code, $msg, null, 503));
 
@@ -530,6 +569,9 @@ class Bootstrap
             Logger::debug('HTTP 动作已受理', [
                 'request_id' => $requestId,
                 'action'     => $action,
+                'uid'        => $uid,
+                'device_id'  => $deviceId,
+                'params'     => $params,
             ]);
 
             self::waitForActionResult($connection, $requestId, $action);
@@ -808,6 +850,13 @@ class Bootstrap
         // 限流前置：避免无效请求持续消耗验签开销。
         // 免签模式下同样保留 —— 限流是防误压/防扫描的最后一道闸，与鉴权是两件事。
         if (!self::rateLimit($request)) {
+            Logger::warn('HTTP 请求频率超限', [
+                'method' => $request->method(),
+                'path'   => $request->path(),
+                'ip'     => self::clientIp($request),
+                'rate'   => (int)self::$config['rate'],
+            ]);
+
             return self::json(429, self::CODE_RATE_LIMIT, '请求频率超限', null, 429);
         }
 
@@ -819,24 +868,50 @@ class Bootstrap
         $sign      = self::header($request, 'x-sign');
 
         if ($timestamp === '' || $sign === '') {
+            Logger::warn('接口验签失败', [
+                'reason' => 'missing_headers',
+                'method' => $request->method(),
+                'path'   => $request->path(),
+                'ip'     => self::clientIp($request),
+            ]);
+
             return self::json(401, self::CODE_BAD_SIGN, '缺少 X-Timestamp 或 X-Sign 请求头', null, 401);
         }
 
         $ts = (int)$timestamp;
         if ($ts <= 0) {
+            Logger::warn('接口验签失败', [
+                'reason' => 'bad_timestamp',
+                'method' => $request->method(),
+                'path'   => $request->path(),
+                'ip'     => self::clientIp($request),
+            ]);
+
             return self::json(401, self::CODE_BAD_SIGN, 'X-Timestamp 非法', null, 401);
         }
 
         $ttl = (int)self::$config['sign_ttl'];
         if ($ttl > 0 && abs(time() - $ts) > $ttl) {
+            Logger::warn('接口验签失败', [
+                'reason' => 'timestamp_expired',
+                'method' => $request->method(),
+                'path'   => $request->path(),
+                'ip'     => self::clientIp($request),
+                'ts'     => $ts,
+                'now'    => time(),
+            ]);
+
             return self::json(401, self::CODE_EXPIRED, '请求时间戳超出允许窗口', null, 401);
         }
 
         $expect = hash_hmac('sha256', $timestamp . '|' . $request->rawBody(), $secret);
         if (!hash_equals($expect, strtolower($sign))) {
             Logger::warn('接口验签失败', [
-                'path' => $request->path(),
-                'ip'   => self::clientIp($request),
+                'reason' => 'signature_mismatch',
+                'method' => $request->method(),
+                'path'   => $request->path(),
+                'ip'     => self::clientIp($request),
+                'ts'     => $ts,
             ]);
 
             return self::json(401, self::CODE_BAD_SIGN, '签名校验失败', null, 401);
@@ -937,6 +1012,111 @@ class Bootstrap
      | --------------------------------------------------------------------- */
 
     /**
+     * 请求访问日志（debug）
+     *
+     * @param Request              $request
+     * @param string               $stage   日志标题后缀，便于多阶段对照
+     * @param array<string, mixed> $extra   额外字段（如业务侧 request_id）
+     *
+     * @return void
+     */
+    protected static function accessLog(Request $request, $stage = '', array $extra = [])
+    {
+        $context = array_merge(self::requestLogContext($request), $extra);
+        Logger::debug($stage === '' ? 'HTTP 请求' : 'HTTP ' . $stage, $context);
+    }
+
+    /**
+     * 构建访问日志上下文（纯组装，不写日志）
+     *
+     * - headers：全量保留但对签名 / 凭据类做脱敏；
+     * - body：截到 ACCESS_LOG_BODY_MAX，超长时附原始长度，避免 Logger
+     *   的 context 上限把整条日志硬截成半截 JSON；
+     * - query：原始查询串（GET 补查 / action/{id} 常靠它定位参数）。
+     *
+     * @param Request $request
+     *
+     * @return array<string, mixed>
+     */
+    protected static function requestLogContext(Request $request)
+    {
+        $body = $request->rawBody();
+        $len  = strlen($body);
+        if ($len > self::ACCESS_LOG_BODY_MAX) {
+            $body = substr($body, 0, self::ACCESS_LOG_BODY_MAX)
+                . '...(truncated, total=' . $len . ')';
+        }
+
+        return [
+            'method'  => $request->method(),
+            'path'    => $request->path(),
+            'query'   => $request->queryString(),
+            'ip'      => self::clientIp($request),
+            'headers' => self::redactHeaders($request->header()),
+            'body'    => $body,
+            'body_len' => $len,
+        ];
+    }
+
+    /**
+     * 请求头脱敏
+     *
+     * 保留头名与长度信息（便于判断「签没带」与「签带了但错了」），
+     * 值只留前 8 字符 —— 足够比对是否与本地算出的签名同源，又无法直接重放。
+     *
+     * @param mixed $headers header() 原样返回值（array|null|string 混杂）
+     *
+     * @return array<string, string>
+     */
+    protected static function redactHeaders($headers)
+    {
+        if (!is_array($headers)) {
+            return [];
+        }
+
+        $safe = [];
+        foreach ($headers as $name => $value) {
+            $key = strtolower((string)$name);
+            if (is_array($value)) {
+                // workerman 对重复头会收成数组，取首个标量拼接即可
+                $parts = [];
+                foreach ($value as $item) {
+                    if (is_scalar($item)) {
+                        $parts[] = (string)$item;
+                    }
+                }
+                $raw = implode(',', $parts);
+            } else {
+                $raw = is_scalar($value) ? (string)$value : '';
+            }
+
+            $safe[$key] = in_array($key, self::$redactHeaders, true)
+                ? self::redactSecret($raw)
+                : $raw;
+        }
+
+        return $safe;
+    }
+
+    /**
+     * 凭据类值脱敏：留前 8 字符 + 总长
+     *
+     * @param string $value
+     *
+     * @return string
+     */
+    protected static function redactSecret($value)
+    {
+        $value = (string)$value;
+        $len   = strlen($value);
+        if ($len <= 8) {
+            return '***len=' . $len;
+        }
+
+        return substr($value, 0, 8) . '***len=' . $len;
+    }
+
+    /**
      * 大小写不敏感读取请求头
      *
      * @param Request $request
@@ -973,6 +1153,11 @@ class Bootstrap
             $parts = explode(',', $forwarded);
 
             return trim($parts[0]);
+        }
+
+        // 单元测试里 Request 未挂 connection；线上由 workerman 赋值
+        if ($request->connection === null) {
+            return '';
         }
 
         return $request->connection->getRemoteIp();

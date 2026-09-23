@@ -51,103 +51,103 @@ class SessionManager
      *
      * @var array<string, mixed>
      */
-    private $config;
+    private array $config;
 
     /**
      * @var TransportInterface
      */
-    private $transport;
+    private TransportInterface $transport;
 
     /**
      * @var TokenIssuer
      */
-    private $issuer;
+    private TokenIssuer $issuer;
 
     /**
      * 当前状态（STATE_* 常量）
      *
      * @var string
      */
-    private $state = self::STATE_DISCONNECTED;
+    private string $state = self::STATE_DISCONNECTED;
 
     /**
      * seq 计数器
      *
      * @var int
      */
-    private $seqCounter = 0;
+    private int $seqCounter = 0;
 
     /**
      * pending 请求表：seq => PendingRequest
      *
      * @var array<string, mixed>
      */
-    private $pending = [];
+    private array $pending = [];
 
     /**
      * 最近一次成功结算的往返耗时（秒）
      *
      * @var float
      */
-    private $lastRtt = 0.0;
+    private float $lastRtt = 0.0;
 
     /**
      * 当前会话使用的 Token（auth 时签发；attach_token 开启时随包携带）
      *
      * @var string
      */
-    private $token = '';
+    private string $token = '';
 
     /**
      * 连续重连次数（鉴权成功后清零）
      *
      * @var int
      */
-    private $reconnectAttempts = 0;
+    private int $reconnectAttempts = 0;
 
     /**
      * 用户主动关闭标记（阻止 onClose 触发重连）
      *
      * @var bool
      */
-    private $closing = false;
+    private bool $closing = false;
 
     /**
      * 心跳定时器 id
      *
      * @var null|int
      */
-    private $heartbeatTimerId;
+    private ?int $heartbeatTimerId = null;
 
     /**
      * 重连定时器 id
      *
      * @var null|int
      */
-    private $reconnectTimerId;
+    private ?int $reconnectTimerId = null;
 
     /** @var null|callable function (array $packet): void */
-    private $onPushCb;
+    private mixed $onPushCb = null;
 
     /** @var null|callable function (ClientException $e): void */
-    private $onErrorCb;
+    private mixed $onErrorCb = null;
 
     /** @var null|callable function (string $new, string $old): void */
-    private $onStateChangeCb;
+    private mixed $onStateChangeCb = null;
 
     /**
      * 计时器创建 function (float $interval, bool $persistent, callable $fn): int
      *
      * @var callable
      */
-    private $timerAdd;
+    private mixed $timerAdd;
 
     /**
      * 计时器删除 function (int $timerId): void
      *
      * @var callable
      */
-    private $timerDel;
+    private mixed $timerDel;
 
     /**
      * @param array<string, mixed>    $config    见 self::defaultConfig()

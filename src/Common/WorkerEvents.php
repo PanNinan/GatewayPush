@@ -47,7 +47,7 @@ class WorkerEvents
      *
      * @var array<string, mixed>
      */
-    protected static $bound = [];
+    protected static array $bound = [];
 
     /**
      * 为指定 Worker 绑定通用事件

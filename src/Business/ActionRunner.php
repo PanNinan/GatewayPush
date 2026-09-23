@@ -73,21 +73,21 @@ class ActionRunner
      *
      * @var array<string, mixed>
      */
-    protected static $declarations = [];
+    protected static array $declarations = [];
 
     /**
      * 处理器实例缓存（处理器无状态，可复用）
      *
      * @var array<string, mixed>
      */
-    protected static $instances = [];
+    protected static array $instances = [];
 
     /**
      * 是否已装载
      *
      * @var bool
      */
-    protected static $loaded = false;
+    protected static bool $loaded = false;
 
     /* ---------------------------------------------------------------------
      | 装载与查询

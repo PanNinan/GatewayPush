@@ -68,7 +68,7 @@ class Message
      *
      * @var array<int, string>
      */
-    protected static $codeMessages = [
+    protected static array $codeMessages = [
         self::CODE_OK            => 'ok',
         self::CODE_BAD_PACKET    => '报文格式错误',
         self::CODE_BAD_SIGN      => '签名校验失败',

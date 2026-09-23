@@ -52,7 +52,7 @@ class Logger
      *
      * @var array<string, mixed>
      */
-    protected static $weight = [
+    protected static array $weight = [
         self::DEBUG => 0,
         self::INFO  => 1,
         self::WARN  => 2,
@@ -64,7 +64,7 @@ class Logger
      *
      * @var array<string, mixed>
      */
-    protected static $config = [
+    protected static array $config = [
         'path'               => '',
         'level'              => self::DEBUG,
         'role'               => self::CHANNEL_DEFAULT,
@@ -82,21 +82,21 @@ class Logger
      *
      * @var bool
      */
-    protected static $handlerRegistered = false;
+    protected static bool $handlerRegistered = false;
 
     /**
      * 进程标识，便于在多进程日志中区分来源
      *
      * @var string
      */
-    protected static $processTag = '-';
+    protected static string $processTag = '-';
 
     /**
      * 单条日志 context 最大长度（字符），防止堆栈内容撑爆日志
      *
      * @var int
      */
-    protected static $contextMaxLength = 2000;
+    protected static int $contextMaxLength = 2000;
 
     /**
      * 初始化日志组件

@@ -39,7 +39,7 @@ class Auth
      *
      * @var array<string, mixed>
      */
-    protected static $config = [
+    protected static array $config = [
         'enable'       => true,
         'mode'         => 'hmac',
         'secret'       => '',

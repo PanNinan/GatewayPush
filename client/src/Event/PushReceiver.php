@@ -32,19 +32,19 @@ final class PushReceiver
     /**
      * @var SessionManager
      */
-    private $session;
+    private SessionManager $session;
 
     /**
      * @var null|callable function (array $payload, array $meta): void
      */
-    private $onPushCb;
+    private mixed $onPushCb = null;
 
     /**
      * 已自动回执的推送数
      *
      * @var int
      */
-    private $acked = 0;
+    private int $acked = 0;
 
     /**
      * @param SessionManager $session 构造即接管其 onPush 分发

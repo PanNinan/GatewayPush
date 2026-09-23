@@ -34,26 +34,26 @@ final class HttpTransport
      *
      * @var float
      */
-    private $timeout;
+    private float $timeout;
 
     /**
      * 连接工厂 function (string $tcpUrl): object
      *
      * @var callable
      */
-    private $connFactory;
+    private mixed $connFactory;
 
     /** @var callable 计时器创建 function (float $interval, bool $persistent, callable $fn): int */
-    private $timerAdd;
+    private mixed $timerAdd;
 
     /** @var callable 计时器删除 function (int $timerId): void */
-    private $timerDel;
+    private mixed $timerDel;
 
     /** @var string */
-    private $host;
+    private string $host;
 
     /** @var int */
-    private $port;
+    private int $port;
 
     /**
      * @param string        $baseUrl     http://host:port

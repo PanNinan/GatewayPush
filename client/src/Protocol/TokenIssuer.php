@@ -40,21 +40,21 @@ final class TokenIssuer
      *
      * @var string
      */
-    private $secret;
+    private string $secret;
 
     /**
      * 默认有效期（秒）
      *
      * @var int
      */
-    private $defaultTtl;
+    private int $defaultTtl;
 
     /**
      * 允许的签发时间偏差（秒）
      *
      * @var int
      */
-    private $clockSkew;
+    private int $clockSkew;
 
     /**
      * @param string $secret     与服务端 `app.auth.secret` 一致的密钥

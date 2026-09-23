@@ -25,7 +25,7 @@ class ClientException extends \RuntimeException
      *
      * @var array<string, mixed>
      */
-    protected $packet;
+    protected array $packet;
 
     /**
      * @param int                  $code     错误码（报文码或客户端本地码）

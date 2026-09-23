@@ -54,7 +54,7 @@ class Monitor
      *
      * @var array<string, mixed>
      */
-    protected static $config = [
+    protected static array $config = [
         'enable'   => true,
         'interval' => 60,
         'ttl'      => 600,
@@ -66,14 +66,14 @@ class Monitor
      *
      * @var array<string, mixed>
      */
-    protected static $counters = [];
+    protected static array $counters = [];
 
     /**
      * 进程内瞬时值
      *
      * @var array<string, mixed>
      */
-    protected static $gauges = [];
+    protected static array $gauges = [];
 
     /**
      * 初始化

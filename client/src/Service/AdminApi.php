@@ -33,14 +33,14 @@ final class AdminApi
     /**
      * @var HttpTransport
      */
-    private $transport;
+    private HttpTransport $transport;
 
     /**
      * 接口密钥（服务端 api.secret；留空回退 auth.secret）
      *
      * @var string
      */
-    private $secret;
+    private string $secret;
 
     /**
      * @param string             $apiUrl    http://host:port

@@ -56,7 +56,7 @@ class Bootstrap
      *
      * @var array<string, mixed>
      */
-    protected static $config = [
+    protected static array $config = [
         'enable'    => true,
         'listen'    => 'http://127.0.0.1:8291',
         'name'      => 'GW-DASH',
@@ -69,7 +69,7 @@ class Bootstrap
      *
      * @var array<string, mixed>
      */
-    protected static $appConfig = [];
+    protected static array $appConfig = [];
 
     /**
      * 页面模板缓存
@@ -79,7 +79,7 @@ class Bootstrap
      *
      * @var array{content: string, mtime: int}
      */
-    protected static $page = ['content' => '', 'mtime' => 0];
+    protected static array $page = ['content' => '', 'mtime' => 0];
 
     /**
      * 初始化监控面板进程
