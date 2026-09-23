@@ -307,6 +307,11 @@ $group = upsertRule($pdo, [
 // 菜单（type=1，出现在左侧菜单）与按钮级权限点（type=2，仅作权限）
 $nodeSpecs = [
     'dashboard' => ['title' => '健康总览', 'key' => 'app\\controller\\DashboardController', 'href' => '/dashboard', 'type' => 1, 'weight' => 100],
+    // 会话查询页（P2）。**key 必须是控制器全类名，不带 @action** ——
+    // Auth::canAccess 对 action=index 的匹配规则是「任意以 {控制器}@ 开头的 key，或 key 恰等于 {控制器}」，
+    // 故页面路由只需这一个节点即可放行；用 @index 亦可，但菜单节点（type=1）按惯例不带 action。
+    // ⚠ 漏登记此节点的症状是「登录后点菜单 403」，而不是白屏 —— 极易被误判成路由写错。
+    'sessions' => ['title' => '会话查询', 'key' => 'app\\controller\\SessionController', 'href' => '/sessions', 'type' => 1, 'weight' => 92],
     'mon.live' => ['title' => '实时快照（API）', 'key' => 'app\\controller\\api\\MonitorController@live', 'href' => '', 'type' => 2, 'weight' => 95],
     'mon.summary' => ['title' => '指标聚合（API）', 'key' => 'app\\controller\\api\\MonitorController@summary', 'href' => '', 'type' => 2, 'weight' => 90],
     'mon.health' => ['title' => '健康探测（API）', 'key' => 'app\\controller\\api\\MonitorController@health', 'href' => '', 'type' => 2, 'weight' => 80],
@@ -314,6 +319,18 @@ $nodeSpecs = [
     // 密钥状态属敏感展示（设计文档 §3.4 的 admin.config.secret.view「默认关，需单独授」），
     // 故只进运维角色，不进只读角色。
     'ops.probe' => ['title' => 'API 与密钥状态（API）', 'key' => 'app\\controller\\api\\OpsController@apiProbe', 'href' => '', 'type' => 2, 'weight' => 60],
+    // ---- M2 会话只读（P2）----
+    // 全部是只读端点，按 §6「只读角色仅 *.view 类」的口径同时授予「只读」与「运维」。
+    // 其中 revoked 只是**不可逆的 Token 指纹**（sha256 前 32 位，服务端不存 Token 原文），
+    // 与 §6 里刻意只给超管的 `admin.config.secret.view`（密钥状态）不同级别，
+    // 故不按敏感项处理；若日后判定要收紧，只需把下面一行从 $viewerRules 里摘掉。
+    'sess.list' => ['title' => '会话列表（API）', 'key' => 'app\\controller\\api\\SessionController@index', 'href' => '', 'type' => 2, 'weight' => 55],
+    'sess.detail' => ['title' => '会话详情（API）', 'key' => 'app\\controller\\api\\SessionController@detail', 'href' => '', 'type' => 2, 'weight' => 54],
+    'sess.byUid' => ['title' => '按 uid 反查（API）', 'key' => 'app\\controller\\api\\SessionController@byUid', 'href' => '', 'type' => 2, 'weight' => 53],
+    'sess.byDevice' => ['title' => '按设备反查（API）', 'key' => 'app\\controller\\api\\SessionController@byDevice', 'href' => '', 'type' => 2, 'weight' => 52],
+    'sess.offline' => ['title' => '离线队列只读（API）', 'key' => 'app\\controller\\api\\SessionController@offline', 'href' => '', 'type' => 2, 'weight' => 51],
+    'sess.subs' => ['title' => '订阅关系（API）', 'key' => 'app\\controller\\api\\SessionController@subscriptions', 'href' => '', 'type' => 2, 'weight' => 50],
+    'auth.revoked' => ['title' => 'Token 撤销名单（API）', 'key' => 'app\\controller\\api\\SessionController@revoked', 'href' => '', 'type' => 2, 'weight' => 49],
 ];
 $nodeIds = [];
 foreach ($nodeSpecs as $alias => $spec) {
@@ -351,9 +368,20 @@ function upsertRole(PDO $pdo, string $name, array $ruleIds, string $now): int
 // 漏掉会让只读账号打开面板后永远停在骨架（且只在浏览器控制台报 403，极易漏查）。
 $viewerRules = [
     $nodeIds['dashboard'],
+    // P2 会话查询页：页面本身不含写操作（无 kick / revoke / unbind / 清队列入口），
+    // 故与 dashboard 同级归入只读角色。真正需要收紧的是 P4 的写端点，不是这一页。
+    $nodeIds['sessions'],
     $nodeIds['mon.live'],
     $nodeIds['mon.summary'],
     $nodeIds['mon.health'],
+    // P2 会话只读：同样是「只读角色可见」的一类（见上方 nodeSpecs 的注释）。
+    $nodeIds['sess.list'],
+    $nodeIds['sess.detail'],
+    $nodeIds['sess.byUid'],
+    $nodeIds['sess.byDevice'],
+    $nodeIds['sess.offline'],
+    $nodeIds['sess.subs'],
+    $nodeIds['auth.revoked'],
 ];
 $operatorRules = array_merge($viewerRules, [$nodeIds['ops.scan'], $nodeIds['ops.probe']]);
 

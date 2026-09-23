@@ -113,4 +113,10 @@ INSERT IGNORE INTO `admin_settings` (`k`, `v`, `remark`) VALUES
   ('monitor.gauge_stale_secs', '10',   '进程存活展示判据 = MONITOR_INTERVAL × 2（勿用 MONITOR_TTL）'),
   ('monitor.ratio_thresholds', '{}',   '派生率阈值覆盖；{} = 全走类常量默认。可覆盖键：msg_fail_rate/auth_fail_rate/action_fail_rate/action_timeout_rate/push_fail_rate/udp_out_fail_rate/heartbeat_timeout_rate，形如 {"msg_fail_rate":{"warn":1,"bad":5}}'),
   ('session.page_size',        '20',   '会话列表分页大小'),
+  -- P2 有界 SCAN 的三道闸门。**三者缺一不可**：COUNT 只是「每轮提示值」而非上限，
+  -- Redis 可能每轮返回任意数量，故必须同时限制轮次与累计键数，超限即把 truncated=true
+  -- 透传给 UI —— 不允许静默截断，否则运维会把「扫到的一半」当成全量。
+  ('session.scan_count',       '200',  '会话/撤销名单 SCAN 每轮 COUNT 提示值（非上限）'),
+  ('session.scan_max_rounds',  '50',   'SCAN 轮次上限（防御游标不收敛）'),
+  ('session.scan_max_keys',    '2000', 'SCAN 累计键数上限（超限则 truncated=true）'),
   ('ops.log_tail_lines',       '500',  '日志尾读默认行数');

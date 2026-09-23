@@ -18,6 +18,14 @@
 **关键不变量：推送系统的运行不依赖本后台。** 后台宕机、MySQL 不可用，都不影响 `GatewayPush` 的
 register / gateway / udp / business / api / dashboard 六个角色。
 
+**已交付页面**（每期追加，权限节点同步见 §3.2）：
+
+| 阶段 | 页面 | 主要 API |
+|---|---|---|
+| P0 | `/dashboard` 健康总览 | `/api/monitor/*`、`/api/ops/redis/scan`、`/api/ops/api/probe` |
+| P1 | （同上，改为分层轮询 + 自绘 SVG） | 新增 `/api/monitor/live`（5s 快 tick，**只碰 Redis**） |
+| P2 | `/sessions` 会话查询 | `/api/sessions`、`/api/session/{clientId}`、`/api/sessions/by-uid/{uid}`、`/api/sessions/by-device/{deviceId}`、`/api/sessions/subscriptions`、`/api/sessions/offline/{uid}`、`/api/auth/revoked`（**全部 GET，一期只读**） |
+
 ---
 
 ## 2. 前置条件
@@ -99,8 +107,12 @@ php start.php stop           # Linux 停止
 | 角色 | `wa_roles.id` | `rules` | 能访问 |
 |---|---|---|---|
 | 超级管理员 | 1 | `*` | 全部（含 webman-admin 自带的管理面） |
-| 运维 | 3 | 6 个节点 | GatewayPush 全部 6 个端点（含 `ops/*`） |
-| 只读 | 2 | 4 个节点 | 仅 `/dashboard` 与 `/api/monitor/*`（含 `mon.live`）；`/api/ops/*` 返回 **403** |
+| 运维 | 3 | 14 个节点 | GatewayPush 全部端点（只读 12 个 + `ops/scan` + `ops/probe`） |
+| 只读 | 2 | 12 个节点 | `/dashboard`、`/sessions` 两页 + `/api/monitor/*`（含 `mon.live`）+ `/api/sessions/*`、`/api/session/*`、`/api/auth/revoked`；`/api/ops/*` 返回 **403** |
+
+> P2 后「只读」= 12 节点、「运维」= 14 节点（计数可用
+> `SELECT id,name,rules FROM wa_roles` 复核）。节点清单的**唯一真源**是
+> `scripts/install.php` 的 `$nodeSpecs`，重跑该脚本即幂等对齐（id 不变、只更新 title/key/weight）。
 
 - **新建管理员**：登录后走「权限管理 → 账户管理」（webman-admin 自带页面）。
   命令行创建也可，但**没有**免验证码的创建接口。
@@ -188,18 +200,29 @@ mysql -h "$ADMIN_DB_HOST" -u "$ADMIN_DB_USER" -p gateway_push_admin < gwadmin-YY
 
 ```bash
 cd admin
-composer test           # PHPUnit：tests/Unit（P1 后 40 tests / 187 assertions）
+composer test           # PHPUnit：tests/Unit（P2 后 83 tests / 361 assertions）
 composer analyse        # PHPStan L6，**刻意不引入 baseline**（新代码零容忍）
-composer test:frontend  # 运行期前端渲染校验（144 项；无需浏览器 / jsdom / 服务端）
+composer test:frontend  # 运行期前端渲染校验（P1 的 144 项 + P2 的 122 项；无需浏览器 / jsdom / 服务端）
 ```
 
 `composer test` 与 `composer test:frontend` **不可互相替代**：
-前者是**静态契约**（`DashboardContractTest`：JS 引用的 DOM id 是否都在视图里、`cfg.*` 是否都由控制器注入、
-有没有 `innerHTML` 赋值），后者是把 `dashboard.js` **真跑一遍**断言渲染结果
+前者是**静态契约**（`DashboardContractTest` / `SessionContractTest`：JS 引用的 DOM id 是否都在视图里、
+`cfg.*` 是否都由控制器注入、有没有 `innerHTML` 赋值、**有没有定时器**、**读路径有没有 Redis 写命令**），
+后者是把 `dashboard.js` / `session.js` **真跑一遍**断言渲染结果
 （卡片取值、派生率 `null ≠ 0.00%`、队列条宽、进程表格式化、日切清空、失败退避倍数、
-`visibilitychange` 陈旧响应作废）。
+`visibilitychange` 陈旧响应作废；会话侧则是截断回显、空态 vs 配错的区分、抽屉 URL 同步、
+离线队列用**全局**下标、UTF-8 **字节**长度校验）。
 **只跑前者只能证明「名字都对」，证明不了「渲染正确」。**
-后端 API 契约改动另需 `php tests/Manual/p1_acceptance.php`（P1 验收，含硬断言「`live()` 不含 `api` 段」）。
+后端 API 契约改动另需两个验收脚本（含硬断言「`live()` 不含 `api` 段」「保留会话必须出现在 `scope=retained` 里」）：
+
+```bash
+php tests/Manual/p1_acceptance.php    # P1 验收：服务层(真连 Redis) / HTTP 层(curl+验证码登录) / RBAC
+php tests/Manual/p2_acceptance.php    # P2 验收（只读，不写任何 Redis 键）
+php tests/Manual/p2_acceptance.php --seed   # 额外写入 p2test-* 一次性夹具，跑完**无条件清理**
+```
+
+> ⚠ `--seed` 有安全闸：`ADMIN_REDIS_HOST` **必须是回环地址**，否则以退出码 2 直接中止 ——
+> 防止有人在连生产 Redis 的机器上跑夹具写入。该脚本是后台子项目里**唯一**会写 Redis 的地方。
 
 `tests/Manual/` 与 `tests/Frontend/` 下的脚本需真实服务在线（后者其实不需要），
 **刻意不纳入套件**（判据口径与主项目一致：环境不可用时标 SKIP 而非 FAIL），

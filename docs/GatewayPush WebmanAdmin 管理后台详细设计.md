@@ -907,6 +907,7 @@ ADMIN_REDIS_PREFIX=gwpush:
 | 任务 | ① `SessionInspector`：`SMEMBERS online:clients` → 分页 → `HGETALL session:{cid}`（**注意 N+1**，用 pipeline 合批）；② 反查三路；③ 订阅双向索引；④ 离线队列 `LLEN` + `LRANGE` 分页；⑤ 详情页展示 §5.1.1 全字段 |
 | 验收 | 与真实客户端联调一致：客户端连上后 5s 内在列表可见；断开后（`markOffline`）能区分「保留会话」与「已回收」 |
 | 风险 | `online:clients` 是 Set，**分页需先 `SMEMBERS` 再切片**（大集合下内存压力）—— 一期规模可控，二期若超 1 万在线，改 `SSCAN` 游标分页 |
+| **实测修订** | ⚠ 本行三处被实现推翻，落地见 **§11.5**：① **`/api/sessions/{clientId}` 不存在**，实际是 `/api/session/{clientId}`（单复数刻意区分，见 **D24**）；② 范围枚举**不止 `online`**，实际有 `scope=online\|retained\|all`，后两者必须 `SCAN`（见 **D22**）；③ 另补 2 个未列出的只读端点 `/api/sessions/subscriptions`、`/api/auth/revoked`（见 **D24** 同段路由表） |
 
 ### P3 推送管理（侵入性 **0**）
 
@@ -1073,7 +1074,7 @@ P4 若落地 `channels` 与 3 个动作，**必须**补跑：
 
 ## 11. 实施记录与实测偏差（2026-09-23）
 
-> §11.1~§11.3 为 **P0**；§11.4 为 **P1**。偏差表 **D1~D21 累计**，冲突一律以本表为准。
+> §11.1~§11.3 为 **P0**；§11.4 为 **P1**；§11.5 为 **P2**。偏差表 **D1~D25 累计**，冲突一律以本表为准。
 
 ### 11.1 P0 状态
 
@@ -1242,6 +1243,51 @@ P4 若落地 `channels` 与 3 个动作，**必须**补跑：
 > 但「静默 tag」与「加粗数值」的差别只有结构断言能看见。
 > **结论：这类前端校验必须配变异测试，否则「PASS」只是「没崩」。**
 
+### 11.5 P2 实施记录与实测偏差（2026-09-23）
+
+> §7 P2 的任务项 ①~⑤ 全部落地，**侵入性 0**（主项目 `src/`、`config/`、`tests/` 零改动）。
+> 交付面见下表；偏差 **D22~D25** 为本次新增。
+
+#### 交付物与门禁
+
+| 层 | 文件 | 门禁结果 |
+|---|---|---|
+| 服务层 | `app/service/SessionInspector.php`（M2 聚合，纯静态判定层） | `SessionInspectorTest` **63 tests / 272 assertions** |
+| 数据门面 | `app/service/RedisReader.php`（补 `scanKeys` / `sessions` 批量 / `revoked` 等只读方法） | 与 `RedisReader` 一并纳入只读红线的源码扫描 |
+| API 控制器 | `app/controller/api/SessionController.php`（7 个只读端点） | |
+| 页面控制器 | `app/controller/SessionController.php`（P2 页面 + `SIZE_OPTIONS` 契约常量） | `SessionContractTest` **16 tests / 78 assertions** |
+| 视图 / 前端 | `app/view/session/index.html` · `public/static/session.{js,css}` | `session_render_check.js`（假 DOM）**122 项全 PASS**；P1 的 `dashboard_render_check.js` 仍 **144 项** |
+| 契约测试 | `tests/Unit/SessionContractTest.php`（DOM id / cfg key / 路由 / 只读 / 无定时器 4 类不变量） | 同上 |
+| 验收脚本 | `tests/Manual/p2_acceptance.php --seed`（4 层：服务层真 Redis 夹具 / 节点一致性 / HTTP / RBAC） | **64 PASS / 0 FAIL / 1 SKIP** |
+| 后端总门禁 | `phpunit` · `phpstan`（L6，无 baseline） | **83 tests / 361 assertions** · **0 errors** |
+
+**变异测试**（P1 起确立的纪律，用于证明新门禁真的会咬）：前端 7 组注入（删截断提示 / 保留会话当在线 /
+离线队列用页内下标 / 丢掉 `offline_size` / 按字符而非字节算长度 / 加一个轮询定时器 / 抹掉
+「空态 vs 配错」的区分）**7/7 被抓**；后端 6 组（删 `disableDefaultRoute` / 在读路径加
+`Redis::del` / 改 DOM id / 改端点路径 / 删 cfg 注入 / 在读路径加 `sRem`）**6/6 被抓**。
+
+#### 本次新增偏差
+
+| # | 前文表述 | 实测事实 | 影响 |
+|---|---|---|---|
+| **D22** | §5.1 隐含「`session:{cid}` 就代表连接存在」，§7 P2 也未提 `offline_at` 的判读 | **`markOffline()` 只摘在线索引、不删会话键**：`src/Business/Session.php:161-186` 做的是 `sRem(online:clients)` + `sRem(online:{protocol})` + `del(heartbeat:{cid})` + `hSet(session,'offline_at')`，**保留** `session:{cid}` / `uid:clients:{uid}` / `device:client:{deviceId}`。⚠ 更反直觉的是 **`offline_at` 是粘性字段**：`bind()` 只 `hMSet` 9 个业务字段、全 `src/Business/` 内**没有任何 `hDel('offline_at')`**（只有 `Monitor.php` 调 `hDel`），而 UDP 的 clientId 是 `udp:{ip}:{port}` ⇒ **同一客户端重连会复用同一 clientId**，于是「断开过再活跃」的连接会**长期带着 `offline_at`** | ① **在线判据只能用 `online:clients` 的成员资格**，用 `offline_at` 会把活跃 UDP 连接误判为离线（`SessionInspector::stateOf()` 已按此实现，并用单测 `testStickyOfflineAtDoesNotMakeAnOnlineSessionLookOffline` 钉死）；② 「已断开但保留」**没有索引**，只能 `SCAN session:*` ⇒ 列表范围必须有 `retained` / `all` 两个额外枚举；③ 反查入口（`uid:clients` / `device:client:`）是**唯一不靠 SCAN 就能看到保留会话**的路径 |
+| **D23** | §5.1 只写了「只读 Redis」，未提 SCAN 的前缀语义 | **Predis 的 `KeyPrefixProcessor` 映射表里有 `KEYS`/`SSCAN`/`HSCAN`/`ZSCAN`，唯独没有 `SCAN`** ⇒ `MATCH` 模式**不会**被自动加前缀，而**返回的键带前缀**。实测依据：`MATCH=gwpush:*` 能命中 `gwpush:metrics:gauge`（若被二次加前缀则必然空）。另：`illuminate/redis` v12.69.2 的 `pipeline()` **只定义在 `PhpRedisConnection` 子类**上，基类 `Connection` 没有，`Connection::__call()` 会把未知方法转成 `command($method)` ⇒ `Redis::connection()->pipeline($cb)` 会被当成一条名为 `PIPELINE` 的 Redis 命令而报错 | ① `RedisReader::scanKeys()` **手工拼** `prefix . $logicalPattern`、返回前**手工剥离**前缀；② 批量读取走 `Redis::connection()->client()->pipeline($cb)`（phpredis 与 predis **都在原始客户端上**有 `pipeline`，且前缀在 pipeline 内部照常生效），失败由 `batch()` 退化为逐键读取 —— **只影响往返次数，不影响正确性** |
+| **D24** | §4.3 的路由表（`/api/sessions/{clientId}` 等）与 §6 的 16 个语义权限点 | P2 实际落地路由**与 §4.3 有三处形状差异**：① 详情是 **`/api/session/{clientId}`（单数）**，与列表 `/api/sessions`（复数）**刻意区分**，避免与 `/api/sessions/by-uid/{uid}` 之类的静态段路由产生前缀歧义；② 新增 §4.3 未列的 **`/api/sessions/subscriptions`** 与 **`/api/auth/revoked`**；③ 列表多了 `scope` / `page` / `size` 之外的 `protocol` 过滤（与 §4.3 一致）但**没有** `uid` 之外的维度。权限键仍为 `{FQCN}@{action}` 形态（`wa_rules.key`），**不是** §6 的 `admin.session.view` | ① §4.3 路由表按本节为准；② §6 权限点矩阵的**键名形态**须整体改写（**D3 已记**，P2 只补了 8 个 `sess.*` 节点 + 1 个页面菜单节点，`install.php` 幂等可重跑）；③ 页面控制器与 API 控制器**同名不同命名空间**（`app\controller\SessionController` vs `app\controller\api\SessionController`），权限键字符串**不可混用** |
+| **D25** | 未预见（**本次修的缺陷**，属最容易静默的一类） | **`RedisReader::scanKeys()` 与 `RedisReader::sessions()` 处于两个不同「键空间」**：前者返回**已剥离 Redis 前缀的逻辑键名**（`session:ws-abc`），后者收 **clientId**（`ws-abc`）并**自行**拼 `RedisKeys::session()` ⇒ 直接对接会得到 `session:session:ws-abc`，**全部读空**。表现为 `scope=retained` 返回 0 条而 `scan.scanned=1`（SCAN 明明扫到了键），**不报错、不打日志** | 新增**唯一转换点** `SessionInspector::clientIdsFromKeys()`（纯函数，可单测），并在 `list()` 的 docblock 写明；单测用「`RedisKeys::session()` 往返必须回到同一个键」做契约断言（`testClientIdsFromKeysRoundTripMatchesRedisKeysSession`），而非只断言字符串被切掉。⚠ **凡「扫描产物」交给「按 clientId 取数」的函数前，必须先过这一层** —— 同类边界（`heartbeat:` / `uid:clients:` 等）未来照此办理 |
+
+#### P2 刻意不做（宁缺勿假）
+
+1. **不提供「本会话是否已被撤销」标志**。撤销名单键是 `auth:revoked:{sha256(token) 前 32 位}`（`Auth::tokenFingerprint()`），
+   会话 Hash 里**没有指纹字段**、服务端**从不存 Token 原文** ⇒ 由 clientId/uid **不可反推**。
+   只在 `/api/auth/revoked` 里列出名单本身，由人工核对指纹；说明文案由后端常量
+   `SessionInspector::REVOKE_NOTE` **下发**（避免前端各自编词）。
+2. **页面不轮询**。本页是**检索型**视图（与 P1 的**状态型**仪表盘不同），无定时器由
+   `SessionContractTest::testScriptHasNoPollingTimers` 与前端 S1 场景双重钉住；
+   历史遗留的 `meta refresh` 同样被禁。
+3. **不提供写操作**。kick / revoke / unbind / 清空离线队列全部属 **P4**，本页只有 GET；
+   读路径的「零写命令」由 `SessionContractTest::testReadPathContainsNoRedisWriteCommands`
+   用 `php_strip_whitespace()` 扫源码守住（注释里提到 `sRem`/`hDel` 不会误报）。
+
 ---
 
 *本文件为设计方案，落地实现以代码为准。§3 的 6 处主项目改动（C1~C6）需逐项确认后再实施；
@@ -1259,4 +1305,14 @@ P1 验收脚本 **41 PASS / 0 FAIL / 1 SKIP**。**主项目 `src/`、`config/`�
 ***P1 明确不做**：实时日志 tail（需另开一条 SSE 通道，见红线 ㉙ 同向的阻塞式读取约束），
 若要上须作为独立阶段单独立项。*
 
-*下一步为 **P2 会话只读**（会话列表 / 详情 / 反查 / 订阅 / 离线队列只读 / Token 撤销名单）。*
+***P2 已完成（2026-09-23）**：会话只读面板（列表 `scope=online|retained|all` / 页内抽屉详情 /
+uid·device 反查 / 订阅双向 / 离线队列只读 / Token 撤销名单）+ 修掉 P1 遗留的
+**默认路由鉴权绕过**（`Route::disableDefaultRoute()` 按控制器精确禁用，见 **D24**）；
+后端 PHPStan L6 **0 errors** / PHPUnit **83 tests / 361 assertions** /
+前端渲染校验 **122 项**（P1 的 144 项无回归）/ P2 验收脚本 **64 PASS / 0 FAIL / 1 SKIP**。
+**主项目 `src/`、`config/`、`tests/` 仍为零改动。** 实施记录与实测偏差 **D1~D25 覆盖前文表述，冲突以 §11 为准**。*
+
+***P2 明确不做**：实时日志 tail（仍缓做）；「本会话是否已撤销」标志（不可判定，见 §11.5 末）。
+所有写操作（kick / revoke / unbind / 清空离线队列）属 **P4**。*
+
+*下一步为 **P3 推送管理**（发起推送转签、推送历史 `push_task`、动作调用、模板 CRUD）。*

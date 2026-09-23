@@ -207,4 +207,383 @@ final class RedisReader
 
         return is_int($n) ? $n : (int)$n;
     }
+
+    /* =====================================================================
+     | M2 会话只读原语（P2）
+     |
+     | 与上方 M1 原语同一纪律：只读、键名一律经 RedisKeys、不暴露写命令。
+     | ===================================================================== */
+
+    /**
+     * 在线 clientId 全量列表（`SMEMBERS online:clients` 或 `online:{protocol}`）。
+     *
+     * ⚠ **只含「当前连着」的连接**：主项目 `Session::markOffline()` 会把 clientId
+     * 从该集合摘除（`src/Business/Session.php:166-168`），故「断开但会话保留」的
+     * 连接不会出现在这里 —— 那部分要靠 {@see scanKeys()} 按 `offline_at` 过滤，
+     * 或走 {@see uidClients()} / {@see deviceClient()} 反查（这两条索引 markOffline 不清理）。
+     *
+     * @param string $protocol 空 = 全量；'ws' / 'udp'
+     *
+     * @return list<string> 元素顺序未定义（Set 语义），调用方须自行排序后再分页
+     */
+    public function onlineClientIds(string $protocol = ''): array
+    {
+        $raw = Redis::sMembers(RedisKeys::online($protocol));
+
+        return $this->stringList($raw);
+    }
+
+    /**
+     * 按 uid 反查 clientId（`SMEMBERS uid:clients:{uid}`）。
+     *
+     * ⚠ `markOffline()` **不清理**该索引，因此结果可能同时包含在线与「已离线保留」的连接 ——
+     * 这正是「按 uid 反查能看到保留会话」的原因；是否离线由会话 Hash 的 `offline_at` 判定。
+     *
+     * @return list<string>
+     */
+    public function uidClients(string $uid): array
+    {
+        $raw = Redis::sMembers(RedisKeys::uidClients($uid));
+
+        return $this->stringList($raw);
+    }
+
+    /**
+     * 按设备反查当前活跃 clientId（`GET device:client:{deviceId}`）。
+     *
+     * 单对一定向的定位依据；`unbind()` 仅在映射仍指向自己时才删除，
+     * 故 `markOffline()` 后仍可能读到「已离线保留」的连接。
+     */
+    public function deviceClient(string $deviceId): ?string
+    {
+        $raw = Redis::get(RedisKeys::deviceClient($deviceId));
+
+        return is_string($raw) && $raw !== '' ? $raw : null;
+    }
+
+    /**
+     * 设备绑定关系（`GET auth:bind:{uid}`，"首绑胜出"）。
+     */
+    public function authBind(string $uid): ?string
+    {
+        $raw = Redis::get(RedisKeys::authBind($uid));
+
+        return is_string($raw) && $raw !== '' ? $raw : null;
+    }
+
+    /**
+     * 批量读取多个会话 Hash（**一次往返**）。
+     *
+     * 为什么不用 `Redis::connection()->pipeline()`：illuminate/redis v12.69.2 的 `pipeline()`
+     * **只定义在 `PhpRedisConnection` 子类**上，基类 `Connection` 没有；`Connection::__call()`
+     * 会把未知方法转成 `command($method)`，于是 `Redis::connection()->pipeline($cb)` 会被当成
+     * 一条名为 `PIPELINE` 的 Redis 命令而报错。实测可用路径是 `connection()->client()->pipeline($cb)`
+     * —— phpredis 与 predis **都在原始客户端上**有 pipeline，且**前缀在 pipeline 内部照常生效**。
+     * 两条路都不可用时由 {@see batch()} 退化为逐键读取 —— 只影响往返次数，不影响正确性。
+     *
+     * @param list<string> $clientIds
+     *
+     * @return array<string, array<string, string>> 键为 clientId；不存在的会话映射为空数组
+     */
+    public function sessions(array $clientIds): array
+    {
+        if ($clientIds === []) {
+            return [];
+        }
+
+        $keys = [];
+        foreach ($clientIds as $clientId) {
+            $keys[$clientId] = RedisKeys::session($clientId);
+        }
+
+        $responses = $this->batch(static function ($pipe) use ($keys): void {
+            foreach ($keys as $key) {
+                $pipe->hgetall($key);
+            }
+        }, array_values($keys), static fn (string $key) => Redis::hGetAll($key));
+
+        $out = [];
+        $i = 0;
+        foreach ($keys as $clientId => $ignored) {
+            $row = $responses[$i] ?? [];
+            $out[$clientId] = is_array($row) ? array_map('strval', $row) : [];
+            $i++;
+        }
+
+        return $out;
+    }
+
+    /**
+     * 会话是否仍存在（`EXISTS session:{clientId}`）。
+     *
+     * 这是「**保留**」与「**已回收**」的分界：`unbind()` 会删除会话键，
+     * 故 EXISTS=false 即代表连接断连后已被回收（而非仅离线）。
+     */
+    public function sessionExists(string $clientId): bool
+    {
+        return (int)Redis::exists(RedisKeys::session($clientId)) > 0;
+    }
+
+    /**
+     * 心跳时间戳（`GET heartbeat:{clientId}`）。
+     *
+     * `markOffline()` 会删除该键，故返回 null 表示「已离线或从未心跳」；
+     * 与 `last_active`（会话 Hash 内字段，保留）刻意不同。
+     */
+    public function heartbeat(string $clientId): ?int
+    {
+        $raw = Redis::get(RedisKeys::heartbeat($clientId));
+
+        return is_numeric($raw) ? (int)$raw : null;
+    }
+
+    /**
+     * 用户订阅的主题集合（正向索引 `SMEMBERS subscribe:uid:{uid}`）。
+     *
+     * @return list<string>
+     */
+    public function subscribeUid(string $uid): array
+    {
+        $raw = Redis::sMembers(RedisKeys::subscribeUid($uid));
+
+        return $this->stringList($raw);
+    }
+
+    /**
+     * 主题的订阅者 uid 集合（反向索引 `SMEMBERS subscribe:topic:{topic}`）。
+     *
+     * @return list<string>
+     */
+    public function subscribeTopic(string $topic): array
+    {
+        $raw = Redis::sMembers(RedisKeys::subscribeTopic($topic));
+
+        return $this->stringList($raw);
+    }
+
+    /**
+     * 离线消息队列长度（`LLEN push:offline:{uid}`）。
+     */
+    public function offlineLen(string $uid): int
+    {
+        $n = Redis::lLen(RedisKeys::pushOffline($uid));
+
+        return is_int($n) ? $n : (int)$n;
+    }
+
+    /**
+     * 离线消息队列分页（`LRANGE push:offline:{uid} start stop`）。
+     *
+     * 队列是 `LPUSH`/`RPOP` 语义，故 index 0 为**最新**一条。
+     *
+     * @param int $start 起始下标（含）
+     * @param int $stop  结束下标（含，-1 = 到末尾）
+     *
+     * @return list<string> 原始报文串（不在此处解析 JSON）
+     */
+    public function offlineRange(string $uid, int $start, int $stop): array
+    {
+        $raw = Redis::lRange(RedisKeys::pushOffline($uid), $start, $stop);
+
+        return $this->stringList($raw);
+    }
+
+    /**
+     * **有界** SCAN：按前缀列举逻辑键。
+     *
+     * 两条硬约束（缺一不可，否则会拖住 worker 或给出误导性结论）：
+     * 1. **禁止 KEYS**：主项目在线服务与本后台共享同一 Redis 实例，`KEYS` 是单线程阻塞命令
+     *    （设计文档 §5.1「SCAN 纪律」）。
+     * 2. **必须有界**：`COUNT` 只是**每轮提示值**而非上限，Redis 可能每轮返回任意数量，
+     *    故同时对「轮次」「累计键数」双重设限，超限即 `truncated=true` 交由 UI 显式展示 ——
+     *    **不允许静默截断**，否则运维会把「扫到的一半」当成全量。
+     *
+     * ⚠ **前缀陷阱（实测）**：Predis 的 `KeyPrefixProcessor` 映射表里有 `KEYS`/`SSCAN`/`HSCAN`/`ZSCAN`，
+     * **唯独没有 `SCAN`**，因此 `MATCH` 模式**不会**被自动加前缀，而返回的键**带**前缀。
+     * 故此处手工拼 `prefix . $logicalPattern`，并在返回前手工剥离 —— 实测依据：
+     * `MATCH=gwpush:*` 能命中 `gwpush:metrics:gauge`（若被二次加前缀则必然空）。
+     *
+     * @param string $logicalPattern 逻辑键模式，如 `auth:revoked:*`（**不含**前缀）
+     * @param int    $count           每轮 COUNT 提示值
+     * @param int    $maxRounds       轮次上限（防御游标不收敛）
+     * @param int    $maxKeys         累计键数上限
+     *
+     * @return array{keys: list<string>, scanned: int, rounds: int, truncated: bool}
+     *         `keys` 为**已剥离前缀**的逻辑键名
+     */
+    public function scanKeys(string $logicalPattern, int $count = 200, int $maxRounds = 50, int $maxKeys = 2000): array
+    {
+        $prefix = self::prefix();
+        $pattern = $prefix . $logicalPattern;
+
+        $cursor = '0';
+        $keys = [];
+        $rounds = 0;
+        $truncated = false;
+
+        do {
+            // 经 `command()` 走 Predis 原生 scan：`$raw->scan($cursor, ['MATCH'=>…, 'COUNT'=>…])`
+            $reply = Redis::connection()->command('scan', [$cursor, ['MATCH' => $pattern, 'COUNT' => $count]]);
+            $rounds++;
+
+            if (!is_array($reply) || count($reply) < 2) {
+                break;
+            }
+
+            $cursor = (string)$reply[0];
+            $chunk = is_array($reply[1]) ? $reply[1] : [];
+
+            foreach ($chunk as $key) {
+                if (!is_string($key)) {
+                    continue;
+                }
+                $keys[] = $prefix !== '' && str_starts_with($key, $prefix)
+                    ? substr($key, strlen($prefix))
+                    : $key;
+
+                if (count($keys) >= $maxKeys) {
+                    $truncated = true;
+                    break 2;
+                }
+            }
+
+            if ($rounds >= $maxRounds) {
+                $truncated = $cursor !== '0';
+                break;
+            }
+        } while ($cursor !== '0');
+
+        sort($keys);
+
+        return [
+            'keys' => $keys,
+            'scanned' => $rounds,
+            'rounds' => $rounds,
+            'truncated' => $truncated,
+        ];
+    }
+
+    /**
+     * Token 撤销名单（`SCAN auth:revoked:*` + 批量取 TTL）。
+     *
+     * 该名单**没有索引键**（写入方 `Auth::revoke()` 直接 `SET auth:revoked:{fingerprint}`），
+     * 故只能 SCAN —— 这正是本类需要 {@see scanKeys()} 的唯一原因。
+     *
+     * ⚠ 指纹是 `sha256(token)` 的前 32 位（`Auth::tokenFingerprint()`），**不可逆推 Token**；
+     * 后台只展示指纹，不提供任何反解入口。
+     *
+     * @return array{
+     *     items: list<array{fingerprint: string, ttl: int, permanent: bool}>,
+     *     scanned: int,
+     *     truncated: bool
+     * }
+     */
+    public function revoked(int $count = 200, int $maxRounds = 50, int $maxKeys = 2000): array
+    {
+        $scan = $this->scanKeys(RedisKeys::AUTH_REVOKED . '*', $count, $maxRounds, $maxKeys);
+
+        $logicalKeys = $scan['keys'];
+        $ttls = $this->batch(
+            static function ($pipe) use ($logicalKeys): void {
+                foreach ($logicalKeys as $key) {
+                    $pipe->ttl($key);
+                }
+            },
+            $logicalKeys,
+            static fn (string $key) => Redis::ttl($key)
+        );
+
+        $items = [];
+        foreach ($logicalKeys as $i => $key) {
+            $ttlRaw = $ttls[$i] ?? -1;
+            $ttl = is_numeric($ttlRaw) ? (int)$ttlRaw : -1;
+            $items[] = [
+                'fingerprint' => substr($key, strlen(RedisKeys::AUTH_REVOKED)),
+                'ttl' => $ttl,               // -1 = 永久，-2 = 键在扫描后已消失
+                'permanent' => $ttl === -1,
+            ];
+        }
+
+        return [
+            'items' => $items,
+            'scanned' => $scan['scanned'],
+            'truncated' => $scan['truncated'],
+        ];
+    }
+
+    /* ---------------------------------------------------------------------
+     | 内部工具
+     --------------------------------------------------------------------- */
+
+    /**
+     * 把 Redis 返回的集合类结果规整为 `list<string>`（PHPStan L6 下 `mixed` 必须收口）。
+     *
+     * @param mixed $raw
+     *
+     * @return list<string>
+     */
+    private function stringList(mixed $raw): array
+    {
+        if (!is_array($raw)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($raw as $item) {
+            if (is_scalar($item)) {
+                $out[] = (string)$item;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * 「批量优先、逐键兜底」的执行器。
+     *
+     * ⚠ **pipeline 只能下沉到原始客户端上调**，不能在 illuminate 的 `Connection` 上调：
+     * `pipeline()` 仅由 `PhpRedisConnection` **子类**实现（`vendor/illuminate/redis/
+     * Connections/PhpRedisConnection.php:399`），抽象基类 `Connection` 没有该方法 ——
+     * 在 predis 连接上写 `Redis::connection()->pipeline($cb)` 会落入基类 `__call()`，
+     * 被当成一条名为 `PIPELINE` 的**原始命令**发给 Redis 而报错。
+     * 两条客户端路径：
+     *   - predis（本项目当前配置，见 `config/redis.php`）→ `\Predis\Client::pipeline()`
+     *   - phpredis（部署 Linux 并装扩展后可切）        → `\Redis::pipeline()`
+     * 前缀**仍会由客户端自动施加**（`KeyPrefixProcessor` 会处理管道内的命令），
+     * 故这里照旧只传 `RedisKeys` 产出的逻辑键名。
+     *
+     * @param callable(object): void $enqueue 在 pipeline 上下文里逐键入队
+     * @param list<string>           $logicalKeys
+     * @param callable(string): mixed $single    单个键的读取方式（兜底路径）
+     *
+     * @return list<mixed> 与 $logicalKeys 同序
+     */
+    private function batch(callable $enqueue, array $logicalKeys, callable $single): array
+    {
+        if ($logicalKeys === []) {
+            return [];
+        }
+
+        try {
+            $client = Redis::connection()->client();
+            if (is_object($client) && method_exists($client, 'pipeline')) {
+                $result = $client->pipeline(static function ($pipe) use ($enqueue): void {
+                    $enqueue($pipe);
+                });
+
+                if (is_array($result)) {
+                    return array_values($result);
+                }
+            }
+        } catch (Throwable) {
+            // 落回逐键路径：只影响往返次数，不影响结果正确性
+        }
+
+        $out = [];
+        foreach ($logicalKeys as $key) {
+            $out[] = $single($key);
+        }
+
+        return $out;
+    }
 }

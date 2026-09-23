@@ -1,0 +1,259 @@
+<?php
+/**
+ * GatewayPush 会话查询页（P2：骨架 + 按需取数，**不轮询**）。
+ *
+ * ⚠ 本文件后缀是 .html 但内容是**原生 PHP**：`support\view\Raw::render()` 直接 include 它
+ *   （webman 的 Raw 引擎默认 view_suffix = html）。不要按纯静态页改。
+ *
+ * ⚠ 本页**不含任何数据**，只输出骨架与一份 `#session-config` JSON。
+ *   全部数值由 `/static/session.js` 经 7 个只读端点按需填充。改动数据结构时要同步改 JS，
+ *   否则界面会静默留白（`tests/Unit/SessionContractTest.php` 会拦住 DOM id / cfg 键的漂移）。
+ *
+ * 与健康总览页的差别：本页**没有定时器**。打开时拉一次列表，其余由交互触发
+ * （查询 / 翻页 / 反查 / 抽屉 / 撤销名单）。理由见 SessionController 的类注释。
+ *
+ * @var string $title
+ * @var array{
+ *     list_url: string,
+ *     detail_base: string,
+ *     by_uid_base: string,
+ *     by_device_base: string,
+ *     offline_base: string,
+ *     subs_url: string,
+ *     revoked_url: string,
+ *     scopes: list<string>,
+ *     protocols: list<string>,
+ *     size_options: list<int>,
+ *     size_max: int,
+ *     id_max_len: int,
+ *     page_size: int,
+ *     offline_page_size: int,
+ *     revoke_note: string,
+ *     dashboard_url: string
+ * } $config
+ */
+
+$h = static fn (mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
+
+// 注入 JSON：除常规转义外必须加 JSON_HEX_TAG —— 否则配置里若出现 `</script`
+// 会直接闭合 script 标签，把后面的内容当 HTML 解析（XSS 面）。
+$json = json_encode(
+    $config,
+    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+    | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+);
+
+// scope 的中文标签。故意写在这里而不是配置里：它是**文案**（随 UI 改），
+// 而 `$config['scopes']` 是**取值**（随后端常量改），两者漂移的代价不同。
+$scopeLabels = [
+    'online' => '仅在线（默认，不 SCAN）',
+    'retained' => '仅已断开但保留（需 SCAN）',
+    'all' => '在线 + 保留（需 SCAN）',
+];
+?>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title><?= $h($title) ?></title>
+    <link rel="stylesheet" href="/static/session.css">
+</head>
+<body>
+
+<noscript>
+    <div class="note bad">
+        <strong>本页需要 JavaScript。</strong>
+        会话数据由浏览器按需向
+        <span class="mono"><?= $h($config['list_url']) ?></span> 取数；禁用 JS 时只能看到骨架。
+        若需要免 JS 的只读视图，请访问主项目 Dashboard
+        <a href="<?= $h($config['dashboard_url']) ?>" target="_blank" rel="noopener"><?= $h($config['dashboard_url']) ?></a>。
+    </div>
+</noscript>
+
+<div class="head">
+    <h1><?= $h($title) ?></h1>
+    <span class="meta">
+        <b id="meta-mode">按需取数</b>（无定时器，不轮询）
+        · <a href="/dashboard">健康总览</a>
+        · <a href="/app/admin" rel="noopener">后台首页</a>
+        · <a href="<?= $h($config['dashboard_url']) ?>" target="_blank" rel="noopener">主项目 Dashboard ↗</a>
+    </span>
+</div>
+
+<div class="note info">
+    本页<strong>全部只读</strong>：没有踢线 / 撤销 / 解绑 / 清空离线队列的入口（那些属后续阶段的写操作）。
+    数据直读 Redis，读不到只可能是 DB / PREFIX 配错，不会是「权限不足」。
+</div>
+
+<h2>筛选 <span class="hint">scope=online 走 <span class="mono">SMEMBERS</span> + 一次批量 <span class="mono">HGETALL</span>，<b>不 SCAN</b>；其余两种会 SCAN 并回显截断状态</span></h2>
+<div class="form">
+    <label for="f-scope">范围
+        <select id="f-scope">
+            <?php foreach ($config['scopes'] as $scope): ?>
+                <option value="<?= $h($scope) ?>"><?= $h($scopeLabels[$scope] ?? $scope) ?></option>
+            <?php endforeach; ?>
+        </select>
+    </label>
+    <label for="f-protocol">协议
+        <select id="f-protocol">
+            <option value="">全部</option>
+            <?php foreach ($config['protocols'] as $protocol): ?>
+                <option value="<?= $h($protocol) ?>"><?= $h($protocol) ?></option>
+            <?php endforeach; ?>
+        </select>
+    </label>
+    <label for="f-uid">uid（可选，仅在该范围内过滤）
+        <input id="f-uid" type="text" autocomplete="off" placeholder="留空 = 不过滤">
+    </label>
+    <label for="f-size">每页
+        <select id="f-size">
+            <?php foreach ($config['size_options'] as $size): ?>
+                <option value="<?= $h($size) ?>"><?= $h($size) ?></option>
+            <?php endforeach; ?>
+        </select>
+    </label>
+    <button id="btn-query" class="btn primary" type="button">查询</button>
+    <button id="btn-reload" class="btn" type="button">重新取数</button>
+    <button id="btn-reset" class="btn" type="button">重置</button>
+    <span class="hint">uid / clientId 长度上限 <b id="f-idmax">—</b> <strong>字节</strong>（UTF-8，与后端 <span class="mono">strlen()</span> 同口径），上限外直接拒发请求</span>
+</div>
+<div id="form-note"></div>
+
+<h2>会话列表 <span class="hint">在线判据 = <span class="mono">online:clients</span> 的成员资格。<span class="mono">offline_at</span> 只是「最近一次断开时间」，是<strong>粘性字段</strong>（主项目从不清理），故不作为在线判据</span></h2>
+<div id="list-status"></div>
+<table>
+    <thead>
+    <tr>
+        <th>状态</th>
+        <th>clientId</th>
+        <th>uid</th>
+        <th>device_id</th>
+        <th>协议</th>
+        <th>客户端地址</th>
+        <th>网关</th>
+        <th class="num">连接时长</th>
+        <th class="num">空闲</th>
+        <th class="num">最后断开</th>
+        <th>操作</th>
+    </tr>
+    </thead>
+    <tbody id="tb-sessions"></tbody>
+</table>
+<div class="pager">
+    <button id="btn-prev" class="btn" type="button">上一页</button>
+    <span id="pager-info">—</span>
+    <button id="btn-next" class="btn" type="button">下一页</button>
+</div>
+
+<h2>反查 <span class="hint">按 uid 走 <span class="mono">uid:clients:{uid}</span>（该索引 <b>不随断开清理</b>，故能看到保留会话）；按设备走 <span class="mono">device:client:{deviceId}</span>（单对一定向，同设备只保留一个 clientId）</span></h2>
+<div class="form">
+    <label for="l-uid">uid
+        <input id="l-uid" type="text" autocomplete="off" placeholder="精确匹配">
+    </label>
+    <button id="btn-lookup-uid" class="btn primary" type="button">按 uid 反查</button>
+    <label for="l-device">deviceId
+        <input id="l-device" type="text" autocomplete="off" placeholder="精确匹配">
+    </label>
+    <button id="btn-lookup-device" class="btn primary" type="button">按设备反查</button>
+</div>
+<div id="lookup-status"></div>
+<!--
+  反查结果表与列表**同列同渲染器**：两个端点返回的都是 `SessionInspector::byIndex()`
+  产出的同一结构（SessionList），列不同只会让渲染代码分叉、并让「详情」入口在某一侧缺失。
+-->
+<table>
+    <thead>
+    <tr>
+        <th>状态</th>
+        <th>clientId</th>
+        <th>uid</th>
+        <th>device_id</th>
+        <th>协议</th>
+        <th>客户端地址</th>
+        <th>网关</th>
+        <th class="num">连接时长</th>
+        <th class="num">空闲</th>
+        <th class="num">最后断开</th>
+        <th>操作</th>
+    </tr>
+    </thead>
+    <tbody id="tb-lookup"></tbody>
+</table>
+
+<h2>订阅关系 <span class="hint">两个索引相互独立：<span class="mono">subscribe:uid:{uid}</span> 与 <span class="mono">subscribe:topic:{topic}</span>。两处不一致属主项目写入侧问题，本页只做只读呈现，不静默对齐</span></h2>
+<div class="form">
+    <label for="s-uid">uid
+        <input id="s-uid" type="text" autocomplete="off" placeholder="看它订阅了哪些主题">
+    </label>
+    <label for="s-topic">topic
+        <input id="s-topic" type="text" autocomplete="off" placeholder="看该主题有哪些订阅者">
+    </label>
+    <button id="btn-query-subs" class="btn primary" type="button">查询订阅</button>
+    <span class="hint">两者至少填一个</span>
+</div>
+<div id="subs-status"></div>
+<table>
+    <thead>
+    <tr><th>方向</th><th>对象</th><th>数量</th><th>明细</th></tr>
+    </thead>
+    <tbody id="tb-subs"></tbody>
+</table>
+
+<h2>Token 撤销名单 <span class="hint">键为 <span class="mono">auth:revoked:{指纹}</span>，无索引键只能 SCAN，故必带截断标记</span></h2>
+<div class="form">
+    <button id="btn-load-revoked" class="btn" type="button">加载撤销名单</button>
+    <span class="hint">只为核对指纹，不提供任何反解入口</span>
+</div>
+<div id="revoke-status"></div>
+<table>
+    <thead>
+    <tr><th>指纹</th><th class="num">TTL</th><th>性质</th></tr>
+    </thead>
+    <tbody id="tb-revoked"></tbody>
+</table>
+
+<!--
+  详情抽屉：**页内展开**，不做整页跳转。
+  URL 由 JS 用 history.replaceState 同步（?client=...&scope=...&page=...），
+  因此「刷新 / 复制链接 / 后退」都能还原到同一条会话 —— 这也是不整页跳转的前提。
+-->
+<div id="drawer" class="drawer">
+    <div class="drawer-mask" id="drawer-mask"></div>
+    <div class="drawer-panel">
+        <div class="drawer-h">
+            <span class="mono" id="drawer-title">未选中会话</span>
+            <button id="btn-drawer-close" class="btn" type="button">关闭</button>
+        </div>
+        <div id="drawer-status"></div>
+
+        <h3>会话字段 <span class="hint">缺失即显示 <span class="mono">—</span></span></h3>
+        <table>
+            <thead><tr><th>字段</th><th>值</th></tr></thead>
+            <tbody id="tb-drawer-fields"></tbody>
+        </table>
+
+        <h3>订阅主题 <span class="hint" id="drawer-subs-hint">—</span></h3>
+        <div id="drawer-subs" class="chips"></div>
+
+        <h3>
+            离线队列
+            <span class="hint">index 0 为最早一条 · 保留期由主项目 <span class="mono">OFFLINE_TTL</span> 决定</span>
+            <span class="hint" id="offline-page-info">—</span>
+        </h3>
+        <div id="offline-status"></div>
+        <table>
+            <thead><tr><th class="num">#</th><th>消息</th></tr></thead>
+            <tbody id="tb-offline"></tbody>
+        </table>
+        <div class="pager">
+            <button id="btn-offline-prev" class="btn" type="button">上一页</button>
+            <button id="btn-offline-next" class="btn" type="button">下一页</button>
+        </div>
+    </div>
+</div>
+
+<script type="application/json" id="session-config"><?= $json ?></script>
+<script src="/static/session.js"></script>
+</body>
+</html>
