@@ -25,6 +25,7 @@
 
 namespace GatewayPush\Common;
 
+use RuntimeException;
 use Throwable;
 
 /**
@@ -104,7 +105,7 @@ class Logger
      *
      * @return void
      *
-     * @throws \RuntimeException 日志目录无法创建时抛出
+     * @throws RuntimeException 日志目录无法创建时抛出
      */
     public static function init(array $config = [])
     {
@@ -115,7 +116,7 @@ class Logger
             0o755,
             true
         ) && !is_dir($concurrentDirectory)) {
-            throw new \RuntimeException(sprintf('Directory "%s" was not created', $concurrentDirectory));
+            throw new RuntimeException(sprintf('Directory "%s" was not created', $concurrentDirectory));
         }
         self::$processTag = 'pid:' . getmypid();
     }
@@ -289,7 +290,7 @@ class Logger
             date('Y-m-d H:i:s'),
             strtoupper($level),
             self::$processTag,
-            (string)$message,
+            $message,
             $context ? ' ' . self::stringifyContext($context) : ''
         );
 

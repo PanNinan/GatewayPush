@@ -50,12 +50,6 @@ parameters:
 			path: client/tests/E2E/ClientE2E.php
 
 		-
-			message: '#^Casting to string something that''s already string\.$#'
-			identifier: cast.useless
-			count: 1
-			path: client/tests/E2E/ClientE2E.php
-
-		-
 			message: '#^Strict comparison using \=\=\= between \*NEVER\* and 0 will always evaluate to false\.$#'
 			identifier: identical.alwaysFalse
 			count: 1
