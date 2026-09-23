@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         cacheDirectory="runtime/.phpunit.cache"
+         displayDetailsOnTestsThatTriggerWarnings="true"
+         displayDetailsOnTestsThatTriggerDeprecations="true"
+         failOnWarning="true"
+         failOnNotice="true"
+         failOnDeprecation="true"
+         beStrictAboutOutputDuringTests="true">
+    <testsuites>
+        <testsuite name="unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+    </testsuites>
+
+    <!--
+      说明：`tests/Manual/` 下是需真实服务在线的手工脚本（如 p0_acceptance.php），
+      刻意**不纳入**套件，避免 CI 因主项目未启动而变红。
+      其判据口径与主项目一致：环境不可用时标 SKIP 而非 FAIL。
+    -->
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+</phpunit>

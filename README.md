@@ -1000,7 +1000,7 @@ tar -xzf runtime/logs/archive/2026-09.tar.gz api_2026-09-01.log     # 只取某�
 | -------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `API_ENABLE`         | `true`                  |                                                                                                                                                                  |
 | `API_LISTEN`         | `http://127.0.0.1:8290` | 生产应仅监听内网地址或置于反向代理之后                                                                                                                                              |
-| `API_SECRET`         | 空                       | 接口密钥；留空回退复用 `AUTH_SECRET`                                                                                                                                        |
+| `API_SECRET`         | 空                       | 接口密钥；留空回退复用 `AUTH_SECRET`。<br>⚠️ 本密钥**同时是管理面凭证**：持有它即可调用运维动作 `kick` / `revoke` / `unbind` / `purge_offline`（踢线 / 撤销 Token / 解绑设备 / 清空离线队列），**不得下发给业务调用方**；改动 `API_LISTEN` 为非回环地址前须复查「对外接口文档」§9.4                                                                                                                                        |
 | `API_SIGN_ENABLE`    | `true`                  | 接口验签开关。**仅供本地调试**：设为 `false` 后请求无需 `X-Timestamp` / `X-Sign`。<br>⚠️ 关闭**只在监听回环地址时生效**；监听 `0.0.0.0` / 具体网卡 / 域名时该开关被忽略并强制验签（`start.php check` 与启动日志都会告警）。<br>⚠️ 与 `AUTH_ENABLE` / `AUTH_SIGN_ENABLE` **无关** —— 那两个是 WS/UDP 报文层开关，对 HTTP 接口无任何影响；唯一关联是 `API_SECRET` 留空时复用 `AUTH_SECRET`（只共用密钥，不共用开关）                                                                                  |
 | `API_SIGN_TTL`       | `300`                   | 请求时间戳有效窗口（秒），防重放；0 = 关闭校验                                                                                                                                        |
 | `API_RATE_LIMIT`     | `600`                   | 单 IP 每分钟请求上限；0 = 不限                                                                                                                                              |
@@ -1236,7 +1236,8 @@ Token 不可信时返回空串（**拒绝放行**），而不是回退到报文�
   "data": { "action": "report", "params": { "topic": "etc.pass", "count": 3 } } }
 ```
 
-内置 7 个动作（声明于 `config/actions.php`）。同一个动作可经**三条通道**触发，  
+内置 **11 个**动作（声明于 `config/actions.php`）：7 个面向客户端 + **4 个运维动作**（P4 新增，
+`kick` / `revoke` / `unbind` / `purge_offline`）。同一个动作可经**三条通道**触发，  
 差异全部由声明表达，处理器代码不含任何通道判断：
 
 | 动作            | 参数                                                                                       | 回执方式（WS / UDP / HTTP）            | HTTP 通道 | 回执内容                                                                                      |
@@ -1248,6 +1249,9 @@ Token 不可信时返回空串（**拒绝放行**），而不是回退到报文�
 | `unsubscribe` | `topic`(同上)                                                                              | `sync` / `sync` / `sync`         | ✅       | `{action, uid, topic, subscribers, at}`                                                   |
 | `topics`      | 无                                                                                        | `sync` / `sync` / `sync`         | ✅       | `{action, uid, topics[], count, at}`                                                      |
 | `notify`      | `value`(json)、`msg_id`(string, ≤64)、`offline_mode`(`""`/`drop`/`queue`)                  | `sync` / `sync` / `sync`         | ✅       | `{action, target, msg_id, queued, at}`                                                    |
+| `kick`        | `client_id`(≤128) 与 `uid`(≤64) **二选一**、`reason`(≤128, 可选)                              | ❌ / ❌ / `sync`（**仅限 HTTP**）    | ✅       | `{action, uid, requested, closed, skipped, failed, skipped_ids[], failed_ids[], reason, at, note}` |
+| `revoke`      | `token`(**必填**, ≤2048, 只接受明文)、`ttl`(int, 0~~2592000)                                   | ❌ / ❌ / `sync`（**仅限 HTTP**）    | ✅       | `{action, fingerprint, ttl, at, note}`                                                    |
+| `unbind`      | `uid`(**必填**, ≤64)                                                                      | ❌ / ❌ / `sync`（**仅限 HTTP**）    | ✅       | `{action, uid, unbound, at, note}`                                                        |
 
 **三条通道的回执落地方式完全不同**：
 
@@ -1270,6 +1274,35 @@ Token 不可信时返回空串（**拒绝放行**），而不是回退到报文�
 HTTP 调用方持有接口密钥即代表任意 uid 发起动作（显式授权），故采用「默认拒绝、逐动作  
 开启」的白名单语义。白名单有两道防线：Api 侧入队前拦截（`400` / `4006`），  
 `ActionRunner::run()` 内再拦一次（动作队列是 Redis 键，任何持有 Redis 凭证者都可直接写入任务）。
+
+**两个方向的通道白名单（新增动作必读）**：
+
+| 声明字段 | 方向 | 缺省 | 用途 |
+| ---- | ---- | ---- | ---- |
+| `http => true` | **额外**开放 HTTP | 不开放 | 「客户端动作不该被 HTTP 调」 |
+| `channels => [...]` | **只**在这些通道开放 | 全通道放行 | 「运维动作不该被客户端调」 |
+
+⚠️ **`http` 是单向的**，它只表达「额外开放 HTTP」，**不表达「仅限 HTTP」** ——
+WS / UDP 侧**凡注册即可用**。因此 `kick` / `revoke` / `unbind` / `purge_offline` 四个运维动作**必须**
+同时声明 `channels => [ActionContext::CHANNEL_HTTP]`；漏写即等于把管理面能力开放给所有
+终端用户（任何持自己合法 Token 的客户端都能经 WS 踢掉任意 `client_id`），且**不报错、不告警**。
+该约束已由 `tests/Unit/OpsActionContractTest.php` 钉成硬断言。
+
+**三个运维动作的语义边界**（最易误解，调用前必读）：
+
+| 动作 | 做什么 | **不做什么** |
+| ---- | ---- | ---- |
+| `kick` | 断开 TCP 连接 | **不撤 Token** —— 触发 `markOffline()` **保留会话供重连**，客户端可立即重连成功 |
+| `revoke` | 把 Token 加进撤销名单 | **不断开已有连接** —— WS 侧该 Token 的下一次鉴权才回 `4001`，UDP 侧下一个包被丢弃 |
+| `unbind` | 删除 `auth:bind:{uid}` | **不踢线** —— 已在线的旧设备不受影响，仍在线、仍可推送 |
+
+⇒ 「踢下线且禁止重连」= **先 `revoke`、后 `kick`**（顺序反了时客户端正好落在重连窗口内，
+会用同一 Token 重连成功，表现为「明明执行了却没效果」）。
+UDP **无踢线**（无连接实体，`closeClient()` 对其无效），该形态计入 `skipped` 而非 `failed`。
+
+⚠️ 三个运维动作的 `auth` 显式为 `false`：它们的 uid 是**操作对象**（入参），不是调用方身份。
+调用方身份由 HTTP 接口密钥担保 —— **持有 `API_SECRET` 即拥有踢线 / 撤销 / 解绑权**
+（详见「对外接口文档」§9.4「管理面凭证」，该等式在什么条件下变成真实提权面也写在那节）。
 
 **动作级参数校验**（`ParamValidator`，白名单语义）：
 

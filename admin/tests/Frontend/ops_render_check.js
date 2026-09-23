@@ -1,0 +1,283 @@
+/**
+ * GatewayPush 运维页前端渲染校验（P5）。
+ *
+ * 与 session_render_check.js 同一套机制：假 DOM + 假 window + 假 fetch，
+ * 驱动 ops.js 走完全部交互路径。断言围绕三类「静默失效」：
+ * 1. 取数挂了留白 / 不摊开 —— 三源探测的每个字段必须可见（含「—」的未知态）；
+ * 2. 权限显隐 —— 无权限区块整体隐藏而不是渲染一片残骸；
+ * 3. XSS —— 服务端下发的任何文本只走 textContent。
+ * 4. 零定时器 —— 运维页没有轮询，「重新探测」必须是显式点击。
+ *
+ * 运行：node tests/Frontend/ops_render_check.js（无需浏览器 / 服务端）
+ */
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+
+const results = [];
+let fatal = null;
+
+function check(name, got, want) {
+    const ok = got === want;
+    results.push({ ok, name, got: JSON.stringify(got), want: JSON.stringify(want) });
+}
+
+function checkHas(name, got, want) {
+    const ok = String(got).indexOf(want) >= 0;
+    results.push({ ok, name, got: JSON.stringify(String(got)), want: JSON.stringify(want) });
+}
+
+const VIEW = path.join(__dirname, '..', '..', 'app', 'view', 'ops', 'index.html');
+const SCRIPT = path.join(__dirname, '..', '..', 'public', 'static', 'ops.js');
+
+function read(p) {
+    try { return fs.readFileSync(p, 'utf8'); } catch (e) { return ''; }
+}
+
+const viewSrc = read(VIEW);
+const scriptSrc = read(SCRIPT);
+if (!viewSrc) { fatal = '视图 ops/index.html 不可读'; }
+if (!scriptSrc) { fatal = 'static/ops.js 不可读'; }
+
+const CODE = scriptSrc;
+
+/* ---------------- 静态检查 ---------------- */
+
+if (!fatal) {
+    check('静态：ops.js 无 innerHTML 写入（XSS 纪律）', /\.innerHTML\s*=/.test(CODE), false);
+    check('静态：ops.js 无定时器（重新探测是显式点击，不是轮询）',
+        /\b(setTimeout|setInterval)\s*\(/.test(CODE), false);
+    check('静态：视图只注入一份 config JSON',
+        (viewSrc.match(/application\/json" id="ops-page-config/g) || []).length, 1);
+}
+
+/* ---------------- 假 DOM 环境（同 session_render_check.js 的机制，裁剪版） ---------------- */
+
+const EVIL = '<img src=x onerror=alert(1)>';
+
+function createEnv(config) {
+    const byId = {};
+    const rec = {
+        timerCalls: [],
+        fetchUrls: [],
+        missingResponses: [],
+        missingClicks: [],
+    };
+    // 挂起队列模型：先 boot（首屏自动取数会在 respond 之前发出）再 respond，
+    // 故请求先记 pending，respond 时按前缀 flush。与 session_render_check.js 同机制。
+    const pending = [];
+    const responses = {};
+
+    function flush() {
+        const due = pending.splice(0, pending.length);
+        due.forEach(function (item) {
+            const key = Object.keys(responses).find(function (k) { return item.url.indexOf(k) === 0; });
+            if (key === undefined) {
+                rec.missingResponses.push(item.url);
+                return;
+            }
+            const payload = responses[key];
+            item.resolve({ json: function () { return Promise.resolve(payload); } });
+        });
+    }
+
+    function makeEl(tag) {
+        const node = {
+            nodeType: 1, tagName: tag, className: '', childNodes: [], parentNode: null,
+            hidden: false, value: '', disabled: false,
+            listeners: {},
+            textContent: '',
+            appendChild(child) {
+                if (child) {
+                    this.childNodes.push(child);
+                    child.parentNode = this;
+                }
+                return child;
+            },
+            removeChild(child) {
+                const i = this.childNodes.indexOf(child);
+                if (i >= 0) { this.childNodes.splice(i, 1); }
+                return child;
+            },
+            addEventListener(type, fn) { (this.listeners[type] || (this.listeners[type] = [])).push(fn); },
+        };
+        Object.defineProperty(node, 'textContent', {
+            get() {
+                // 递归拼：行内嵌 span/th/td 的层级文本必须能汇总出来（S1 的表格行依赖它）
+                return node.childNodes.map(function collect(c) {
+                    if (c.nodeType === 3) { return c.textContent; }
+                    if (c.nodeType === 1) {
+                        return c.childNodes.map(collect).join('');
+                    }
+                    return '';
+                }).join('');
+            },
+            set(v) {
+                this.childNodes = [{ nodeType: 3, textContent: String(v), parentNode: this }];
+            },
+        });
+        return node;
+    }
+
+    function container(id) {
+        const node = makeEl('div');
+        byId[id] = node;
+        return node;
+    }
+
+    // 视图骨架的 DOM id（与 ops/index.html 对齐）
+    ['roles-status', 'tb-roles', 'roles-problems', 'log-status', 'log-output',
+        'rotation-status', 'tb-secrets', 'rotation-steps',
+        'btn-roles-refresh', 'btn-log-load', 'btn-rotation-load',
+        'log-role', 'log-date', 'log-lines', 'log-keyword', 'ops-page-config',
+        'sec-roles', 'sec-logs', 'sec-rotation'].forEach(container);
+
+    byId['log-role'].value = 'api';
+    byId['log-lines'].value = '200';
+    byId['log-keyword'].value = '';
+    byId['log-date'].value = '';
+
+    const documentStub = {
+        getElementById(id) { return byId[id] || null; },
+        createElement(tag) { return makeEl(tag); },
+        createTextNode(t) { return { nodeType: 3, textContent: String(t), parentNode: null }; },
+        addEventListener() {},
+    };
+
+    const windowStub = {
+        location: { search: '', pathname: '/ops' },
+        history: { replaceState() {} },
+        setTimeout(fn, ms) { rec.timerCalls.push(['setTimeout', Number(ms)]); return 0; },
+        setInterval(fn, ms) { rec.timerCalls.push(['setInterval', Number(ms)]); return 0; },
+        clearTimeout() {}, clearInterval() {},
+        requestAnimationFrame() { rec.timerCalls.push(['requestAnimationFrame', 0]); return 0; },
+    };
+
+    const fetchStub = function (url) {
+        rec.fetchUrls.push(String(url));
+        return new Promise(function (resolve) {
+            pending.push({ url: String(url), resolve: resolve });
+        });
+    };
+
+    const env = {
+        rec,
+        config,
+        respond(pattern, payload) {
+            responses[pattern] = payload;
+            flush();
+        },
+        click(id) {
+            const n = byId[id];
+            const fns = n && n.listeners && n.listeners.click;
+            if (!fns || !fns.length) { rec.missingClicks.push(id); return; }
+            fns.forEach(function (f) { f(); });
+            flush(); // 点击触发的取数发生在 respond 之后 —— flush 挂起队列
+        },
+        text(id) { return byId[id] ? byId[id].textContent : ''; },
+        rows(id) { return byId[id] ? byId[id].childNodes.slice() : []; },
+        el(id) { return byId[id] || null; },
+    };
+
+    byId['ops-page-config'].textContent = JSON.stringify(config);
+
+    const run = new Function('document', 'window', 'fetch', CODE);
+    run(documentStub, windowStub, fetchStub);
+
+    return env;
+}
+
+function rolesPayload(extra) {
+    return {
+        code: 0, msg: 'ok',
+        data: Object.assign({
+            roles: [], netstat_available: true, roles_cmd_available: true,
+            health: { ok: true }, problems: [],
+        }, extra || {}),
+    };
+}
+
+const CONFIG = {
+    logs_url: '/api/ops/logs',
+    roles_url: '/api/ops/roles',
+    rotation_url: '/api/ops/rotation',
+    log_roles: ['register', 'gateway', 'udp', 'business', 'api', 'dashboard', 'error'],
+    tail_max: 500,
+    perms: { logs: true, roles: true, rotation: true },
+};
+
+async function main() {
+    if (fatal) { return; }
+
+    /* ---------------- S1 三源摊开 ---------------- */
+
+    const env = createEnv(CONFIG);
+    env.respond('/api/ops/roles', rolesPayload({
+        roles: [
+            { role: 'register', enabled: true, listening: true, listen_count: 1, health_ok: null },
+            { role: 'gateway', enabled: true, listening: true, listen_count: 2, health_ok: null },
+            { role: 'business', enabled: true, listening: null, listen_count: 0, health_ok: null },
+        ],
+        problems: ['端口 8282（gateway）有 2 个监听 —— 疑似两套实例叠加（红线 ㊳：Windows 不拒绝重复 bind，表现为「e2e 随机失败」而非报错）'],
+    }));
+    await new Promise(function (r) { setTimeout(r, 0); });
+
+    check('S1 首屏自动探测（roles 是本页核心问题）', env.rec.fetchUrls.length > 0, true);
+    checkHas('S1 角色名可见', env.text('tb-roles'), 'gateway');
+    checkHas('S1 疑似重复实例的监听行数摊开', env.text('tb-roles'), '2');
+    checkHas('S1 business 无端口 → 未知态用 —（不假装说没监听）', env.text('tb-roles'), '—');
+    checkHas('S1 ★ problems 原样展示（红线 ㊳ 提示不删不改写）', env.text('roles-problems'), '疑似两套实例叠加');
+    checkHas('S1 汇总条给出问题计数', env.text('roles-status'), '1 个不一致');
+
+    /* ---------------- S2 权限显隐 + 零定时器 ---------------- */
+
+    const env2 = createEnv(Object.assign({}, CONFIG, {
+        perms: { logs: false, roles: false, rotation: false },
+    }));
+    check('S2 无权限：三个区块都不再自动取数',
+        env2.rec.fetchUrls.length, 0);
+
+    check('S2 ★ 全程未使用任何定时器', env.rec.timerCalls.length, 0);
+
+    /* ---------------- S3 轮换引导摊开 + XSS ---------------- */
+
+    env.respond('/api/ops/rotation', {
+        code: 0, msg: 'ok',
+        data: {
+            secrets: [
+                { name: 'AUTH_SECRET', scope: 'WS / UDP', masked: 'ab12****ef34', configured: true },
+                { name: 'API_SECRET / ADMIN_API_SECRET', scope: 'HTTP + 管理面', masked: '', configured: false },
+            ],
+            steps: [{ title: '1. 评估影响面', detail: EVIL }],
+        },
+    });
+    env.click('btn-rotation-load');
+    await new Promise(function (r) { setTimeout(r, 0); });
+
+    checkHas('S3 密钥现状（前4后4）可见', env.text('tb-secrets'), 'ab12****ef34');
+    checkHas('S3 未配置的密钥如实说「未配置」（不打成掩码制造假象）', env.text('tb-secrets'), '未配置');
+    checkHas('S3 步骤清单渲染', env.text('rotation-steps'), '1. 评估影响面');
+    check('S3 ★ detail 里的恶意串不产生任何元素（textContent 路径）',
+        env.text('rotation-steps').indexOf('<img') >= 0, true);
+}
+
+main().then(function () {
+    const failed = results.filter(function (r) { return !r.ok; });
+    results.forEach(function (r, i) {
+        const no = String(i + 1).padStart(3, '0');
+        console.log((r.ok ? 'PASS ' : 'FAIL ') + no + ' ' + r.name);
+        if (!r.ok) {
+            console.log('         got  = ' + r.got);
+            console.log('         want = ' + r.want);
+        }
+    });
+    console.log('');
+    if (fatal) { console.log('⚠ 校验中断：' + fatal); }
+    console.log('共 ' + results.length + ' 项，PASS ' + (results.length - failed.length) + '，FAIL ' + failed.length);
+    process.exit(failed.length + (fatal ? 1 : 0) ? 1 : 0);
+}).catch(function (e) {
+    const stack = (e && e.stack ? e.stack : String(e)).split('\n').slice(0, 3).join(' | ');
+    console.log('⚠ 校验中断：' + stack);
+    process.exit(1);
+});

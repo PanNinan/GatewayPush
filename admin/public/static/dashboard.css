@@ -1,0 +1,138 @@
+/*
+ * GatewayPush 后台 · 健康总览页样式
+ *
+ * 与 .js 一样由 webman 的静态中间件直接从 public/ 提供（URL /static/dashboard.css），
+ * 因此**不带权限校验**（静态资源不含任何数据，无需鉴权）。⚠ 不要把任何密钥或
+ * 内网地址写进本文件。
+ *
+ * 配色沿用 P0 的调色板，保证 P0/P1 两版观感一致。
+ */
+
+:root {
+    --bg: #f4f6f9;
+    --card: #fff;
+    --line: #e6e9ef;
+    --fg: #1f2430;
+    --muted: #6b7280;
+    --ok: #16a34a;
+    --bad: #dc2626;
+    --warn: #d97706;
+    --accent: #2d8cf0;
+    --ok-bg: #e8f7ee;
+    --bad-bg: #fdeced;
+    --warn-bg: #fdf4e3;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    padding: 20px 24px 40px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 14px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+h1 { font-size: 19px; margin: 0; }
+h2 { font-size: 15px; margin: 26px 0 10px; }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.hint { color: var(--muted); font-size: 12px; font-weight: 400; }
+.unit { color: var(--muted); font-size: 12px; }
+.mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+
+/* ---- 头部 ---- */
+.head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-bottom: 4px; }
+.head .meta { color: var(--muted); font-size: 12px; }
+
+.pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: #eef2f7;
+    font-size: 12px;
+}
+
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--muted); }
+.dot.ok { background: var(--ok); }
+.dot.bad { background: var(--bad); }
+
+/* ---- 卡片 ---- */
+.cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
+.card .k { color: var(--muted); font-size: 12px; }
+.card .v { font-size: 24px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.card .v small { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 2px; }
+.card .sub { color: var(--muted); font-size: 12px; min-height: 18px; }
+
+/* ---- 表格 ---- */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+th, td { padding: 7px 12px; text-align: left; border-bottom: 1px solid var(--line); font-size: 13px; }
+th { background: #fafbfd; color: var(--muted); font-weight: 500; }
+tr:last-child td { border-bottom: none; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.tag { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 12px; white-space: nowrap; }
+.tag.ok { background: var(--ok-bg); color: var(--ok); }
+.tag.bad { background: var(--bad-bg); color: var(--bad); }
+.tag.warn { background: var(--warn-bg); color: var(--warn); }
+.tag.mute { background: #eef2f7; color: var(--muted); }
+
+/* ---- 提示条 ---- */
+.note { margin: 8px 0 0; padding: 10px 14px; border-radius: 8px; font-size: 13px; }
+.note.bad { background: var(--bad-bg); color: #8a1c1c; border: 1px solid #f6c9cb; }
+.note.warn { background: var(--warn-bg); color: #7a4c05; border: 1px solid #f0dcae; }
+.note.info { background: #eef5fd; color: #1c4a7a; border: 1px solid #cfe2f6; }
+#alerts .note:first-child { margin-top: 14px; }
+#alerts .note strong { margin-right: 4px; }
+
+.empty { color: var(--muted); padding: 10px 12px; font-size: 13px; background: var(--card);
+         border: 1px solid var(--line); border-radius: 8px; }
+
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; align-items: start; }
+
+/* ---- 趋势图（自绘 SVG，零依赖）---- */
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+
+.chart { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+.chart-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 12px; color: var(--muted); }
+.chart-h b { font-size: 15px; color: var(--fg); font-variant-numeric: tabular-nums; }
+.chart-b { height: 88px; margin-top: 6px; }
+.chart-b svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.chart .axis { stroke: var(--line); stroke-width: 1; }
+.chart .area { fill: var(--accent); opacity: 0.10; }
+.chart .line { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+
+/* ---- 队列深度横条 ---- */
+.bars { display: grid; gap: 8px; margin-bottom: 12px; }
+
+.bar { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; }
+.bar-h { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--muted); }
+.bar-h b { color: var(--fg); font-variant-numeric: tabular-nums; }
+.bar-track { height: 7px; margin-top: 6px; border-radius: 4px; background: #eef2f7; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 4px; background: var(--ok); }
+.bar-fill.warn { background: var(--warn); }
+.bar-fill.bad { background: var(--bad); }
+
+/* ---- 进程行 ---- */
+td .jobs { color: var(--muted); font-size: 12px; }
+td .jobs span { margin-right: 10px; white-space: nowrap; }
+td .jobs span b { color: var(--fg); font-variant-numeric: tabular-nums; }

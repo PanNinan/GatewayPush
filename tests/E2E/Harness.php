@@ -55,12 +55,13 @@ final class Harness
         'N' => 'UDP 通道业务动作（echo 回执 / report 按声明静默）',
         'O' => '订阅与广播闭环（subscribe -> enqueueTopic -> push）',
         'P' => 'HTTP 动作调用（POST /action -> BusinessWorker -> 回执）',
+        'Q' => '运维动作通道隔离（★ 已鉴权客户端经 WS 调 kick/revoke/unbind/purge_offline -> 4006）',
     ];
 
     /**
      * 参与超时保护的用例（H 为事件循环前同步执行，不纳入）
      */
-    public const ASYNC_CASES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'I', 'J', 'K', 'L', 'M', 'N', 'O'];
+    public const ASYNC_CASES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'Q'];
 
     /**
      * app.php 配置（Redis 等），供 RedisClient::init 使用
@@ -554,7 +555,7 @@ final class Harness
         // H 使用基准 uid 的 -H 后缀，身份在用例内即时签发
         $this->ctx['H'] = ['uid' => $uid . '-H'];
 
-        $suffixes = ['E', 'F', 'G', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P'];
+        $suffixes = ['E', 'F', 'G', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q'];
         foreach ($suffixes as $case) {
             $cu = $uid . '-' . $case;
             $cd = $deviceId . '-' . $case;

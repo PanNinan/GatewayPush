@@ -33,6 +33,15 @@
  *               HTTP 调用方持有接口密钥即代表任意 uid 发起动作，属显式授权，
  *               故采用「默认拒绝、逐动作开启」的白名单语义。
  *               依赖 clientId 语义的动作（如 session）不应开启。
+ *               ⚠ 本字段是**单向**的：它只表达「额外开放 HTTP」，
+ *               不表达「仅限 HTTP」。WS / UDP 侧**凡注册即可用**。
+ *   channels    **反向**通道白名单：`[ActionContext::CHANNEL_HTTP]` 表示
+ *               该动作**只**在 HTTP 通道开放，WS / UDP 一律回 4006。
+ *               缺省（不声明）= 全通道放行，与既有动作完全向后兼容。
+ *               ⚠ 运维动作（kick / revoke / unbind）**必须**声明本字段 ——
+ *               否则任何持自己合法 Token 的终端客户端都能经 WS 调用，
+ *               属终端提权（管理面能力开放给所有终端用户）。
+ *               判定入口：`ActionRunner::channelExposed()`（执行侧裁定）。
  *   timeout     回执超时（秒），处理器未在时限内回执则记指标 + 告警 + 回 5000；
  *               0 表示不启用保护。经 HTTP 调用时必须小于 API_ACTION_WAIT_MS，
  *               否则 Api 会先超窗返回 202。
@@ -44,11 +53,15 @@
  */
 
 use GatewayPush\Business\Action\EchoAction;
+use GatewayPush\Business\Action\KickAction;
 use GatewayPush\Business\Action\NotifyAction;
+use GatewayPush\Business\Action\PurgeOfflineAction;
 use GatewayPush\Business\Action\ReportAction;
+use GatewayPush\Business\Action\RevokeTokenAction;
 use GatewayPush\Business\Action\SessionAction;
 use GatewayPush\Business\Action\SubscribeAction;
 use GatewayPush\Business\Action\TopicsAction;
+use GatewayPush\Business\Action\UnbindDeviceAction;
 use GatewayPush\Business\Action\UnsubscribeAction;
 use GatewayPush\Business\ActionContext;
 use GatewayPush\Common\Env;
@@ -163,6 +176,67 @@ return [
                     'enum'    => ['', 'drop', 'queue'],
                     'default' => '',
                 ],
+            ],
+            'http'        => true,
+        ],
+
+        /* ---------------------------------------------------------------
+         | 运维动作类
+         |
+         | 三条共同点，改动前务必读懂：
+         |   1. `channels => [http]` **不可省略**。省略即「WS/UDP 侧也可用」，
+         |      任何已鉴权的终端客户端都能踢掉任意 clientId —— 终端提权。
+         |   2. `auth => false`。调用方是持 API_SECRET 的运维端，没有 uid 语义；
+         |      若置 true，则 HTTP 调用必须带 uid，而运维动作的目标 uid 是
+         |      入参而非调用方身份，两者会混淆。
+         |   3. 三者都**不撤会话 / 不踢线**（unbind 不解绑在线连接、revoke 不断连接、
+         |      kick 不撤 Token）。组合语义见各处理器类注释，顺序错了会静默失效。
+         --------------------------------------------------------------- */
+        'kick' => [
+            'handler'     => KickAction::class,
+            'description' => '【运维】断开指定连接（按 client_id 或 uid）；仅断 TCP，Token 仍有效',
+            'channels'    => [ActionContext::CHANNEL_HTTP],
+            'auth'        => false,
+            'params'      => [
+                'client_id' => ['type' => 'string', 'max_len' => 128],
+                'uid'       => ['type' => 'string', 'max_len' => 64],
+                'reason'    => ['type' => 'string', 'max_len' => 128],
+            ],
+            'http'        => true,
+        ],
+
+        'revoke' => [
+            'handler'     => RevokeTokenAction::class,
+            'description' => '【运维】撤销一个 Token（按明文 token）；已有连接不立即断开',
+            'channels'    => [ActionContext::CHANNEL_HTTP],
+            'auth'        => false,
+            'params'      => [
+                // 只接受明文 token，不接受 fingerprint —— 否则等于开放
+                // 「按猜测指纹撤销任意 Token」的接口面。
+                'token' => ['type' => 'string', 'required' => true, 'max_len' => 2048],
+                'ttl'   => ['type' => 'int', 'min' => 0, 'max' => 2592000],
+            ],
+            'http'        => true,
+        ],
+
+        'unbind' => [
+            'handler'     => UnbindDeviceAction::class,
+            'description' => '【运维】解绑 uid 与设备；不踢线，已在线的旧设备不受影响',
+            'channels'    => [ActionContext::CHANNEL_HTTP],
+            'auth'        => false,
+            'params'      => [
+                'uid' => ['type' => 'string', 'required' => true, 'max_len' => 64],
+            ],
+            'http'        => true,
+        ],
+
+        'purge_offline' => [
+            'handler'     => PurgeOfflineAction::class,
+            'description' => '【运维】清空 uid 的离线队列（丢弃且不可恢复）；不影响在线投递',
+            'channels'    => [ActionContext::CHANNEL_HTTP],
+            'auth'        => false,
+            'params'      => [
+                'uid' => ['type' => 'string', 'required' => true, 'max_len' => 64],
             ],
             'http'        => true,
         ],

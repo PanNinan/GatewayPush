@@ -24,7 +24,7 @@
  *   tests/E2E/CaseUdpLink.php    [C][D]  UDP 链路族
  *   tests/E2E/CasePushOnline.php [E][G][I] 在线投递族
  *   tests/E2E/CasePushOffline.php[F][K]  离线补投族
- *   tests/E2E/CaseActionRouting.php [J][M] 动作分发与契约
+ *   tests/E2E/CaseActionRouting.php [J][M][Q] 动作分发与契约、运维动作通道隔离
  *   tests/E2E/CaseActionUdp.php  [N]  UDP 通道业务动作
  *   tests/E2E/CaseRateLimit.php  [L]  报文级限流
  *   tests/E2E/CaseSubscribe.php  [O]  订阅与广播闭环
@@ -50,6 +50,8 @@
  *   [N] UDP 通道业务动作：echo 经出站队列回执；report 按声明静默不回执
  *   [O] 订阅与广播闭环：subscribe -> enqueueTopic -> push -> unsubscribe
  *   [P] HTTP 动作调用：POST /action -> 队列 -> BusinessWorker -> 回程键 -> 响应
+ *   [Q] 运维动作通道隔离：已鉴权客户端经 WS 调 kick / revoke / unbind -> 全部 4006
+ *       （P4 安全前提的**唯一**端到端验收点 —— 返回非 4006 即终端提权成立）
  *
  * 退出码：0 = 全部通过，1 = 存在失败项
  */
@@ -109,6 +111,7 @@ $worker->onWorkerStart = function () use ($harness) {
     CaseActionRouting::actionContract($harness);     // M
     CaseActionUdp::silentReport($harness);           // N
     CaseSubscribe::broadcastLoop($harness);          // O
+    CaseActionRouting::opsChannelGuard($harness);    // Q
 
     $harness->registerTimeoutGuard();
 };

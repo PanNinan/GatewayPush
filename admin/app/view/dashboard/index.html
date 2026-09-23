@@ -1,0 +1,205 @@
+<?php
+/**
+ * GatewayPush 健康总览页（P1：服务端骨架 + 浏览器轮询渲染）。
+ *
+ * ⚠ 本文件后缀是 .html 但内容是**原生 PHP**：`support\view\Raw::render()` 直接 include 它
+ *   （webman 的 Raw 引擎默认 view_suffix = html）。不要按纯静态页改。
+ *
+ * ⚠ 本页**不含任何数据**，只输出骨架与一份 `#dashboard-config` JSON。
+ *   所有数值由 `/static/dashboard.js` 经 `/api/monitor/live`（快 tick）与
+ *   `/api/monitor/summary`（慢 tick）填充。改动数据结构时要同步改 JS，否则界面会静默留白。
+ *
+ * 之所以不做服务端渲染：趋势需要跨刷新累积（服务端无历史指标存储），
+ * 且整页重建会丢掉 DOM 状态、也无法在主项目 API 卡住时保持可用。
+ *
+ * @var string $title
+ * @var array{
+ *     live_url: string,
+ *     summary_url: string,
+ *     live_interval_ms: int,
+ *     slow_interval_ms: int,
+ *     history_points: int,
+ *     queue_warn_depth: int,
+ *     gauge_stale_secs: int,
+ *     dashboard_url: string
+ * } $config
+ */
+
+$h = static fn (mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
+
+// 注入 JSON：除常规转义外必须加 JSON_HEX_TAG —— 否则配置里若出现 `</script`
+// 会直接闭合 script 标签，把后面的内容当 HTML 解析（XSS 面）。
+$json = json_encode(
+    $config,
+    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+    | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+);
+?>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title><?= $h($title) ?></title>
+    <link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+
+<noscript>
+    <div class="note bad">
+        <strong>本页需要 JavaScript。</strong>
+        数据由浏览器轮询 <span class="mono"><?= $h($config['live_url']) ?></span> 填充；
+        禁用 JS 时只能看到骨架。若需要免 JS 的只读视图，请访问主项目 Dashboard
+        <a href="<?= $h($config['dashboard_url']) ?>" target="_blank" rel="noopener"><?= $h($config['dashboard_url']) ?></a>。
+    </div>
+</noscript>
+
+<div class="head">
+    <h1><?= $h($title) ?></h1>
+    <span class="pill" id="pill-redis"><span class="dot"></span>Redis</span>
+    <span class="pill" id="pill-api"><span class="dot"></span>主项目 API</span>
+    <span class="meta">
+        <span id="meta-ts">等待首次采集…</span>
+        · 快 <b id="meta-live">—</b>s / 慢 <b id="meta-slow">—</b>s
+        · 指标上报于 <span id="meta-report">—</span>
+        · <a href="<?= $h($config['dashboard_url']) ?>" target="_blank" rel="noopener">主项目 Dashboard ↗</a>
+        · <a href="/app/admin" rel="noopener">后台首页</a>
+    </span>
+</div>
+
+<div id="alerts"></div>
+
+<div class="cards">
+    <div class="card">
+        <div class="k">在线连接数</div>
+        <div class="v" id="c-online">—</div>
+        <div class="sub" id="c-online-sub">&nbsp;</div>
+    </div>
+    <div class="card">
+        <div class="k">Redis 延迟</div>
+        <div class="v" id="c-latency">—<small>ms</small></div>
+        <div class="sub">&nbsp;</div>
+    </div>
+    <div class="card">
+        <div class="k">活跃进程</div>
+        <div class="v" id="c-procs">—</div>
+        <div class="sub" id="c-procs-sub">&nbsp;</div>
+    </div>
+    <div class="card">
+        <div class="k">今日指标项</div>
+        <div class="v" id="c-counter">—<small>counter</small></div>
+        <div class="sub">&nbsp;</div>
+    </div>
+    <div class="card">
+        <div class="k">进程指标字段</div>
+        <div class="v" id="c-gauge">—<small>gauge</small></div>
+        <div class="sub">&nbsp;</div>
+    </div>
+    <div class="card" id="card-dbsize">
+        <div class="k">Redis 键总数</div>
+        <div class="v" id="c-dbsize">—</div>
+        <div class="sub" id="c-dbsize-sub">&nbsp;</div>
+    </div>
+</div>
+
+<h2>
+    趋势
+    <span class="hint">
+        本次会话（页面打开以来）· 最多 <span id="hint-points">—</span> 点
+        —— 主项目无历史指标存储，刷新即清零
+    </span>
+</h2>
+<div class="charts">
+    <div class="chart">
+        <div class="chart-h"><span>在线连接数</span><b id="t-online">—</b></div>
+        <div class="chart-b" id="chart-online"></div>
+    </div>
+    <div class="chart">
+        <div class="chart-h"><span>消息入站 <span class="unit">msg_in</span></span><b id="t-msg">—</b></div>
+        <div class="chart-b" id="chart-msg"></div>
+    </div>
+    <div class="chart">
+        <div class="chart-h"><span>推送入队 <span class="unit">push_in</span></span><b id="t-push">—</b></div>
+        <div class="chart-b" id="chart-push"></div>
+    </div>
+</div>
+
+<h2>
+    派生率
+    <span class="hint">口径 = <b>今日累计</b>（不是瞬时）。分母为 0 时显示 <span class="mono">—</span>（无样本），与 <span class="mono">0.00%</span> 语义不同</span>
+</h2>
+<table>
+    <thead>
+    <tr>
+        <th>指标</th>
+        <th class="num">值</th>
+        <th>档位</th>
+        <th>算式</th>
+        <th class="num">分子 / 分母</th>
+    </tr>
+    </thead>
+    <tbody id="tb-ratios"></tbody>
+</table>
+
+<h2>队列深度 <span class="hint">阈值 <span class="mono" id="q-threshold">—</span> · 队列为空时 Redis 会自动删除空列表，读不到属正常</span></h2>
+<div class="bars" id="q-bars"></div>
+<table>
+    <thead>
+    <tr><th>队列</th><th class="num">深度</th><th>状态</th></tr>
+    </thead>
+    <tbody id="tb-queues"></tbody>
+</table>
+
+<h2>进程 <span class="hint">存活判据 = 最后上报距今 ≤ <span class="mono" id="p-stale">—</span>s（MONITOR_INTERVAL × 2，与主项目清理用的 MONITOR_TTL 刻意不同）</span></h2>
+<table>
+    <thead>
+    <tr>
+        <th>PID</th>
+        <th>角色</th>
+        <th class="num">Worker</th>
+        <th class="num">内存</th>
+        <th class="num">最后上报</th>
+        <th>状态</th>
+        <th>定时任务</th>
+    </tr>
+    </thead>
+    <tbody id="tb-procs"></tbody>
+</table>
+
+<div class="two">
+    <div>
+        <h2>进程指标（gauge）</h2>
+        <table>
+            <thead><tr><th>字段</th><th class="num">值</th></tr></thead>
+            <tbody id="tb-gauge"></tbody>
+        </table>
+    </div>
+    <div>
+        <h2>累计指标（今日 counter）</h2>
+        <table>
+            <thead><tr><th>指标</th><th class="num">值</th></tr></thead>
+            <tbody id="tb-counter"></tbody>
+        </table>
+    </div>
+</div>
+
+<h2>Redis 键自检 <span class="hint">慢 tick 采集（默认 30s）· 只对骨架键做 EXISTS/TYPE/TTL，不 SCAN 全库</span></h2>
+<div id="selfcheck-note"></div>
+<table>
+    <thead>
+    <tr><th>逻辑键</th><th>存在</th><th>类型</th><th class="num">TTL</th><th>期望</th><th>提示</th></tr>
+    </thead>
+    <tbody id="tb-selfcheck"></tbody>
+</table>
+
+<h2>主项目 API 自报口径 <span class="hint" id="api-url">—</span></h2>
+<div id="api-note"></div>
+<table>
+    <thead><tr><th>字段</th><th class="num">值</th></tr></thead>
+    <tbody id="tb-apistats"></tbody>
+</table>
+
+<script type="application/json" id="dashboard-config"><?= $json ?></script>
+<script src="/static/dashboard.js"></script>
+</body>
+</html>

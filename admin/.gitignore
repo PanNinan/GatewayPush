@@ -1,0 +1,15 @@
+/runtime
+/.idea
+/.vscode
+/vendor
+*.log
+.env
+/tests/tmp
+/tests/.phpunit.result.cache
+
+# plugin/admin 是 composer 包 webman/admin(v2.1.8) 的**纯副本**：
+# 其 Install.php 的 $pathRelation = ['plugin/admin' => 'plugin/admin']，
+# 每次 composer install / update 都经 copy_dir 重建。提交它等于把 vendor 内容复制进版本库。
+# ⚠ 因此**不要**改 plugin/admin/ 下的任何文件（会被覆盖），
+#   要覆盖插件配置请用 config/plugin/admin/*.php（见该目录下的注释）。
+/plugin/admin

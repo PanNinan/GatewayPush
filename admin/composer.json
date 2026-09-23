@@ -1,0 +1,75 @@
+{
+  "name": "gatewaypush/admin",
+  "type": "project",
+  "keywords": [
+    "gatewaypush",
+    "admin",
+    "webman"
+  ],
+  "license": "MIT",
+  "description": "GatewayPush 管理后台（webman + webman/admin）。独立子项目：与 GatewayPush 主项目不同进程、不同框架入口，崩溃互不影响。",
+  "require": {
+    "php": ">=8.2",
+    "workerman/webman-framework": "^2.1",
+    "monolog/monolog": "^2.0",
+    "webman/admin": "^2.1",
+    "webman/redis": "^2.1",
+    "predis/predis": "^2.2",
+    "vlucas/phpdotenv": "^5.6"
+  },
+  "require-dev": {
+    "webman/skills": "^1.0",
+    "phpunit/phpunit": "^10.0",
+    "phpstan/phpstan": "^2.0"
+  },
+  "suggest": {
+    "ext-event": "For better performance. "
+  },
+  "autoload": {
+    "psr-4": {
+      "": "./",
+      "app\\": "./app",
+      "App\\": "./app",
+      "app\\View\\Components\\": "./app/view/components",
+      "GatewayPush\\": "../src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "tests\\": "./tests",
+      "GatewayPush\\Client\\": "../client/src/"
+    }
+  },
+  "scripts": {
+    "post-package-install": [
+      "support\\Plugin::install"
+    ],
+    "post-package-update": [
+      "support\\Plugin::install"
+    ],
+    "pre-package-uninstall": [
+      "support\\Plugin::uninstall"
+    ],
+    "post-create-project-cmd": [
+      "support\\Setup::run"
+    ],
+    "setup-webman": [
+      "support\\Setup::run"
+    ],
+    "test": "phpunit --colors=always",
+    "test:frontend": [
+      "node tests/Frontend/dashboard_render_check.js",
+      "node tests/Frontend/session_render_check.js",
+      "node tests/Frontend/push_render_check.js",
+      "node tests/Frontend/action_render_check.js",
+      "node tests/Frontend/ops_render_check.js"
+    ],
+    "test:acceptance": "php tests/Manual/p1_acceptance.php",
+    "test:acceptance:p2": "php tests/Manual/p2_acceptance.php",
+    "test:acceptance:p3": "php tests/Manual/p3_acceptance.php",
+    "test:acceptance:p4": "php tests/Manual/p4_acceptance.php",
+    "analyse": "phpstan analyse --memory-limit=512M"
+  },
+  "minimum-stability": "dev",
+  "prefer-stable": true
+}

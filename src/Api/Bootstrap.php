@@ -56,6 +56,7 @@
 
 namespace GatewayPush\Api;
 
+use GatewayPush\Business\ActionContext;
 use GatewayPush\Business\ActionReply;
 use GatewayPush\Business\ActionRunner;
 use GatewayPush\Business\Message;
@@ -518,6 +519,24 @@ class Bootstrap
                 400,
                 Message::CODE_UNKNOWN_CMD,
                 '动作未开放 HTTP 通道：' . $action . '（可用：' . implode(' / ', ActionRunner::httpActions()) . '）'
+            ));
+
+            return;
+        }
+
+        // 反向通道白名单（C2）：与上面那道互为镜像。
+        // 判据侧统一调 ActionRunner::channelExposed()，不在这里复制 in_array ——
+        // 否则两处判定会漂移，而 ActionRunner 才是执行方裁定点。
+        //
+        // 本处只影响「体验」：不做的话动作会先入队、执行时才 4006，
+        // 调用方看到的是「已受理却失败」（202 → 补查才知失败），错误分层很难看。
+        // 安全性由 ActionRunner 那道保证，不依赖本处。
+        if (!ActionRunner::channelExposed($action, ActionContext::CHANNEL_HTTP)) {
+            $connection->send(self::json(
+                400,
+                Message::CODE_UNKNOWN_CMD,
+                '动作未开放 HTTP 通道：' . $action . '（该动作限：'
+                . implode(' / ', ActionRunner::declaredChannels($action)) . '）'
             ));
 
             return;

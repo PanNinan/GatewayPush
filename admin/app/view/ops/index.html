@@ -1,0 +1,102 @@
+<?php
+/**
+ * GatewayPush 运维页（P5：角色状态 / 日志尾读 / 密钥轮换引导）。
+ *
+ * ⚠ 本文件后缀是 .html 但内容是**原生 PHP**（webman Raw 引擎直接 include）。
+ * ⚠ 本页**不含任何数据**，只输出骨架与一份 `#ops-page-config` JSON；
+ *   全部数据由 `/static/ops.js` 经 3 个只读端点按需取（**无定时器，不轮询** ——
+ *   「重新探测」是显式按钮，不是 5s 一轮）。
+ *
+ * @var string $title
+ * @var array{
+ *     logs_url: string,
+ *     roles_url: string,
+ *     rotation_url: string,
+ *     log_roles: list<string>,
+ *     tail_max: int,
+ *     perms: array{logs: bool, roles: bool, rotation: bool}
+ * } $config
+ */
+
+$h = static fn (mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
+
+$json = json_encode(
+    $config,
+    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+    | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+);
+?>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title><?= $h($title) ?></title>
+    <link rel="stylesheet" href="/static/ops.css">
+</head>
+<body>
+
+<noscript>
+    <div class="note bad"><strong>本页需要 JavaScript。</strong></div>
+</noscript>
+
+<div class="wrap">
+    <h1>运维</h1>
+
+    <!-- ============ 区块 1：角色状态（三源合一） ============ -->
+    <?php if (($config['perms']['roles'] ?? false) === true) { ?>
+    <div id="sec-roles">
+        <h2>角色状态 <button id="btn-roles-refresh" class="btn" type="button">重新探测</button></h2>
+        <div id="roles-status"></div>
+        <table>
+            <thead><tr>
+                <th>角色</th><th>期望启用</th><th>端口监听</th><th>监听行数</th><th>/health</th>
+            </tr></thead>
+            <tbody id="tb-roles"></tbody>
+        </table>
+        <ul id="roles-problems" class="note warn"></ul>
+    </div>
+    <?php } ?>
+
+    <!-- ============ 区块 2：日志尾读（只读，无删除入口） ============ -->
+    <?php if (($config['perms']['logs'] ?? false) === true) { ?>
+    <div id="sec-logs">
+        <h2>日志尾读</h2>
+        <div class="form">
+            <label>角色
+                <select id="log-role">
+                <?php foreach ($config['log_roles'] as $role) { ?>
+                    <option value="<?= $h($role) ?>"><?= $h($role) ?></option>
+                <?php } ?>
+                </select>
+            </label>
+            <label>日期 <input id="log-date" type="text" placeholder="Y-m-d（默认今天）" autocomplete="off"></label>
+            <label>行数 <input id="log-lines" type="text" value="200" autocomplete="off"></label>
+            <label>关键字 <input id="log-keyword" type="text" autocomplete="off"></label>
+            <button id="btn-log-load" class="btn" type="button">读取</button>
+        </div>
+        <div id="log-status"></div>
+        <pre id="log-output" class="mono"></pre>
+    </div>
+    <?php } ?>
+
+    <!-- ============ 区块 3：密钥轮换引导（只读，不执行） ============ -->
+    <?php if (($config['perms']['rotation'] ?? false) === true) { ?>
+    <div id="sec-rotation">
+        <h2>密钥轮换引导</h2>
+        <p class="hint">只生成步骤清单，不执行任何轮换 —— 换密钥的爆炸半径横跨主项目与全部客户端，必须由人按清单执行。</p>
+        <button id="btn-rotation-load" class="btn" type="button">生成清单</button>
+        <div id="rotation-status"></div>
+        <table>
+            <thead><tr><th>密钥</th><th>作用域</th><th>现状（前4后4）</th></tr></thead>
+            <tbody id="tb-secrets"></tbody>
+        </table>
+        <ol id="rotation-steps"></ol>
+    </div>
+    <?php } ?>
+</div>
+
+<script type="application/json" id="ops-page-config"><?= $json ?></script>
+<script src="/static/ops.js"></script>
+</body>
+</html>

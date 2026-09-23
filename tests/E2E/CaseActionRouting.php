@@ -339,4 +339,139 @@ final class CaseActionRouting
 
         $connM->connect();
     }
+
+    /**
+     * 用例 Q：运维动作的通道隔离（P4 安全前提的**唯一**端到端验收点）
+     *
+     * 背景：`config/actions.php` 的 `http` 字段是**单向**的 ——
+     * 它只表达「额外开放 HTTP」，**不表达「仅限 HTTP」**，WS / UDP 侧凡注册即可用。
+     * 因此运维动作（kick / revoke / unbind / purge_offline）必须靠**反向**声明 `channels => [http]` 收紧。
+     *
+     * 本用例以一个**已鉴权的普通客户端**（持自己合法 Token）经 WS 调用 `kick`，
+     * 期望被拒（`4006`）。若返回非 4006，说明 `channels` 声明缺失或判定失效 ——
+     * 那意味着任何终端用户都能踢掉任意 clientId，属**终端提权**。
+     *
+     * 四个动作逐个验证（`kick` / `revoke` / `unbind` / `purge_offline`），
+     * 避免只测一个而漏掉其余动作的声明笔误。
+     *
+     * @param Harness $h
+     *
+     * @return void
+     */
+    public static function opsChannelGuard(Harness $h)
+    {
+        $c     = $h->ctx('Q');
+        $connQ = new AsyncTcpConnection($h->wsAddress);
+
+        // 逐个动作推进；0 = 等待鉴权 ack，之后每个下标对应一个运维动作
+        $ops     = ['kick', 'revoke', 'unbind', 'purge_offline'];
+        $qStep   = -1;
+        $qPassed = [];
+
+        $connQ->onConnect = function ($con) use ($h, $c) {
+            $con->send($h->encode($h->buildPacket(Message::CMD_AUTH, 'q-auth-1', [
+                'uid'       => $c['uid'],
+                'device_id' => $c['device_id'],
+                'token'     => $c['token'],
+            ])));
+            echo "[Q] -> auth（普通客户端，持自己的合法 Token）\n";
+        };
+
+        $connQ->onMessage = function ($con, $raw) use ($h, $c, &$qStep, &$qPassed, $ops) {
+            $packet = json_decode($raw, true);
+            if (!is_array($packet) || !isset($packet['cmd'])) {
+                return;
+            }
+
+            $data = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : [];
+            $code = isset($data['code']) ? (int)$data['code'] : -1;
+
+            $fail = function ($msg) use ($h, $con) {
+                $h->state['Q']     = false;
+                $h->state['Q_msg'] = $msg;
+                $con->close();
+                $h->finish();
+            };
+
+            if ($qStep < 0) {
+                if ($packet['cmd'] !== Message::CMD_ACK) {
+                    $fail('[Q] 鉴权阶段返回 ' . $packet['cmd']);
+
+                    return;
+                }
+                $qStep = 0;
+                self::sendOps($h, $con, $c, $ops[0]);
+
+                return;
+            }
+
+            $action = $ops[$qStep];
+
+            // ★ 判据：必须是 error + 4006。返回 ack 或其它码都算失败 ——
+            //   ack 意味着运维动作真的在 WS 通道执行了（终端提权成立）。
+            if ($packet['cmd'] !== Message::CMD_ERROR || $code !== Message::CODE_UNKNOWN_CMD) {
+                $fail(sprintf(
+                    '★ 运维动作 %s 在 WS 通道未被拒绝（cmd=%s code=%d，期望 error/4006）'
+                    . ' —— channels 声明缺失或判定失效，任何终端用户都能调用它',
+                    $action,
+                    $packet['cmd'],
+                    $code
+                ));
+
+                return;
+            }
+
+            $qPassed[] = $action;
+            echo sprintf("[Q] %s 已按预期拒绝（4006）\n", $action);
+
+            $qStep++;
+            if ($qStep >= count($ops)) {
+                $h->state['Q'] = true;
+                echo '[Q] <- ' . implode(' / ', $qPassed) . ' 全部仅限 HTTP 通道\n';
+                $con->close();
+                $h->finish();
+
+                return;
+            }
+
+            self::sendOps($h, $con, $c, $ops[$qStep]);
+        };
+
+        $connQ->onClose = function () use ($h) {
+            if ($h->state['Q'] === 'pending') {
+                $h->state['Q']     = false;
+                $h->state['Q_msg'] = '流程完成前连接被关闭';
+                $h->finish();
+            }
+        };
+
+        $connQ->connect();
+    }
+
+    /**
+     * 以「最像攻击」的形态发一个运维动作：目标指向**别人的** clientId / uid
+     *
+     * @param Harness              $h
+     * @param object               $con
+     * @param array<string, mixed> $c
+     * @param string               $action
+     *
+     * @return void
+     */
+    private static function sendOps(Harness $h, $con, array $c, string $action): void
+    {
+        $params = [
+            'kick'   => ['client_id' => 'ws-victim-0001', 'uid' => 'victim-uid'],
+            'revoke' => ['token' => 'victim-token-plaintext'],
+            'unbind' => ['uid' => 'victim-uid'],
+            'purge_offline' => ['uid' => 'victim-uid'],
+        ][$action];
+
+        $con->send($h->encode($h->buildPacket(Message::CMD_DATA, 'q-' . $action . '-1', [
+            'uid'       => $c['uid'],
+            'device_id' => $c['device_id'],
+            'data'      => ['action' => $action, 'params' => $params],
+        ])));
+        echo "[Q] -> data/action={$action}（目标指向他人，期望 4006）\n";
+    }
 }

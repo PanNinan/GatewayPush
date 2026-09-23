@@ -249,6 +249,43 @@ class ActionRunner
     }
 
     /**
+     * 动作是否在**指定通道**开放（反向白名单）
+     *
+     * 与 {@see self::httpExposed()} 互为镜像，两者解决的是两个不同方向的问题：
+     *
+     * | 字段 | 语义 | 缺省 | 解决什么 |
+     * |---|---|---|---|
+     * | `http => true` | **额外**开放 HTTP | 不开放 | 客户端动作不该被 HTTP 调 |
+     * | `channels => [...]` | **只**在这些通道开放 | 全通道 | 运维动作不该被客户端调 |
+     *
+     * 只有 `http` 这一条单向判定时，**「WS/UDP 侧凡注册即可用」** 是成立的（对外接口文档 §8.5）。
+     * 一旦登记运维动作（kick / revoke / unbind）而不声明 `channels`，
+     * 任何持自己合法 Token 的终端客户端都能经 WS 踢掉任意 clientId —— 属**终端提权**。
+     *
+     * ⚠ 缺省（未声明 `channels`）**必须放行**：既有动作全部未声明，收紧默认值即线上行为变更。
+     *
+     * @param string $action
+     * @param string $channel {@see ActionContext::CHANNEL_*} 之一
+     *
+     * @return bool
+     */
+    public static function channelExposed(string $action, string $channel): bool
+    {
+        if (!isset(self::$declarations[$action])) {
+            return false;
+        }
+
+        $decl = self::$declarations[$action];
+
+        // 未声明 = 全通道放行（向后兼容）
+        if (!isset($decl['channels']) || !is_array($decl['channels'])) {
+            return true;
+        }
+
+        return in_array($channel, $decl['channels'], true);
+    }
+
+    /**
      * 已开放 HTTP 通道的动作名
      *
      * @return list<string>
@@ -263,6 +300,31 @@ class ActionRunner
         }
 
         return $names;
+    }
+
+    /**
+     * 动作声明的通道白名单（未声明时返回空数组，语义是「全通道」）
+     *
+     * 仅供错误信息展示与自检使用 —— 判定一律走 {@see self::channelExposed()}，
+     * 不要把本方法的返回值当成白名单去 `in_array`，那会漏掉「未声明 = 全放行」这一支。
+     *
+     * @param string $action
+     *
+     * @return list<string>
+     */
+    public static function declaredChannels(string $action): array
+    {
+        $decl = self::$declarations[$action] ?? null;
+        if ($decl === null || !isset($decl['channels']) || !is_array($decl['channels'])) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($decl['channels'] as $c) {
+            $out[] = is_string($c) ? $c : '';
+        }
+
+        return $out;
     }
 
     /**
@@ -325,6 +387,29 @@ class ActionRunner
                 $channel,
                 Message::CODE_UNKNOWN_CMD,
                 '动作未开放 HTTP 通道：' . $action,
+                $action
+            );
+
+            return;
+        }
+
+        // 反向通道白名单：声明了 channels 的动作**只**在这些通道开放。
+        //
+        // 与上面那道互为反向 —— 上面防「HTTP 调了不该调的」，这道防「WS/UDP 调了不该调的」。
+        // 缺省（未声明 channels）一律放行，既有动作行为完全不变。
+        //
+        // ⚠ 这是运维动作（kick / revoke / unbind）的**安全前提**：不声明 channels=[http]
+        //   就等于把管理面能力开放给所有终端用户（任何已鉴权客户端都能借 WS 通道踢任意人）。
+        //   Api 侧（C2）另有入队前校验，本处是**执行方裁定** —— 动作队列是 Redis 键，
+        //   任何持有 Redis 凭证者都可直接写入任务，故最终裁定权必须在执行侧（硬约束 ㉗）。
+        $allowed = isset($decl['channels']) && is_array($decl['channels']) ? $decl['channels'] : null;
+        if ($allowed !== null && !in_array($channel, $allowed, true)) {
+            self::fail(
+                $clientId,
+                $packet,
+                $channel,
+                Message::CODE_UNKNOWN_CMD,
+                '动作未开放该通道：' . $action . '（当前通道：' . $channel . '）',
                 $action
             );
 

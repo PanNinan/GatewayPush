@@ -671,9 +671,31 @@ POST /action
 | `topics` | 无 | `sync` / `sync` / `sync` | ✅ | 查询本人已订阅主题 |
 | `notify` | 见 8.2 | `sync` / `sync` / `sync` | ✅ | 向本人推送一条消息（验证推送闭环） |
 | `session` | 无 | `sync` / `sync` / — | ❌ **刻意不开放** | 查询当前连接会话摘要 |
+| `kick` | 见 8.2 | ❌ / ❌ / `sync` | ✅ **仅限 HTTP** | 【运维】断开指定连接（按 `client_id` 或 `uid`） |
+| `revoke` | 见 8.2 | ❌ / ❌ / `sync` | ✅ **仅限 HTTP** | 【运维】撤销一个 Token（按明文 `token`） |
+| `unbind` | 见 8.2 | ❌ / ❌ / `sync` | ✅ **仅限 HTTP** | 【运维】解绑 uid 与设备 |
 
-> 全部动作 `auth` 默认为 `true`（要求已鉴权）。`session` 不开放 HTTP 的原因是它的语义锚点是
+> 全部**非运维**动作 `auth` 默认为 `true`（要求已鉴权）。`session` 不开放 HTTP 的原因是它的语义锚点是
 > 「当前连接」，而 HTTP 通道下无连接实体（`clientId = http:{request_id}`），调用无意义。
+>
+> ⚠ **三个运维动作的 `auth` 显式为 `false`**：它们的 uid 是**操作对象**（入参），
+> 不是调用方身份。调用方身份由 HTTP 接口密钥（`API_SECRET`）担保 ——
+> **持有该密钥即拥有踢线 / 撤销 / 解绑权**，详见 §9.3「管理面凭证」。
+
+#### 通道白名单的两个方向（`http` 与 `channels`）
+
+| 声明字段 | 方向 | 缺省 | 用途 |
+|---|---|---|---|
+| `http => true` | **额外**开放 HTTP | 不开放（`false`） | 「客户端动作不该被 HTTP 调」 |
+| `channels => [...]` | **只**在这些通道开放 | 全通道放行 | 「运维动作不该被客户端调」 |
+
+`http` 是**单向**的：它只表达「额外开放 HTTP」，**不表达「仅限 HTTP」**。
+因此**凡注册即可用**对 WS / UDP 侧始终成立 —— 运维动作必须靠 `channels` 这条反向声明收紧，
+否则任何持自己合法 Token 的终端客户端都能经 WS 调 `kick` 踢掉任意 `client_id`，属**终端提权**。
+
+> 判定入口：`ActionRunner::channelExposed()`（执行侧裁定）。执行侧与 Api 侧各判一次，
+> 与既有 `http` 白名单的双防线模式对称；`tests/Unit/OpsActionContractTest.php` 把
+> 「三个运维动作必须声明 `channels = [http]`、既有动作一律不得声明」钉成硬断言。
 
 ### 8.2 参数 schema
 
@@ -712,6 +734,15 @@ type=string  required=true  max_len=64  pattern=/^[A-Za-z0-9_:.\-]{1,64}$/
 | | `msg_id` | `string`，`max_len=64` |
 | | `offline_mode` | `string`，`enum=["","drop","queue"]`，默认 `""` |
 | `session` | — | 无参数 |
+| `kick` | `client_id` | `string`，`max_len=128`（与 `uid` **二选一**，至少提供一个） |
+| | `uid` | `string`，`max_len=64` |
+| | `reason` | `string`，`max_len=128`（可选，仅落日志） |
+| `revoke` | `token` | `string`，**必填**，`max_len=2048`（只接受**明文**，不接受指纹） |
+| | `ttl` | `int`，`0 ~ 2592000`；`0` = 取 `AUTH_TOKEN_TTL`（默认 `7200`） |
+| `unbind` | `uid` | `string`，**必填**，`max_len=64` |
+
+> ⚠ `revoke` **只接受明文 `token`**：指纹是 `sha256(token)` 前 32 位（单向），
+> 若允许按指纹撤销，等于开放「按猜测指纹撤销任意 Token」的接口面。
 
 ### 8.3 回执 `data` 结构
 
@@ -724,6 +755,9 @@ type=string  required=true  max_len=64  pattern=/^[A-Za-z0-9_:.\-]{1,64}$/
 | `topics` | `{action, uid, topics[], count, at}` |
 | `notify` | `{action, target, msg_id, queued, at}` |
 | `session` | `{action, client_id, uid, device_id, protocol, channel, online, connect_at, online_secs}` |
+| `kick` | `{action, uid, requested, closed, skipped, failed, skipped_ids[], failed_ids[], reason, at, note}` |
+| `revoke` | `{action, fingerprint, ttl, at, note}` |
+| `unbind` | `{action, uid, unbound, at, note}` |
 
 | 通用字段 | 类型 | 说明 |
 |---|---|---|
@@ -744,6 +778,22 @@ type=string  required=true  max_len=64  pattern=/^[A-Za-z0-9_:.\-]{1,64}$/
 
 > `API_ACTION_WAIT_MS` **必须大于** `ACTION_TIMEOUT × 1000`，否则 api 会先超窗返回 `202`、
 > 而动作的同步回执永远取不到（启动日志会对此告警）。
+
+#### 三个运维动作的语义边界（务必读完再调用）
+
+| 动作 | 做什么 | **不做什么**（最常见的误解） |
+|---|---|---|
+| `kick` | 断开 TCP 连接 | **不撤 Token** —— `closeClient` 触发 `markOffline()` **保留会话供重连**，客户端可立即用同一 Token 重连成功 |
+| `revoke` | 把 Token 加进撤销名单 | **不断开已有连接** —— WS 侧该 Token 的**下一次鉴权**才回 `4001`；UDP 侧**下一个包**被丢弃 |
+| `unbind` | 删除 `auth:bind:{uid}` | **不踢线** —— 已在线的旧设备连接不受影响，仍在线、仍可推送 |
+
+**组合语义（顺序不可反）**：
+
+- 「踢下线且禁止重连」= **先 `revoke`、后 `kick`**。顺序反了（先踢后撤）时，
+  客户端正好落在重连窗口内，会用同一 Token **重连成功** —— 表现为「明明执行了却没效果」。
+- 「换设备且旧的立刻下线」= `unbind` + `kick`（两者无竞态，顺序无所谓）。
+- **UDP 无踢线**：UDP 没有连接实体（clientId 是 `udp:{ip}:{port}`，不在 Gateway 连接表内），
+  `closeClient()` 对它无效 —— 该形态会被计入 `skipped` 而不是 `failed`（不是失败，是「没有线可踢」）。
 > 动作回执超时未到 → 记指标 + 告警 + 回 `5000`；`timeout=0` 表示不启用保护。
 
 ### 8.5 新增动作（对调用方的影响）
@@ -752,9 +802,14 @@ type=string  required=true  max_len=64  pattern=/^[A-Za-z0-9_:.\-]{1,64}$/
 **调用方视角**：只有登记了 `'http' => true` 的动作才能经 HTTP 调用（默认 `false`）；
 WS / UDP 侧凡注册即可用（受 `auth` 与限流约束）。
 
+> ⚠ **上句对运维动作不成立**：P4 起新增了**反向**声明 `channels`。
+> 声明了 `channels => [http]` 的动作（`kick` / `revoke` / `unbind` / `purge_offline`）**只**在 HTTP 通道可用，
+> WS / UDP 调用一律回 `4006`（未知指令）。详见 §8.1 的「通道白名单的两个方向」。
+
 > HTTP 动作白名单是**双防线**：`config/actions.php` 声明 + `ActionRunner::run()` 内复检。
 > 原因是动作队列是 Redis 键，任何持 Redis 凭证者都能直接写任务，故「能否经 HTTP 调用」
-> 必须由**执行方**裁定（硬约束 ㉗）。
+> 必须由**执行方**裁定（硬约束 ㉗）。`channels` 同理，两道都在（`Api/Bootstrap.php` 入队前 +
+> `ActionRunner::run()` 执行时）。
 
 ---
 
@@ -802,6 +857,27 @@ WS / UDP 侧凡注册即可用（受 `auth` 与限流约束）。
 > 连接级限流两层**不可互换**：L1 内存桶在 UDP 验签前生效（每 IP、零 IO）；
 > L2 Redis 桶原子判定不扣减。Redis 故障时 **fail-open**（放行并告警）。
 
+### 9.4 管理面凭证（`API_SECRET` 的第二重身份）
+
+P4 起 `API_SECRET` 有**两重身份**，二者共用同一个密钥、无法拆分：
+
+| 身份 | 担保什么 | 覆盖范围 |
+|---|---|---|
+| 接口凭证 | 「调用方是被信任的服务端」 | `/push`、`/action`（非运维动作）、`/stats` 等 |
+| **管理面凭证** | 「调用方拥有运维权」 | `kick` / `revoke` / `unbind` / `purge_offline` 四个运维动作 |
+
+**等式：`持有 API_SECRET` ⇒ `可踢任意 client_id / 撤销任意 Token / 解绑任意 uid`。**
+
+当前该等式是**决策接受的**（前提：`API_LISTEN` 监听回环地址、且只有一个可信调用方）。
+它在下面任一条件成立时即变为**真实的提权面**，须先升级为独立管理面密钥
+（`X-Admin-Key` 之类）再放开：
+
+1. `API_LISTEN` 改为非回环地址（`0.0.0.0` / 具体网卡 / 域名）；
+2. 出现 **≥2 个互不信任的 API 调用方**；
+3. 把 `API_SECRET` 下发给业务调用方（它只需要用户级 Token，不需要本密钥）。
+
+> ⚠ **任何改动 `API_LISTEN` 或新增 API 调用方的评审，都必须复查本节。**
+
 ---
 
 ## 10. 联调自检工具
@@ -811,7 +887,7 @@ WS / UDP 侧凡注册即可用（受 `auth` 与限流约束）。
 | HTTP 全场景 demo | `php tests/Api/http_demo.php`（`composer demo:http`） | 13 场景 / 19 断言，含签名构造全过程。`--curl` 打印等价 curl 命令 | api + business 在线 |
 | HTTP 验签与错误分支 | `node tests/Api/api_sign_check.js` | 8 形态（正确/空 body/错误签名/免鉴权/`/action` 正常/`session` 拒绝/错签名/补查 404） | api + business 在线 |
 | Postman 集合 | 导入 `postman/GatewayPush.postman_collection.json` | 9 个请求，**集合级自动签名** | api + business 在线 |
-| 端到端全链路 | `composer test:e2e` | 16 用例（WS / UDP / HTTP / 推送 / 动作 / 限流 / 离线补投） | 全部角色在线 |
+| 端到端全链路 | `composer test:e2e` | 17 用例（WS / UDP / HTTP / 推送 / 动作 / 限流 / 离线补投 / 运维动作通道隔离） | 全部角色在线；失败先跑 `composer test:e2e:clean` 清残留 |
 | 环境自检 | `php start.php check` | 配置、密钥、队列键一致性、端口 | 无 |
 
 ---
