@@ -214,6 +214,7 @@ GatewayPush/
 │   └── GatewayPush.postman_collection.json   可直接导入的 HTTP 接口集合（9 个请求，内置自动签名）
 ├── .github/
 │   └── workflows/ci.yml              CI：静态门禁 + PHP 8.2~8.5 单元测试矩阵 + Redis 端到端（见 §13.7）
+├── .gitattributes                    行尾规范化：`*.bat`/`*.cmd`/`*.ps1` → CRLF，`*.sh`/`*.php` → LF
 ├── AGENTS.md                         AI 协作入口（红线 / 门禁 / 目录速查，供任意 AI 工具对齐）
 ├── start.php                         统一启动入口：命令分发 + 环境自检 + 启动（实现见 src/Console/）
 ├── composer.json                    依赖与脚本
@@ -1723,8 +1724,15 @@ curl -s -X POST http://127.0.0.1:8290/action \
 > `X-Timestamp`」这一常见困惑的来源。
 
 改完需**重启 api 角色**（配置在进程启动时读取）；启动横幅的「接口验签」行会显示实际
-生效状态。两个 HTTP 自检脚本（`http_demo.php` / `api_sign_check.js`）与 e2e 用例 H 会先
-探测模式，免签时把「错误签名必须被拒」类断言标记为 **SKIP** 而非失败。
+生效状态。**四处**自检会先探测模式（以空签名请求 `/stats`，200 即免签），免签时把
+「错误签名必须被拒」类断言标记为 **SKIP** 而非失败 —— 口径统一，本地调试不再误报门禁红：
+
+| 自检 | 免签下的表现 |
+| --- | --- |
+| `node tests/Api/api_sign_check.js` | 第 3、7 项 SKIP |
+| `php tests/Api/http_demo.php` | 第 3 场景 SKIP |
+| `php client/tests/E2E/ClientE2E.php` | 用例 H 标 SKIP（结论行追加「另 SKIP 1 项，免签模式」，退出码仍为 0） |
+| `php tests/e2e_check.php` | 用例 H 标 SKIP |
 
 #### 两类接口的差异（最容易误判的地方）
 
@@ -2408,8 +2416,8 @@ grep "已清理已退出进程" runtime/logs/*.log
 | 签名怎么算                    | `X-Sign = hex(hmac_sha256("{X-Timestamp}\|{原始请求体}", secret))`；`GET` 无 body 时对**空串**签名；时间戳窗口 `API_SIGN_TTL`（默认 300s）                      |
 
 > 直接跑 `php tests/Api/http_demo.php`（自动探测模式、打印签名构造全过程）或
-> `node tests/Api/api_sign_check.js`，比手工排查快。两者在免签模式下会把
-> 「错误签名必须被拒」标记为 SKIP，不会误报失败。
+> `node tests/Api/api_sign_check.js`，比手工排查快。它们与 `ClientE2E.php`、
+> `tests/e2e_check.php` 在免签模式下都会把「错误签名必须被拒」标记为 SKIP，不会误报失败。
 
 #### HTTP 动作调用不成功（POST /action）
 
@@ -2478,6 +2486,13 @@ grep "已清理已退出进程" runtime/logs/*.log
 | `bin/start.sh`  | LF   | 无             | CRLF 会让 shebang 变成 `bash\r`，且 `bash -n` 查不出来                                |
 | `bin/start.ps1` | CRLF | **UTF-8 BOM** | PowerShell 5.1 缺 BOM 会按 GBK 解析脚本，中文先烂                                       |
 | `bin/start.bat` | CRLF | 无             | **必须纯 ASCII** —— CMD 按当前代码页解码、却按**字节**推进文件指针，多字节字符会让两者错位、从字符中间恢复读取并把残片当命令执行 |
+
+> **以上行尾由根目录 `.gitattributes` 强制**（2026-09-23 落地），不再依赖 `core.autocrlf`：
+> `* text=auto` 为默认，`*.sh` / `*.php` 显式 `eol=lf`，`*.bat` / `*.cmd` / `*.ps1` 显式
+> `eol=crlf`。此前索引里 `bin/start.bat` 是 LF（`git ls-files --eol` 显示 `i/lf w/crlf`），
+> CRLF 只靠本机 `autocrlf=true` 凑出来 —— **Linux 检出或 `autocrlf=input` 的克隆会拿到 LF 脚本**，
+> 硬约束跨机器并不成立。注意 `eol` 只管 checkout，**索引恒为 LF**（`text` 属性下 git 从不把
+> CRLF 存进索引），故不存在「需要把索引改成 CRLF」这回事。
 
 ---
 
