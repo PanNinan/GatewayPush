@@ -44,10 +44,10 @@ $apiUrl = 'http://' . $apiUrl;
 $wsUrl  = 'ws://' . str_replace('0.0.0.0', '127.0.0.1', preg_replace('#^[a-z]+://#i', '', (string)$gatewayConfig['websocket']['listen']));
 $udpUrl = 'udp://' . str_replace('0.0.0.0', '127.0.0.1', preg_replace('#^[a-z]+://#i', '', (string)$gatewayConfig['udp']['listen']));
 
-$prefix = isset($argv[1]) ? (string)$argv[1] : ('ce2e-' . substr(md5((string)microtime(true)), 0, 6));
+$prefix = $argv[1] ?? ('ce2e-' . substr(md5((string)microtime(true)), 0, 6));
 
 echo "客户端 SDK 端到端对齐（uid 前缀 {$prefix}）\n";
-echo "ws={$wsUrl} udp={$udpUrl} api={$apiUrl}\n";
+echo "ws=$wsUrl udp=$udpUrl api=$apiUrl\n";
 
 $results = [];
 $pushes  = [];
@@ -139,13 +139,13 @@ $waitState = function (SessionManager $session, $target, callable $ok, ?callable
     $timerId = Timer::add(0.1, function () use (&$timerId, &$waited, $session, $target, $ok, $fail) {
         $waited += 0.1;
         if ($session->state() === $target) {
-            Timer::del((int)$timerId);
+            Timer::del($timerId);
             $ok();
 
             return;
         }
         if ($waited > 12.0) {
-            Timer::del((int)$timerId);
+            Timer::del($timerId);
             if ($fail !== null) {
                 $fail();
             }
@@ -168,13 +168,13 @@ $waitUntil = function (callable $cond, $limit, callable $done) {
     $timerId = Timer::add(0.1, function () use (&$timerId, &$waited, $cond, $limit, $done) {
         $waited += 0.1;
         if ($cond()) {
-            Timer::del((int)$timerId);
+            Timer::del($timerId);
             $done(true);
 
             return;
         }
         if ($waited > $limit) {
-            Timer::del((int)$timerId);
+            Timer::del($timerId);
             $done(false);
         }
     });
@@ -194,7 +194,7 @@ $waitUntil = function (callable $cond, $limit, callable $done) {
 $record = function ($id, $label, $ok, $detail = '', $skip = false) use (&$results) {
     $results[$id] = ['label' => $label, 'ok' => $ok, 'detail' => $detail, 'skip' => $skip];
     $status       = $skip ? 'SKIP' : ($ok ? 'PASS' : 'FAIL');
-    echo sprintf("[%s] %s %s\n", $status, $id, $label) . ($detail !== '' ? "      {$detail}\n" : '');
+    echo sprintf("[%s] %s %s\n", $status, $id, $label) . ($detail !== '' ? "      $detail\n" : '');
 };
 
 $admin = null;
@@ -682,7 +682,7 @@ $GLOBALS['uidUdpFix'] = $prefix . '-udp';
 // 与服务端 start.php 同一处，运行时产物不散落在源码树里。
 $logDir = BASE_PATH . '/runtime/logs';
 if (!is_dir($logDir) && !@mkdir($logDir, 0o755, true) && !is_dir($logDir)) {
-    fwrite(STDERR, "[WARN] 日志目录创建失败：{$logDir}\n");
+    fwrite(STDERR, "[WARN] 日志目录创建失败：$logDir\n");
 }
 Worker::$logFile = $logDir . '/client_e2e.log';
 
