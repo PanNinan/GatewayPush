@@ -14,7 +14,7 @@ require BASE_PATH . '/vendor/autoload.php';
 use GatewayPush\Client\Service\AdminApi;
 use Workerman\Worker;
 
-$uid = isset($argv[1]) ? (string)$argv[1] : '';
+$uid = $argv[1] ?? '';
 if ($uid === '') {
     echo "用法：php _p5_push_offline.php <uid>\n";
 

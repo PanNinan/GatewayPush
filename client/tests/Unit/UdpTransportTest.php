@@ -25,9 +25,6 @@ final class UdpTransportTest extends TestCase
 {
     use FakeTimers;
 
-    /** @var FakeUdpConnection */
-    private $fake;
-
     public function testInvalidUrlThrowsConfig()
     {
         $this->makeTimers();
@@ -247,7 +244,6 @@ final class UdpTransportTest extends TestCase
         $this->makeTimers();
 
         $fake         = new FakeUdpConnection();
-        $this->fake   = $fake;
         $capturedFake = &$fake;
 
         return new UdpTransport(

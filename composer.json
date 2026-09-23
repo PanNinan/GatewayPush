@@ -50,6 +50,9 @@
         "test": "phpunit",
         "test:e2e": "php tests/e2e_check.php",
         "test:client-e2e": "php client/tests/E2E/ClientE2E.php",
+        "test:sign": "node tests/Api/api_sign_check.js",
+        "test:frontend": "node tests/Frontend/dashboard_autorefresh_check.js",
+        "test:docs": "php tests/Manual/docs_numbers_check.php",
         "demo:http": "php tests/Api/http_demo.php"
     },
     "require-dev": {

@@ -61,7 +61,7 @@ final class EnvChecker
         $phpMin  = $runtime['php_min'];
         $verOk   = version_compare(PHP_VERSION, $phpMin, '>=');
         $lines[] = sprintf('[%-4s] PHP 版本 >= %s', $verOk ? 'OK' : 'FAIL', $phpMin);
-        $ok      = $ok && $verOk;
+        $ok      = $verOk;
 
         $phpMaxWarn = $runtime['php_max_warn'];
         if (version_compare(PHP_VERSION, $phpMaxWarn, '>')) {

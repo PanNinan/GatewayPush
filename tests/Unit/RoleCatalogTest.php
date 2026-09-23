@@ -228,10 +228,10 @@ final class RoleCatalogTest extends TestCase
 
         $this->assertIsString($output, 'roles 命令未产生输出，可能执行失败');
 
-        $decoded = json_decode(trim((string)$output), true);
+        $decoded = json_decode(trim($output), true);
         $this->assertIsArray(
             $decoded,
-            'roles 命令的输出必须是合法 JSON，实际为：' . (string)$output
+            'roles 命令的输出必须是合法 JSON，实际为：' . $output
         );
 
         return $decoded;

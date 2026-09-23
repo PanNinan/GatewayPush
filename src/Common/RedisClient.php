@@ -126,6 +126,13 @@ class RedisClient
     protected static $inited = false;
 
     /**
+     * 绑定连接（pipeline() 执行期间非空，connection() 优先返回它）
+     *
+     * @var null|Client
+     */
+    protected static $pinned;
+
+    /**
      * 连接预设结果（spl_object_id => bool）
      *
      * 标记哪些连接已完成 DB / AUTH 预设，用于跳过连接回调中的兜底逻辑。
@@ -175,14 +182,48 @@ class RedisClient
             throw new RuntimeException('缺少依赖 workerman/redis，请先执行 composer install');
         }
 
+        // pipeline() 期间钉住单连接：组内命令在同一 socket 上顺序写出，
+        // 由内核缓冲合批、Redis 顺序执行 —— 等效 pipeline，只付一次往返。
+        if (self::$pinned !== null) {
+            return self::$pinned;
+        }
+
         $size  = max(1, (int)self::$config['pool_size']);
         $index = self::$cursor++ % $size;
 
-        if (!isset(self::$pool[$index]) || self::$pool[$index] === null) {
+        // isset() 对 null 键也返回 false，故无需再判 === null
+        if (!isset(self::$pool[$index])) {
             self::$pool[$index] = self::createConnection($index);
         }
 
         return self::$pool[$index];
+    }
+
+    /**
+     * 在同一条连接上执行一组命令（热路径减往返）
+     *
+     * 连接池默认轮询：bind 这类连续 5~8 条命令会散落到多条连接上，
+     * 每条各付一次 RTT。钉住单连接后命令在同一 socket 背靠背写出，
+     * 对端按序执行、回包合批 —— 语义与逐条发送完全一致（各命令仍独立、
+     * 无事务性），只是网络往返从 N 降到 1。
+     *
+     * 支持嵌套：内层结束时恢复外层绑定。异常也会恢复，不泄漏钉扎状态。
+     *
+     * @param callable $fn function(): void 体内通过本类静态方法发命令即可
+     *
+     * @return void
+     */
+    public static function pipeline(callable $fn)
+    {
+        $prev = self::$pinned;
+        // 连接自身也可能在 pipeline 外首次创建 —— 借 connection() 取可用连接
+        self::$pinned = $prev ?? self::connection();
+
+        try {
+            $fn();
+        } finally {
+            self::$pinned = $prev;
+        }
     }
 
     /* ---------------------------------------------------------------------
@@ -807,6 +848,7 @@ class RedisClient
         self::$pool   = [];
         self::$cursor = 0;
         self::$primed = [];
+        self::$pinned = null;
     }
 
     /**

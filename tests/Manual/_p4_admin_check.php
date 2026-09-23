@@ -38,6 +38,9 @@ $state = [
     'badsign' => false,
     'expired' => false,
 ];
+
+// @var 覆盖 PHPStan 对 by-ref 闭包链的空数组收窄：$failMsg 由下方回调填充
+/** @var list<string> $failMsg */
 $failMsg = [];
 
 $worker = new Worker();

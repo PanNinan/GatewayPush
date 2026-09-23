@@ -31,7 +31,7 @@ final class StartupBannerTest extends TestCase
         $runAllAt = strpos($code, 'Worker::runAll();');
         $this->assertNotFalse($runAllAt, 'start.php 未调用 Worker::runAll()');
 
-        $beforeRunAll = substr($code, 0, (int)$runAllAt);
+        $beforeRunAll = substr($code, 0, $runAllAt);
 
         // 锚点同时接受 array(...) 与 [...] 两种等价写法：php-cs-fixer 的 array_syntax
         // 会把前者规整成后者，而本用例锁的是「条件与打印点的相对位置」，
@@ -216,7 +216,7 @@ final class StartupBannerTest extends TestCase
         $output = shell_exec($command . ' 2>&1');
         $this->assertIsString($output, 'info 命令未产生输出，可能执行失败');
 
-        return (string)$output;
+        return $output;
     }
 
     /**

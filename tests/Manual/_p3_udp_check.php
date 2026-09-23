@@ -33,8 +33,8 @@ use GatewayPush\Client\Transport\UdpTransport;
 use Workerman\Timer;
 use Workerman\Worker;
 
-$uid    = isset($argv[1]) ? (string)$argv[1] : 'p3-udp-' . bin2hex(random_bytes(3));
-$device = isset($argv[2]) ? (string)$argv[2] : 'p3-dev-A';
+$uid    = $argv[1] ?? 'p3-udp-' . bin2hex(random_bytes(3));
+$device = $argv[2] ?? 'p3-dev-A';
 
 $appConfig     = require BASE_PATH . '/config/app.php';
 $gatewayConfig = require BASE_PATH . '/config/gateway.php';
@@ -55,6 +55,9 @@ $state = [
     'acked'      => 0,
     'retransmit' => false,
 ];
+
+// @var 覆盖 PHPStan 对 by-ref 闭包链的空数组收窄：$failMsg 由下方回调填充
+/** @var list<string> $failMsg */
 $failMsg = [];
 
 $worker = new Worker();

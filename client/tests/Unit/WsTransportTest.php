@@ -20,9 +20,6 @@ use PHPUnit\Framework\TestCase;
 
 final class WsTransportTest extends TestCase
 {
-    /** @var FakeTcpConnection */
-    private $fake;
-
     public function testInvalidUrlThrowsConfig()
     {
         try {
@@ -125,9 +122,8 @@ final class WsTransportTest extends TestCase
 
     private function makeTransport(&$fake = null)
     {
-        $fake       = new FakeTcpConnection();
-        $this->fake = $fake;
-        $captured   = &$fake;
+        $fake     = new FakeTcpConnection();
+        $captured = &$fake;
 
         return new WsTransport('ws://127.0.0.1:8282', function () use (&$captured) {
             return $captured;

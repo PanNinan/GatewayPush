@@ -168,13 +168,10 @@ class Logger
             return true;
         });
 
-        set_exception_handler(function ($e) {
-            if ($e instanceof Throwable) {
-                self::exception($e, 'uncaught');
-
-                return;
-            }
-            self::error('未捕获的异常对象', ['value' => var_export($e, true)]);
+        // set_exception_handler 的回调参数在 PHP 7+ 恒为 Throwable，
+        // 原先的 instanceof 分支与「非异常对象」兜底均不可达，故直接类型化收参
+        set_exception_handler(function (Throwable $e) {
+            self::exception($e, 'uncaught');
         });
 
         register_shutdown_function(function () {

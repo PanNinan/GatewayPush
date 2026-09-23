@@ -15,9 +15,11 @@
 #
 # 分级现状：**level 6**（2026-09-22 由 level 5 提升）。
 #   生产代码（src / client/src / start.php）已补齐全部 missingType.* 标注 →
-#   生产侧 0 errors，故 `phpstan-baseline.neon` 维持 9 条不动、未重生成。
-#   测试侧（tests / client/tests）的 273 条 missingType.* 冻结在
-#   `phpstan-tests-baseline.neon`，沿用既有「测试噪音单独一份」的设计。
+#   生产侧 0 errors；2026-09-23 语义清洗修掉全部 8 条历史告警后，
+#   `phpstan-baseline.neon` 已清空为 `ignoreErrors: []`（保留文件以维持双 baseline 结构）。
+#   测试侧（tests / client/tests）的 273 条 missingType.* + 38 条有意冻结的
+#   语义条目（golden 钉桩 / by-ref 误判）在 `phpstan-tests-baseline.neon`，
+#   沿用既有「测试噪音单独一份」的设计。
 #   提级前的量化：level 6 全量 538 errors / 66 文件，其中 100% 是
 #   `missingType.*`（iterableValue 330 / return 167 / parameter 34 / property 7），
 #   零语义告警 —— 即 level 6 的增量只是「数组元素类型标注完整性」，不新增逻辑类检查。
@@ -105,9 +107,9 @@ parameters:
         # workerman/redis 的 phpdoc 缺陷：其方法签名把回调参数标注为 null 类型
         # （例如 Client::set() 的 @param null $cb），而运行期实际接受 callable。
         # 本项目全程强制「回调式调用」（见 RedisClient 的封装约定），
-        # 故此类告警属库侧问题，在此集中声明，不污染 baseline。
+        # 故此类告警属库侧问题，在此集中声明（不限 path —— 手工脚本直连
+        # workerman Client 时也会命中同一缺陷），不污染 baseline。
         # -----------------------------------------------------------------
         -
             identifier: argument.type
             message: '#expects null, (Closure|callable|int) given#'
-            path: src/Common/RedisClient.php

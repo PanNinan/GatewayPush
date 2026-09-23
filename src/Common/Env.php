@@ -382,7 +382,8 @@ class Env
             return self::normalize($_ENV[$key], $default);
         }
 
-        if (isset($_SERVER) && is_array($_SERVER) && array_key_exists($key, $_SERVER)) {
+        // $_SERVER 是超全局，恒存在且恒为数组 —— 只需判键
+        if (array_key_exists($key, $_SERVER)) {
             return self::normalize($_SERVER[$key], $default);
         }
 

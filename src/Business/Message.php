@@ -196,7 +196,7 @@ class Message
     /**
      * 构造回执报文
      *
-     * @param string               $seq
+     * @param int|string           $seq  整型 seq 会转为字符串（调用方常直接传计数器）
      * @param array<string, mixed> $data
      *
      * @return array<string, mixed>

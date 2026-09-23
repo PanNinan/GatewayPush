@@ -272,6 +272,6 @@ class MonitorTest extends TestCase
             return null;
         }
 
-        return (int)$m[0][1];
+        return $m[0][1];
     }
 }

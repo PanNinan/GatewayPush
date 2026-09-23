@@ -101,6 +101,20 @@ final class FakeTransport implements TransportInterface
         }
     }
 
+    /**
+     * 模拟服务端：触发传输层错误
+     *
+     * @param string $message
+     *
+     * @return void
+     */
+    public function error($message)
+    {
+        if ($this->errCb !== null) {
+            ($this->errCb)((string)$message);
+        }
+    }
+
     /** 最近发出的报文 */
     public function lastPacket()
     {

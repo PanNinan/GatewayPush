@@ -26,8 +26,8 @@ use GatewayPush\Client\Session\SessionManager;
 use GatewayPush\Client\Transport\WsTransport;
 use Workerman\Worker;
 
-$uid    = isset($argv[1]) ? (string)$argv[1] : 'p5-uid-' . bin2hex(random_bytes(3));
-$device = isset($argv[2]) ? (string)$argv[2] : 'p5-dev';
+$uid    = $argv[1] ?? 'p5-uid-' . bin2hex(random_bytes(3));
+$device = $argv[2] ?? 'p5-dev';
 
 echo "P5 重连/补投实测（客户端 A）\n";
 echo "uid={$uid} device={$device}\n";
@@ -40,6 +40,9 @@ $state = [
     'offlinePush'   => false,   // 收到 offline=1 补投
     'acked'         => 0,
 ];
+
+// @var 覆盖 PHPStan 对 by-ref 闭包链的空数组收窄：$failMsg 由下方 onError 等闭包填充
+/** @var list<string> $failMsg */
 $failMsg = [];
 
 $worker = new Worker();
@@ -87,7 +90,7 @@ $worker->onWorkerStart = function () use ($uid, $device, &$state, &$failMsg) {
         }
     });
 
-    $session->onError(function ($e) use (&$failMsg) {
+    $session->onError(function ($e) {
         // 网关不可达期间的重试错误是预期路径，不计失败
         echo '[error] ' . $e->getMessage() . "\n";
     });

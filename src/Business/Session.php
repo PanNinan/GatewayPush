@@ -97,19 +97,23 @@ class Session
             'last_active' => $now,
         ];
 
-        RedisClient::hMSet(RedisKeys::session($clientId), $fields);
-        RedisClient::expire(RedisKeys::session($clientId), $ttl);
-        RedisClient::set(RedisKeys::heartbeat($clientId), $now, $ttl);
-        RedisClient::sAdd(RedisKeys::online(''), $clientId);
-        RedisClient::sAdd(RedisKeys::online($protocol), $clientId);
+        // 多命令钉住同一连接写出（见 RedisClient::pipeline）：
+        // 轮询会把这 5~8 条散到不同连接、各付一次 RTT；钉住后合批往返。
+        RedisClient::pipeline(static function () use ($clientId, $fields, $ttl, $now, $uid, $deviceId, $protocol) {
+            RedisClient::hMSet(RedisKeys::session($clientId), $fields);
+            RedisClient::expire(RedisKeys::session($clientId), $ttl);
+            RedisClient::set(RedisKeys::heartbeat($clientId), $now, $ttl);
+            RedisClient::sAdd(RedisKeys::online(''), $clientId);
+            RedisClient::sAdd(RedisKeys::online($protocol), $clientId);
 
-        if ($uid !== '') {
-            RedisClient::sAdd(RedisKeys::uidClients($uid), $clientId);
-            RedisClient::expire(RedisKeys::uidClients($uid), $ttl);
-        }
-        if ($deviceId !== '') {
-            RedisClient::set(RedisKeys::deviceClient($deviceId), $clientId, $ttl);
-        }
+            if ($uid !== '') {
+                RedisClient::sAdd(RedisKeys::uidClients($uid), $clientId);
+                RedisClient::expire(RedisKeys::uidClients($uid), $ttl);
+            }
+            if ($deviceId !== '') {
+                RedisClient::set(RedisKeys::deviceClient($deviceId), $clientId, $ttl);
+            }
+        });
 
         Logger::info('会话绑定完成', [
             'client_id' => $clientId,
@@ -424,8 +428,9 @@ class Session
                 }
                 $stale = [];
                 foreach ($clientIds as $index => $clientId) {
+                    // mGet 未命中返回 false，?? false 已把 null 归并掉，故只需三态判定
                     $value = $values[$index] ?? false;
-                    if ($value === false || $value === null || $value === '') {
+                    if ($value === false || $value === '') {
                         $stale[] = $clientId;
                     }
                 }

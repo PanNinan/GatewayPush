@@ -902,11 +902,18 @@ class Bootstrap
             return true;
         }
 
-        $ip  = self::clientIp($request);
-        $key = RedisKeys::rateApi($ip);
+        $ip   = self::clientIp($request);
+        $slot = (int)floor(time() / 60);
+        $key  = RedisKeys::rateApi($ip, $slot);
 
-        // 同步语义：单进程内用静态计数兜底，避免依赖异步回调造成误判
-        static $local = [];
+        // 同步语义：单进程内用静态计数兜底，避免依赖异步回调造成误判。
+        // 键含分钟槽位，跨槽后旧键永不再被读取 —— 不清即在常驻进程里无界累积。
+        static $local     = [];
+        static $localSlot = -1;
+        if ($slot !== $localSlot) {
+            $localSlot = $slot;
+            $local     = [];
+        }
         if (!isset($local[$key])) {
             $local[$key] = 0;
         }

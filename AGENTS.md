@@ -62,20 +62,21 @@ runtime/                  运行时产物：logs/ pid/ phpstan/（已 gitignore�
 ## 4. 质量门禁（改完必跑）
 
 ```bash
-composer analyse      # PHPStan L6，114 文件（含 tests）；两份 baseline 冻结存量 → 必须 0 errors
-composer test         # PHPUnit：467 tests / 1317 assertions
+composer analyse      # PHPStan L6，117 文件（含 tests）；生产 baseline 已清空、测试 baseline 301 条目/311 条 → 必须 0 errors
+composer test         # PHPUnit：510 tests / 1431 assertions
 composer lint         # phpcs 审计（注释/命名/业务红线）；只读，仅 error 影响退出码
 composer lint:self    # 两个自定义 phpcs 嗅探器自检（漂移检测 + 作用域/豁免矩阵）
 composer cs:check     # php-cs-fixer 排版体检（dry-run，只报不改；落地用 composer cs）
 composer test:e2e     # 端到端 16 用例（A~P），需 4~5 个角色在线
 ```
 
-以下四个**不在 PHPUnit 套件内**（套件只扫 `tests/Unit` 与 `client/tests/Unit`），需单独执行，
+以下五个**不在 PHPUnit 套件内**（套件只扫 `tests/Unit` 与 `client/tests/Unit`），需单独执行，
 退出码 `0` = 全绿：
 
 ```bash
-node tests/Frontend/dashboard_autorefresh_check.js   # 面板自动刷新语义（注入假 DOM，无需服务端）
-node tests/Api/api_sign_check.js                     # HTTP 验签 8 形态（需 api + business 在线）
+composer test:frontend                                     # 面板自动刷新语义（注入假 DOM，无需服务端；= node tests/Frontend/dashboard_autorefresh_check.js）
+composer test:sign                                         # HTTP 验签 8 形态（需 api + business 在线；= node tests/Api/api_sign_check.js）
+composer test:docs                                         # 文档关键数字只读核对（baseline 条目 / 测试数 / 过期字面量 / CI 门禁）
 php  tests/Api/http_demo.php                         # HTTP 接口示例 13 场景（需 api + business 在线）
 php  tests/Manual/phpcs_business_rules_check.php     # phpcs 自定义嗅探器自检（= composer lint:self）
 ```
@@ -84,7 +85,8 @@ php  tests/Manual/phpcs_business_rules_check.php     # phpcs 自定义嗅探器�
   `php vendor/bin/phpstan clear-result-cache --memory-limit=512M`；
   **不要用 `rm -rf runtime/phpstan`**（本机安全策略对批量删除会直接拦截）。
 - 新增告警必须修，**不得追加进任何 baseline**。两份 baseline 的分工：
-  `phpstan-baseline.neon`（生产代码，8 条）/ `phpstan-tests-baseline.neon`（测试存量，324 条目/339 条）。
+  `phpstan-baseline.neon`（生产代码，2026-09-23 语义清洗后**已清空** `ignoreErrors: []`，保留文件维持双 baseline 结构）
+  / `phpstan-tests-baseline.neon`（测试存量，**301 条目 / 311 条** = 273 missingType + 38 有意语义条目）。
 - **重构修掉真实告警后，必须同步删掉 baseline 里对应的失效条目**。失效条目不删，PHPStan 会以
   `ignore.unmatched (non-ignorable)` 报错，门禁同样变红 —— 已发生过一次（2026-09-22，7 条）。
 - **⚠ `level` 与 baseline 必须同源**：baseline 用哪个 level 生成，`phpstan.neon` 的
@@ -117,9 +119,9 @@ php  tests/Manual/phpcs_business_rules_check.php     # phpcs 自定义嗅探器�
   详见 `docs/代码质量工具链说明.md` §8.6。
 
 - **CI 在 `.github/workflows/ci.yml`**，三个作业按**外部依赖**划分（不按快慢）：
-  `static`（单一 PHP 8.2：`composer validate --strict` → `analyse` → `lint` → `lint:self` → `cs:check`）/
+  `static`（单一 PHP 8.2：`composer validate --strict` → `analyse` → `lint` → `lint:self` → `cs:check` → `test:frontend`）/
   `test`（PHP **8.2~8.5 矩阵**，8.5 为实验性 `continue-on-error`）/
-  `e2e`（Redis 7 service + 全 6 角色：`e2e_check` → `test:client-e2e` → `api_sign_check.js` → `demo:http`）。
+  `e2e`（Redis 7 service + 全 6 角色：`e2e_check` → `test:client-e2e` → `test:sign` → `demo:http`）。
   **CI 直接调上面同一套 composer script，不另写一套命令**；触发器同时挂 `main` 与 `master`
   （默认分支是 `main`，但活跃推送在 `master`，只挂一个会永不触发）。
 - **`composer cs` 之后必须把 PHP 文件统一回 LF，再跑 `composer lint`**：`line_ending => false`

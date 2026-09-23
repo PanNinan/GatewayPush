@@ -456,7 +456,7 @@ class Push
         if ($msgId !== '' && !empty(self::$config['idempotent'])) {
             RedisClient::setNxEx(
                 RedisKeys::pushDedup($msgId),
-                1,
+                '1',
                 (int)self::$config['idempotent_ttl'],
                 function ($first) use ($msgId, $execute, $target) {
                     if (!$first) {

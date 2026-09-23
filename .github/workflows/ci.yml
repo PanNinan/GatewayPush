@@ -4,7 +4,8 @@
 # 核心原则：**CI 不发明第二套口径**。
 #
 # 下面所有门禁都直接调用 composer.json 里已有的 script
-# （analyse / test / lint / lint:self / cs:check / test:client-e2e / demo:http），
+# （analyse / test / lint / lint:self / cs:check / test:frontend /
+#  test:client-e2e / test:sign / demo:http），
 # 而不是在 YAML 里重写一遍 php vendor/bin/...。理由：
 #   一旦 CI 与本地用不同命令，出现「本地绿、CI 红」时就无从对照 ——
 #   到底是环境差异还是命令差异，无法区分。
@@ -70,6 +71,13 @@ jobs:
           tools: composer:v2
           cache: composer
 
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          # dashboard_autorefresh_check.js 只用 fs / path 两个内置模块，
+          # 无需 npm install，因此不配 cache、也没有依赖安装步骤。
+
       - name: 校验 composer.json / composer.lock 一致性
         # --no-check-publish：本包 type=project 且未声明 authors/support，
         # 发布态校验会报与门禁无关的元信息缺失。
@@ -99,6 +107,12 @@ jobs:
         # 从而报 40 个「待排版」——那是工作区行尾假象，不是排版问题。
         # 反过来说，这一步在 CI 上是有真实判别力的：它一红就说明确实有排版违规。
         run: composer cs:check
+
+      - name: 面板自动刷新语义校验（注入假 DOM，无需服务端）
+        # AGENTS §4 列出的四个「不在 PHPUnit 套件内、需单独执行」脚本之一，
+        # 此前唯一漏出 CI 的门禁 —— 它纯静态（读模板 + 编译 + 跑断言），
+        # 故归 static 作业而非 e2e。
+        run: composer test:frontend
 
   # =====================================================================
   # 门禁 2：单元测试（PHP 版本矩阵）
@@ -276,7 +290,7 @@ jobs:
         run: composer test:client-e2e
 
       - name: HTTP 验签与动作分支
-        run: node tests/Api/api_sign_check.js
+        run: composer test:sign
 
       - name: HTTP 接口调用示例
         run: composer demo:http
