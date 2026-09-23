@@ -1,6 +1,6 @@
 # GatewayPush 客户端 SDK 与调试器设计方案
 
-> 状态：已确认，**P0、P1、P2 已完成**（2026-09-20），P3~P6 按阶段实现
+> 状态：已确认，**P0~P6 全部完成**（2026-09-21）
 > 对应服务端：`Workerman V2 GatewayPush 实时数据推送服务技术方案文档.md`
 > 使用手册：`README.md`
 
@@ -130,7 +130,7 @@ client/
 │   └── gwclient.php               调试器入口
 └── tests/
     ├── Unit/                      Protocol / Session 单测
-    └── ClientE2E.php              客户端侧端到端自检（对齐服务端 15 用例）
+    └── ClientE2E.php              客户端侧端到端自检（覆盖服务端 A~O 共 15 用例，服务端另有 P）
 ```
 
 ---
@@ -324,7 +324,7 @@ REPL 行为约定：
 | `listen [--seconds=N]` | 长驻接收推送（含离线补投），自动回 ack |
 | `push --type=uid\|device\|client --target --payload [--msg-id] [--offline]` | HTTP 管理端推送 |
 | `stats` / `health` | HTTP 指标 / 健康 |
-| `e2e [--uid --device]` | 客户端侧端到端自检（对齐服务端 15 用例） |
+| `e2e [--uid --device]` | 客户端侧端到端自检（覆盖服务端 A~O 共 15 用例，服务端另有 P） |
 
 **示例**
 
@@ -358,7 +358,7 @@ php client/bin/gwclient.php stats
 | **P3** ✅ | `UdpTransport` | 合法签名通过；篡改签名 `4001`；**双层 ack 正确判别**；首包重传 —— **已完成 2026-09-21** |
 | **P4** ✅ | `AdminApi` | `/health 200`、`/stats 200`、`/push` 验签通过 + 验签失败 `401` —— **已完成 2026-09-21** |
 | **P5** ✅ | 重连 + 会话恢复 + 离线补投 | 重连后 `reconnected:1`；补投报文 `offline:1` —— **已完成 2026-09-21** |
-| **P6** ✅ | CLI 调试器 + `ClientE2E` | 与 `tests/e2e_check.php` 同口径，全部通过 —— **已完成 2026-09-21** |
+| **P6** ✅ | CLI 调试器 + `ClientE2E` | 覆盖服务端 A~O 共 15 用例（服务端另有 P），全部通过 —— **已完成 2026-09-21** |
 
 ---
 
@@ -394,7 +394,7 @@ php client/bin/gwclient.php stats
 | `client/src/Protocol/TokenIssuer.php` | Token 签发 / `inspect` / `claims` / `peek`（不验签） |
 | `client/src/Error/ErrorCode.php` | 报文码 + HTTP 业务码 + 客户端本地码（10001+） |
 | `client/src/Error/ClientException.php` | 统一异常（报文 / 超时 / 传输 / 配置 / 状态 / 内部） |
-| `client/tests/Unit/*.php` | 4 个测试类，87 用例 / 247 断言 |
+| `client/tests/Unit/*.php` | 4 个测试类，87 用例 / 247 断言（P0 时点；现 12 个测试类，以 `composer test` 为准） |
 | `client/README.md` | 客户端使用说明（含协议要点速查） |
 
 改动的基础设施（非新增文件）：
@@ -509,7 +509,7 @@ msg_id 与请求对齐、offline=0 实时）→ **自动回执 acked=1** → `to
 | `client/src/Cli/Debugger.php` | 一次性命令 / REPL / listen 三种模式；异步输出不打断输入行 |
 | `client/bin/gwclient.php` | 入口：默认参数取自 `config/app.php`、`config/gateway.php` |
 | `client/tests/Unit/CliParserTest.php` | 7 用例 |
-| `client/tests/E2E/ClientE2E.php` | 与 `tests/e2e_check.php` 同口径的 A~O 共 15 用例 |
+| `client/tests/E2E/ClientE2E.php` | 覆盖服务端 `tests/e2e_check.php` 的 A~O 共 15 用例（服务端另有 P：HTTP `/action`，客户端 e2e 未纳入） |
 | `composer.json` | 新增 `composer test:client-e2e` |
 
 **实测验收**：一次性命令（ping/echo/session/notify/health/stats/push + `--bad-sign`

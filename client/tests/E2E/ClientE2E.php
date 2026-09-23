@@ -1,6 +1,6 @@
 <?php
 /**
- * 客户端 SDK 端到端对齐 —— 与 tests/e2e_check.php 同口径（用例 A~O）
+ * 客户端 SDK 端到端 —— 覆盖服务端 tests/e2e_check.php 的用例 A~O 共 15 个（服务端另有 P）
  *
  * 用法：
  *   php client/tests/E2E/ClientE2E.php [uid前缀]
@@ -46,7 +46,7 @@ $udpUrl = 'udp://' . str_replace('0.0.0.0', '127.0.0.1', preg_replace('#^[a-z]+:
 
 $prefix = $argv[1] ?? ('ce2e-' . substr(md5((string)microtime(true)), 0, 6));
 
-echo "客户端 SDK 端到端对齐（uid 前缀 {$prefix}）\n";
+echo "客户端 SDK 端到端自检（uid 前缀 {$prefix}）\n";
 echo "ws={$wsUrl} udp={$udpUrl} api={$apiUrl}\n";
 
 $results = [];

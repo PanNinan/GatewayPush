@@ -23,8 +23,8 @@ use PhpCsFixer\Finder;
  *         从而让 PHPStan 直接失明
  *   2. 不加 `declare(strict_types=1)`
  *      —— 它按**调用方文件**生效，逐文件加会让同一函数在不同调用点行为不一致
- *         （非严格模式自动 int→string，严格模式抛 TypeError）；本项目下限 8.1，
- *         兼容 8.1~8.5，依赖 Workerman 生态的宽松转换
+ *         （非严格模式自动 int→string，严格模式抛 TypeError）；本项目下限 8.2，
+ *         兼容 8.2~8.5，依赖 Workerman 生态的宽松转换
  *   3. 不改运行时语义、不翻动行尾
  *      —— `mt_rand()`→`random_int()` 是熵源与异常行为的变更，不是排版
  *   4. 不新增 use、不缩短类名引用、不动文件头与注释的留白风格
@@ -81,7 +81,7 @@ return (new Config())
     // 这类现代化迁移是安全的；真正会改语义的（见 $boundary）已逐条关掉
     ->setRiskyAllowed(true)
     ->setRules([
-        '@auto' => true,        // PER-CS + 依 composer.json 下限（8.1）推导的迁移规则
+        '@auto' => true,        // PER-CS + 依 composer.json 下限（8.2）推导的迁移规则
         '@auto:risky' => true,  // 现代写法迁移
         '@PhpCsFixer' => true,  // 项目级排版细则（= @PER-CS + @Symfony + 额外项）
     ] + $boundary)

@@ -10,9 +10,9 @@
  * 核对项（只读，不跑 PHPStan / PHPUnit，避免把核对变成慢门禁）：
  *   ① 生产 baseline 必须是 ignoreErrors: []（语义清洗后的状态）
  *   ② 测试 baseline 条目数 / 抑制告警数 与文档一致（301 / 311）
- *   ③ 文档中不得残留过期数字（467 tests / 1317 / 324 条目 / 114 文件 / 8 条 等）
- *   ④ composer.json 必须有 test:frontend / test:sign 脚本
- *   ⑤ CI 必须调用 test:frontend 与 test:sign
+ *   ③ 文档中不得残留过期数字（467 tests / 510 tests / 1431 / 324 条目 / 114 文件 / 8 条 等）
+ *   ④ composer.json 必须有 test:frontend / test:sign / test:docs 脚本
+ *   ⑤ CI 必须调用 test:frontend / test:sign / test:docs
  *
  * 用法：php tests/Manual/docs_numbers_check.php
  * 退出码 0 = 全绿。
@@ -126,13 +126,15 @@ $docs = [
 
 // 每条：[过期字面量, 说明]
 $stale = [
-    ['467 tests', '旧测试数（现 510）'],
-    ['1317 assertions', '旧断言数（现 1431）'],
-    ['443 tests', '旧测试数（现 510）'],
-    ['1246 assertions', '旧断言数（现 1431）'],
+    ['467 tests', '旧测试数（现 519）'],
+    ['1317 assertions', '旧断言数（现 1465）'],
+    ['443 tests', '旧测试数（现 519）'],
+    ['1246 assertions', '旧断言数（现 1465）'],
+    ['510 tests', '旧测试数（现 519）'],
+    ['1431 assertions', '旧断言数（现 1465）'],
     ['324 条目', '旧测试 baseline 条目（现 301）'],
     ['339 条', '旧测试 baseline 告警（现 311）'],
-    ['114 文件', '旧分析文件数（现 117）'],
+    ['114 文件', '旧分析文件数（现 119）'],
     ['生产代码 8 条', '生产 baseline 已清空'],
     ['生产代码，8 条', '生产 baseline 已清空'],
     ['（8 条）', '生产 baseline 已清空'],
@@ -163,9 +165,9 @@ foreach ($docs as $rel) {
 
 // 正向锚点：必须出现的最新数字
 $positive = [
-    'README.md'          => ['510 tests', '301 条目'],
-    'AGENTS.md'          => ['510 tests', '301 条目'],
-    'docs/代码质量工具链说明.md' => ['510 tests', '301 条目'],
+    'README.md'          => ['519 tests', '301 条目'],
+    'AGENTS.md'          => ['519 tests', '301 条目'],
+    'docs/代码质量工具链说明.md' => ['519 tests', '301 条目'],
 ];
 foreach ($positive as $rel => $needles) {
     $path = $root . '/' . $rel;
@@ -189,7 +191,7 @@ $scripts      = $isArray && isset($composer['scripts']) && is_array($composer['s
     ? $composer['scripts']
     : [];
 
-foreach (['test:frontend', 'test:sign'] as $script) {
+foreach (['test:frontend', 'test:sign', 'test:docs'] as $script) {
     $check(
         isset($scripts[$script]),
         "composer.json 含 script：{$script}",
@@ -209,6 +211,11 @@ $check(
 $check(
     $ciRaw !== '' && (bool)preg_match('/composer\s+test:sign/', $ciRaw),
     'ci.yml 调用 composer test:sign',
+    '未找到'
+);
+$check(
+    $ciRaw !== '' && (bool)preg_match('/composer\s+test:docs/', $ciRaw),
+    'ci.yml 调用 composer test:docs',
     '未找到'
 );
 $check(

@@ -5,7 +5,7 @@
 #   存量问题记录在 phpstan-baseline.neon，不在业务代码里做无意义的修补；
 #   此后新增的告警必须修复，不得追加进 baseline。
 #
-# 版本约束：phpstan/phpstan ^2.0（要求 php ^7.4|^8.0），与项目 PHP 8.1 目标兼容。
+# 版本约束：phpstan/phpstan ^2.0（要求 php ^7.4|^8.0），与项目 PHP 8.2 目标兼容。
 #
 # ⚠ level 与 baseline 必须同源：baseline 是用哪个 level 生成的，parameters.level
 #   就得是哪个值，否则 PHPStan 会对每条不再命中的条目报

@@ -4,7 +4,7 @@
 # 核心原则：**CI 不发明第二套口径**。
 #
 # 下面所有门禁都直接调用 composer.json 里已有的 script
-# （analyse / test / lint / lint:self / cs:check / test:frontend /
+# （analyse / test / lint / lint:self / cs:check / test:frontend / test:docs /
 #  test:client-e2e / test:sign / demo:http），
 # 而不是在 YAML 里重写一遍 php vendor/bin/...。理由：
 #   一旦 CI 与本地用不同命令，出现「本地绿、CI 红」时就无从对照 ——
@@ -109,10 +109,15 @@ jobs:
         run: composer cs:check
 
       - name: 面板自动刷新语义校验（注入假 DOM，无需服务端）
-        # AGENTS §4 列出的四个「不在 PHPUnit 套件内、需单独执行」脚本之一，
-        # 此前唯一漏出 CI 的门禁 —— 它纯静态（读模板 + 编译 + 跑断言），
+        # AGENTS §4 列出的「不在 PHPUnit 套件内、需单独执行」脚本之一，
+        # 此前长期漏出 CI 的门禁 —— 它纯静态（读模板 + 编译 + 跑断言），
         # 故归 static 作业而非 e2e。
         run: composer test:frontend
+
+      - name: 文档关键数字只读核对（baseline / 测试数 / 过期字面量）
+        # 秒级只读脚本；把 README/AGENTS/工具链的数字与 test:docs 正向锚点钉在一起，
+        # 防止 510→519 这类漂移再次只改文档不改锚点（或反过来）。
+        run: composer test:docs
 
   # =====================================================================
   # 门禁 2：单元测试（PHP 版本矩阵）

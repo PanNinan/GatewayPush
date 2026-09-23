@@ -62,8 +62,8 @@ runtime/                  运行时产物：logs/ pid/ phpstan/（已 gitignore�
 ## 4. 质量门禁（改完必跑）
 
 ```bash
-composer analyse      # PHPStan L6，117 文件（含 tests）；生产 baseline 已清空、测试 baseline 301 条目/311 条 → 必须 0 errors
-composer test         # PHPUnit：510 tests / 1431 assertions
+composer analyse      # PHPStan L6，119 文件（含 tests）；生产 baseline 已清空、测试 baseline 301 条目/311 条 → 必须 0 errors
+composer test         # PHPUnit：519 tests / 1465 assertions
 composer lint         # phpcs 审计（注释/命名/业务红线）；只读，仅 error 影响退出码
 composer lint:self    # 两个自定义 phpcs 嗅探器自检（漂移检测 + 作用域/豁免矩阵）
 composer cs:check     # php-cs-fixer 排版体检（dry-run，只报不改；落地用 composer cs）
@@ -104,7 +104,9 @@ php  tests/Manual/phpcs_business_rules_check.php     # phpcs 自定义嗅探器�
 - **当前 level = 6**（2026-09-22 由 5 提升）。提级前量化：level 6 全量 538 errors / 66 文件，
   **100% 是 `missingType.*`，零语义告警**；生产侧 265 条已补 phpdoc 清零，测试侧 273 条冻结进
   `phpstan-tests-baseline.neon`。**level 6 不新增逻辑类检查**，别指望它多抓 bug。
-- 补标注纪律：**只加 phpdoc、不加原生返回类型**（后者会改运行期行为）；默认
+- 补标注纪律：**生产代码可补原生类型**（`: void` / 明确标量 / 数组形参，接口与实现须同步协变；
+  已于 2026-09-23 落地属性与方法原生类型）；**测试侧仍只加 phpdoc、不加原生返回类型**
+  （改运行期行为、收益低，已冻结进 baseline）。phpdoc 元素类型默认
   `array<string, mixed>`，`$keys`/`$members` 这类列表用 `array<int|string, mixed>`。
   **替换既有 tag 时只替换 `array` 这一个词** —— 整段替换会丢掉 `null|`、`|string` 分支。
 - `phpstan-strict-rules` / `phpstan-phpunit` 是**显式 `includes`** 的（未装 `extension-installer`）；
@@ -119,7 +121,7 @@ php  tests/Manual/phpcs_business_rules_check.php     # phpcs 自定义嗅探器�
   详见 `docs/代码质量工具链说明.md` §8.6。
 
 - **CI 在 `.github/workflows/ci.yml`**，三个作业按**外部依赖**划分（不按快慢）：
-  `static`（单一 PHP 8.2：`composer validate --strict` → `analyse` → `lint` → `lint:self` → `cs:check` → `test:frontend`）/
+  `static`（单一 PHP 8.2：`composer validate --strict` → `analyse` → `lint` → `lint:self` → `cs:check` → `test:frontend` → `test:docs`）/
   `test`（PHP **8.2~8.5 矩阵**，8.5 为实验性 `continue-on-error`）/
   `e2e`（Redis 7 service + 全 6 角色：`e2e_check` → `test:client-e2e` → `test:sign` → `demo:http`）。
   **CI 直接调上面同一套 composer script，不另写一套命令**；触发器同时挂 `main` 与 `master`
