@@ -1,0 +1,96 @@
+<?php
+/**
+ * GatewayPush 指标趋势页（2.0 §1.1：在线连接 / 消息速率 / 异常与限流）。
+ *
+ * ⚠ 本文件后缀是 .html 但内容是**原生 PHP**（webman Raw 引擎直接 include）。
+ * ⚠ 本页**不含任何数据**，只输出骨架与一份 `#metrics-page-config` JSON；
+ *   数据由 `/static/metrics.js` 经 `GET /api/metrics/range|latest` 按需取。
+ *
+ * 刷新语义：**手动刷新 + 时间范围切换**，不做自动轮询 ——
+ * dashboard 页的 5s 快 tick（mon.live）已覆盖「看实时」的需求，
+ * 本页是「看趋势」，数据源本身 60s 才落一个点，自动刷新没有意义。
+ *
+ * @var string $title
+ * @var array{
+ *     range_url: string,
+ *     latest_url: string,
+ *     range_options: list<int>,
+ *     points_max: int,
+ *     sample_interval: int,
+ *     perms: array{range: bool, latest: bool}
+ * } $config
+ */
+
+$h = static fn (mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
+
+$json = json_encode(
+    $config,
+    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+    | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+);
+?>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title><?= $h($title) ?></title>
+    <link rel="stylesheet" href="/static/metrics.css">
+</head>
+<body>
+
+<noscript>
+    <div class="note bad"><strong>本页需要 JavaScript。</strong></div>
+</noscript>
+
+<div class="wrap">
+    <h1>指标趋势</h1>
+
+    <div id="metrics-page-config" hidden><?= $h($json) ?></div>
+
+    <!-- ============ 工具栏：时间范围 + 刷新 ============ -->
+    <div class="form">
+        <label>时间范围
+            <select id="sel-range">
+                <?php foreach ($config['range_options'] as $m) { ?>
+                    <option value="<?= (int)$m ?>"><?= (int)$m === 1440 ? '24 小时' : ((int)$m >= 60 ? ((int)round($m / 60)) . ' 小时' : ((int)$m) . ' 分钟') ?></option>
+                <?php } ?>
+            </select>
+        </label>
+        <button id="btn-refresh" class="btn primary" type="button">刷新</button>
+        <span id="metrics-status" class="muted"></span>
+    </div>
+
+    <!-- ============ 当前值（最新采样行） ============ -->
+    <?php if (($config['perms']['latest'] ?? false) === true) { ?>
+    <div id="sec-latest">
+        <h2>当前值</h2>
+        <table class="tbl" id="tbl-latest"><tbody></tbody></table>
+    </div>
+    <?php } else { ?>
+    <div class="note" id="latest-readonly">无「指标查看」权限，当前值不可见。</div>
+    <?php } ?>
+
+    <!-- ============ 三组曲线 ============ -->
+    <?php if (($config['perms']['range'] ?? false) === true) { ?>
+    <div id="sec-charts">
+        <h2>在线连接</h2>
+        <div id="chart-conn"></div>
+
+        <h2>消息速率（条/秒，按采样差分）</h2>
+        <div id="chart-msg"></div>
+
+        <h2>异常与限流（次/秒）</h2>
+        <div id="chart-fail"></div>
+
+        <div class="note muted" id="empty-hint" hidden>暂无采样数据 —— 采样进程每
+            <?= (int)$config['sample_interval'] ?> 秒落一个点，刚部署时图表为空属正常，稍后点「刷新」。</div>
+    </div>
+    <?php } else { ?>
+    <div class="note" id="range-readonly">无「指标查看」权限，曲线不可见。</div>
+    <?php } ?>
+</div>
+
+<script src="/static/metrics.js"></script>
+</body>
+</html>

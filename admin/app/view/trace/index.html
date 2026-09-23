@@ -1,0 +1,85 @@
+<?php
+/**
+ * GatewayPush uid 一站式排查页（2.0 §3.2）。
+ *
+ * ⚠ 本文件后缀是 .html 但内容是**原生 PHP**（webman Raw 引擎直接 include）。
+ * ⚠ 本页**不含任何数据**，只输出骨架与一份 `#trace-page-config` JSON；
+ *   输入 uid 后由 `/static/trace.js` **并行**调既有 4 个只读端点（零新增 API）：
+ *     by-uid（会话）· offline（离线队列）· subscriptions（订阅）· by-device（反查）
+ *   各端点独立展示成败 —— 一个端点权限缺失 / 报错，不影响其余区块。
+ *
+ * @var string $title
+ * @var array{
+ *     by_uid_url: string,
+ *     by_device_url: string,
+ *     offline_url: string,
+ *     subscriptions_url: string,
+ *     perms: array{byUid: bool, byDevice: bool, offline: bool, subs: bool}
+ * } $config
+ */
+
+$h = static fn (mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
+
+$json = json_encode(
+    $config,
+    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+    | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+);
+?>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title><?= $h($title) ?></title>
+    <link rel="stylesheet" href="/static/trace.css">
+</head>
+<body>
+
+<noscript>
+    <div class="note bad"><strong>本页需要 JavaScript。</strong></div>
+</noscript>
+
+<div class="wrap">
+    <h1>uid 排查</h1>
+
+    <div id="trace-page-config" hidden><?= $h($json) ?></div>
+
+    <!-- ============ 查询栏 ============ -->
+    <div class="form">
+        <label>uid <input id="inp-uid" type="text" maxlength="64" autocomplete="off" placeholder="输入 uid"></label>
+        <label>device_id（可选反查）
+            <input id="inp-device" type="text" maxlength="64" autocomplete="off" placeholder="可选">
+        </label>
+        <button id="btn-trace" class="btn primary" type="button">排查</button>
+        <span id="trace-status" class="muted"></span>
+    </div>
+
+    <!-- ============ 区块 1：会话（by-uid） ============ -->
+    <div id="sec-sessions">
+        <h2>会话（by-uid）</h2>
+        <table class="tbl" id="tbl-sessions"><tbody></tbody></table>
+    </div>
+
+    <!-- ============ 区块 2：设备反查（by-device，可选输入） ============ -->
+    <div id="sec-device" hidden>
+        <h2>设备反查（by-device）</h2>
+        <table class="tbl" id="tbl-device"><tbody></tbody></table>
+    </div>
+
+    <!-- ============ 区块 3：离线队列（offline） ============ -->
+    <div id="sec-offline">
+        <h2>离线队列</h2>
+        <table class="tbl" id="tbl-offline"><tbody></tbody></table>
+    </div>
+
+    <!-- ============ 区块 4：订阅（subscriptions） ============ -->
+    <div id="sec-subs">
+        <h2>订阅主题</h2>
+        <table class="tbl" id="tbl-subs"><tbody></tbody></table>
+    </div>
+</div>
+
+<script src="/static/trace.js"></script>
+</body>
+</html>

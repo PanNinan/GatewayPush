@@ -40,6 +40,13 @@ return [
             'publicPath' => public_path()
         ]
     ],
+    // 指标趋势采样（2.0 §1.1）：独立进程持续落 gw_metric_samples，与页面访问无关。
+    // count 必须 = 1 —— 多进程并发采样会靠 uk_sampled_at 兜底，但没必要浪费。
+    // 红线 ㊲ 的处理（Timer::add 延迟首跑）见 MetricSampler::onWorkerStart 注释。
+    'metric-sampler' => [
+        'handler' => app\process\MetricSampler::class,
+        'count' => 1,
+    ],
     // File update detection and automatic reload
     'monitor' => [
         'handler' => app\process\Monitor::class,

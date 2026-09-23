@@ -544,3 +544,41 @@ ADMIN_ROLES_CMD="php ../start.php roles"   # 正确
 前端：`public/static/ops.js` —— 零定时器（重新探测是显式按钮）、零 innerHTML、前端不编词；
 `tests/Frontend/ops_render_check.js`（15 项）已并入 `composer test:frontend`。
 单测：`tests/Unit/P5OpsServiceTest.php`（13 tests / 44 assertions）。
+
+---
+
+## 13. 2.0 首批：指标趋势 + uid 一站式排查（2026-09-24）
+
+### 13.1 指标趋势采样页（`/metrics`）
+
+- **采样**：独立进程 `metric-sampler`（`config/process.php`，count=1）每
+  `ADMIN_METRIC_SAMPLE_INTERVAL`（默认 60s）秒经 `MonitorAggregator`（Redis 只读）落一行
+  `gw_metric_samples`；counter 全量进 JSON 列，速率由查询侧差分。
+- **红线 ㊲ 落点**：`MetricSampler::onWorkerStart` 立即执行一次采样+清理再挂 Timer
+  （延迟首跑会让频繁重启环境一次都不跑）。
+- **API**：`GET /api/metrics/range?minutes=&points=`（降采样保首尾 + 差分速率）、
+  `GET /api/metrics/latest`。降采样/差分是纯函数（`MetricService::downsample/withRates`），
+  口径金标在 `MetricServiceTest`：**counter 重置 ⇒ rate=null 绝不输出负速率**。
+- **权限**：metricsPage 菜单 + metric.range/latest，只读与运维**同授**（监测属只读能力）。
+- **前端**：手写 SVG 折线（零依赖）；手动刷新 + 范围切换，**无自动轮询**（看实时去 dashboard）；
+  空 dataset 如实提示不画假图；textContent-only。校验 `tests/Frontend/metrics_render_check.js`。
+
+### 13.2 uid 一站式排查页（`/trace`）
+
+- 输入 uid → **并行**调既有 4 个只读端点（by-uid / offline / subscriptions / by-device），
+  **零新增 API**：端点各自的 `sess.*` 权限就是边界，tracePage 菜单节点只管入口可见。
+- 各区块独立展示成败（403 / 业务错 / 空结果互不拖累）；device_id 可选反查。
+- 校验 `tests/Frontend/trace_render_check.js`（25 项）；live 验收
+  `php tests/Manual/_p20_live_check.php`（10 项，登录运维账号实调）。
+
+### 13.3 踩坑记录（新增）
+
+1. **Redis 池心跳 vs 低频进程**：原池配置 `min_connections=1 + heartbeat_interval=50`，
+   采样进程 60s 才用一次连接 ⇒ 空闲连接被对端关闭后心跳必败，且池清理走 CLOSE 命令 ——
+   predis 无此命令，每 50s 刷一轮异常堆栈。已改 `min_connections=0 + idle 55s`：
+   低 QPS 后台「取用时新建」远比「保活坏连接」可靠。
+2. **Windows 双实例恶化**：webman master 误判 worker 死亡重 spawn 时，旧 worker 在
+   Windows（不拒绝重复 bind）下仍活着收请求 ⇒ 一套 master 也能出双监听。
+   处置：`netstat -ano` 找 8292 全部监听 PID 逐个杀，master 会重 spawn 自己的 worker，
+   杀不死的才是真 master。
+3. **php-cs-fixer / phpcs**：admin 无独立 lint 脚本，新增文件保持 LF（`.gitattributes`）。

@@ -44,10 +44,17 @@ return [
         'timeout' => $timeout,
         'pool' => [
             'max_connections' => 5,
-            'min_connections' => 1,
+            // min=0 + idle_timeout：空闲连接直接丢弃，而不是靠心跳保活。
+            // ⚠ 2.0 踩坑记录：原配置 min_connections=1 + heartbeat_interval=50，
+            //   metric-sampler 进程（60s 才采样一次）的连接必然 idle 超过心跳间隔，
+            //   而此时对端（Redis）早已关掉该连接 ⇒ 心跳 GET 写失败 ⇒
+            //   池尝试 CLOSE 清理 ⇒ predis 无 CLOSE 命令 ⇒ 每 50s 刷一轮异常堆栈。
+            //   低 QPS 后台「每次取用时新建」远比「保活坏连接」可靠。
+            'min_connections' => 0,
+            'max_idle_time' => 55,
+            'idle_timeout' => 55,
             'wait_timeout' => 3,
-            'idle_timeout' => 60,
-            'heartbeat_interval' => 50,
+            'heartbeat_interval' => 3600,
         ],
     ],
 ];
