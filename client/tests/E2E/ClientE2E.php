@@ -388,7 +388,7 @@ $worker->onWorkerStart = function () use (
     };
 
     // [E] 在线定向推送
-    $queue[] = function ($next) use (&$ws, &$pushes, $waitUntil, $record, $admin) {
+    $queue[] = function ($next) use (&$pushes, $waitUntil, $record, $admin) {
         $msgId = 'ce2e-e-' . bin2hex(random_bytes(3));
         $admin->push('uid', $GLOBALS['uidWsFix'], ['case' => 'E'], ['msg_id' => $msgId], function ($ok) use (&$pushes, $waitUntil, $record, $next, $msgId) {
             if (!$ok) {
@@ -542,9 +542,9 @@ $worker->onWorkerStart = function () use (
     // [J] 指令路由表：echo / session / 未知动作 4006
     $queue[] = function ($next) use (&$ws, $record) {
         $session = $ws;
-        $session?->request('echo', ['j' => 1], function ($ok) use ($session, $record, $next) {
-            $session?->request('session', [], function ($ok2) use ($session, $record, $next, $ok) {
-                $session?->request('__unknown_action__', [], function ($ok3, $packet) use ($record, $next, $ok, $ok2) {
+        $session->request('echo', ['j' => 1], function ($ok) use ($session, $record, $next) {
+            $session->request('session', [], function ($ok2) use ($session, $record, $next, $ok) {
+                $session->request('__unknown_action__', [], function ($ok3, $packet) use ($record, $next, $ok, $ok2) {
                     $code = ce2eCode($packet);
                     $pass = $ok && $ok2 && !$ok3 && $code === 4006;
                     $record('J', '路由表 echo/session + 未知动作 4006', $pass, 'unknown code=' . $code);
@@ -593,6 +593,9 @@ $worker->onWorkerStart = function () use (
         $session->connect();
 
         $waitState($session, SessionManager::STATE_READY, function () use ($session, $record, $next) {
+            // @var 覆盖 PHPStan 对 by-ref 闭包链的空数组收窄：$codes 由下方
+            // 100 个并发回调填充，分析器看不到跨闭包赋值（见 tests baseline 说明）
+            /** @var array<int, int> $codes */
             $codes = [];
             $left  = 100;
             $maybe = function () use (&$left, &$codes, $session, $record, $next) {

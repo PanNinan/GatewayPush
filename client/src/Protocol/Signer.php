@@ -38,9 +38,9 @@ final class Signer
      *
      * @return string 64 位十六进制
      */
-    public static function sign(array $packet, $secret)
+    public static function sign(array $packet, string $secret): string
     {
-        return Message::sign($packet, (string)$secret);
+        return Message::sign($packet, $secret);
     }
 
     /**
@@ -52,7 +52,7 @@ final class Signer
      *
      * @throws JsonException 数据无法编码为 JSON 时抛出
      */
-    public static function canonicalize($data)
+    public static function canonicalize($data): string
     {
         return Message::canonicalize($data);
     }
@@ -69,7 +69,7 @@ final class Signer
      *
      * @throws JsonException data 无法编码为 JSON 时抛出
      */
-    public static function baseString(array $packet)
+    public static function baseString(array $packet): string
     {
         return implode('|', [
             isset($packet['cmd']) ? (string)$packet['cmd'] : '',
@@ -93,12 +93,12 @@ final class Signer
      *
      * @return array<string, mixed> ['ok'=>bool,'code'=>int,'msg'=>string]
      */
-    public static function verify(array $packet, $secret, $clockSkew = 300)
+    public static function verify(array $packet, string $secret, int $clockSkew = 300): array
     {
         return Message::verify($packet, [
             'sign_enable' => true,
-            'secret'      => (string)$secret,
-            'clock_skew'  => (int)$clockSkew,
+            'secret'      => $secret,
+            'clock_skew'  => $clockSkew,
         ]);
     }
 }

@@ -51,103 +51,103 @@ class SessionManager
      *
      * @var array<string, mixed>
      */
-    private $config;
+    private array $config;
 
     /**
      * @var TransportInterface
      */
-    private $transport;
+    private TransportInterface $transport;
 
     /**
      * @var TokenIssuer
      */
-    private $issuer;
+    private TokenIssuer $issuer;
 
     /**
      * 当前状态（STATE_* 常量）
      *
      * @var string
      */
-    private $state = self::STATE_DISCONNECTED;
+    private string $state = self::STATE_DISCONNECTED;
 
     /**
      * seq 计数器
      *
      * @var int
      */
-    private $seqCounter = 0;
+    private int $seqCounter = 0;
 
     /**
      * pending 请求表：seq => PendingRequest
      *
      * @var array<string, mixed>
      */
-    private $pending = [];
+    private array $pending = [];
 
     /**
      * 最近一次成功结算的往返耗时（秒）
      *
      * @var float
      */
-    private $lastRtt = 0.0;
+    private float $lastRtt = 0.0;
 
     /**
      * 当前会话使用的 Token（auth 时签发；attach_token 开启时随包携带）
      *
      * @var string
      */
-    private $token = '';
+    private string $token = '';
 
     /**
      * 连续重连次数（鉴权成功后清零）
      *
      * @var int
      */
-    private $reconnectAttempts = 0;
+    private int $reconnectAttempts = 0;
 
     /**
      * 用户主动关闭标记（阻止 onClose 触发重连）
      *
      * @var bool
      */
-    private $closing = false;
+    private bool $closing = false;
 
     /**
      * 心跳定时器 id
      *
      * @var null|int
      */
-    private $heartbeatTimerId;
+    private ?int $heartbeatTimerId = null;
 
     /**
      * 重连定时器 id
      *
      * @var null|int
      */
-    private $reconnectTimerId;
+    private ?int $reconnectTimerId = null;
 
     /** @var null|callable function (array $packet): void */
-    private $onPushCb;
+    private mixed $onPushCb = null;
 
     /** @var null|callable function (ClientException $e): void */
-    private $onErrorCb;
+    private mixed $onErrorCb = null;
 
     /** @var null|callable function (string $new, string $old): void */
-    private $onStateChangeCb;
+    private mixed $onStateChangeCb = null;
 
     /**
      * 计时器创建 function (float $interval, bool $persistent, callable $fn): int
      *
      * @var callable
      */
-    private $timerAdd;
+    private mixed $timerAdd;
 
     /**
      * 计时器删除 function (int $timerId): void
      *
      * @var callable
      */
-    private $timerDel;
+    private mixed $timerDel;
 
     /**
      * @param array<string, mixed>    $config    见 self::defaultConfig()
@@ -211,7 +211,7 @@ class SessionManager
      *
      * @return array<string, mixed>
      */
-    public static function defaultConfig()
+    public static function defaultConfig(): array
     {
         return [
             'ws_url'         => '',       // ws://host:port
@@ -240,7 +240,7 @@ class SessionManager
      *
      * @throws ClientException 状态非法（已连接/正在建连时重复调用）
      */
-    public function connect()
+    public function connect(): void
     {
         if (!in_array($this->state, [self::STATE_DISCONNECTED, self::STATE_RECONNECTING], true)) {
             throw ClientException::state('当前状态为 ' . $this->state . '，不能重复建连');
@@ -261,7 +261,7 @@ class SessionManager
      *
      * @throws ClientException 状态非法 / Token 签发失败
      */
-    public function auth($cb = null)
+    public function auth($cb = null): void
     {
         if ($this->state !== self::STATE_CONNECTED) {
             throw ClientException::state('当前状态为 ' . $this->state . '，须先 connect 且握手完成');
@@ -294,7 +294,7 @@ class SessionManager
      *
      * @throws ClientException 未就绪
      */
-    public function ping($cb = null)
+    public function ping($cb = null): void
     {
         $this->assertReady();
 
@@ -315,12 +315,12 @@ class SessionManager
      *
      * @throws ClientException 未就绪
      */
-    public function request($action, array $params = [], $cb = null, $timeout = null)
+    public function request(string $action, array $params = [], $cb = null, $timeout = null): string
     {
         $this->assertReady();
 
         $packet = Message::packet(Message::CMD_DATA, [
-            'action' => (string)$action,
+            'action' => $action,
             'params' => $params,
         ], [
             'seq'       => $this->newSeq(),
@@ -328,7 +328,7 @@ class SessionManager
             'device_id' => $this->config['device_id'],
         ]);
 
-        $what    = 'data.' . (string)$action;
+        $what    = 'data.' . $action;
         $timeout = $timeout !== null ? (float)$timeout : (float)$this->config['timeout'];
         $this->registerPending($packet['seq'], $what, $timeout, $cb);
         $this->sendPacket($packet);
@@ -346,9 +346,9 @@ class SessionManager
      *
      * @return bool 是否已发送（未就绪时静默跳过）
      */
-    public function sendAck($msgId, array $data = [])
+    public function sendAck(string $msgId, array $data = []): bool
     {
-        $msgId = (string)$msgId;
+        $msgId = $msgId;
         if ($msgId === '' || $this->state !== self::STATE_READY) {
             return false;
         }
@@ -368,7 +368,7 @@ class SessionManager
      *
      * @return void
      */
-    public function close()
+    public function close(): void
     {
         if ($this->state === self::STATE_DISCONNECTED) {
             return;
@@ -401,7 +401,7 @@ class SessionManager
      *
      * @return string
      */
-    public function state()
+    public function state(): string
     {
         return $this->state;
     }
@@ -411,7 +411,7 @@ class SessionManager
      *
      * @return bool
      */
-    public function isReady()
+    public function isReady(): bool
     {
         return $this->state === self::STATE_READY;
     }
@@ -421,7 +421,7 @@ class SessionManager
      *
      * @return float
      */
-    public function lastRtt()
+    public function lastRtt(): float
     {
         return $this->lastRtt;
     }
@@ -431,7 +431,7 @@ class SessionManager
      *
      * @return int
      */
-    public function pendingCount()
+    public function pendingCount(): int
     {
         return count($this->pending);
     }
@@ -441,7 +441,7 @@ class SessionManager
      *
      * @return array<string, mixed>
      */
-    public function stats()
+    public function stats(): array
     {
         return [
             'state'              => $this->state,
@@ -460,7 +460,7 @@ class SessionManager
      *
      * @return void
      */
-    public function onPush($cb)
+    public function onPush($cb): void
     {
         $this->onPushCb = $cb;
     }
@@ -472,7 +472,7 @@ class SessionManager
      *
      * @return void
      */
-    public function onError($cb)
+    public function onError($cb): void
     {
         $this->onErrorCb = $cb;
     }
@@ -484,7 +484,7 @@ class SessionManager
      *
      * @return void
      */
-    public function onStateChange($cb)
+    public function onStateChange($cb): void
     {
         $this->onStateChangeCb = $cb;
     }
@@ -496,7 +496,7 @@ class SessionManager
     /**
      * @return void
      */
-    private function wireTransport()
+    private function wireTransport(): void
     {
         $this->transport->onOpen(function () {
             $this->handleOpen();
@@ -518,7 +518,7 @@ class SessionManager
      *
      * @return void
      */
-    private function handleOpen()
+    private function handleOpen(): void
     {
         $this->reconnectTimerId = null;
         $this->setState(self::STATE_CONNECTED);
@@ -535,14 +535,14 @@ class SessionManager
      *
      * @return void
      */
-    private function handleFrame($frame)
+    private function handleFrame(string $frame): void
     {
         $packet = Codec::decode($frame, $error);
         if ($packet === null) {
             $this->fireError(new ClientException(
                 ErrorCode::BAD_PACKET,
                 '收到非法报文：' . $error,
-                ['raw' => (string)$frame]
+                ['raw' => $frame]
             ));
 
             return;
@@ -597,7 +597,7 @@ class SessionManager
      *
      * @return void
      */
-    private function handleTransportClose()
+    private function handleTransportClose(): void
     {
         $this->clearHeartbeat();
         $this->failAllPending('连接已断开，请求未结算');
@@ -641,7 +641,7 @@ class SessionManager
      *
      * @return void
      */
-    private function registerPending($seq, $what, $timeout, $cb)
+    private function registerPending(string $seq, string $what, float $timeout, $cb): void
     {
         $req          = new PendingRequest();
         $req->seq     = $seq;
@@ -674,7 +674,7 @@ class SessionManager
      *
      * @return void
      */
-    private function settle(array $packet, $ok)
+    private function settle(array $packet, bool $ok): void
     {
         $seq = (string)$packet['seq'];
         if ($seq === '' || !isset($this->pending[$seq])) {
@@ -704,7 +704,7 @@ class SessionManager
      *
      * @return void
      */
-    private function failAllPending($reason)
+    private function failAllPending(string $reason): void
     {
         foreach ($this->pending as $req) {
             $this->delTimer($req->timerId);
@@ -724,7 +724,7 @@ class SessionManager
      *
      * @return string
      */
-    private function newSeq()
+    private function newSeq(): string
     {
         return (string)(++$this->seqCounter);
     }
@@ -736,7 +736,7 @@ class SessionManager
      *
      * @throws ClientException 尚未完成鉴权时抛出
      */
-    private function assertReady()
+    private function assertReady(): void
     {
         if ($this->state !== self::STATE_READY) {
             throw ClientException::state('当前状态为 ' . $this->state . '，须先完成鉴权');
@@ -750,7 +750,7 @@ class SessionManager
      *
      * @return void
      */
-    private function sendPacket(array $packet)
+    private function sendPacket(array $packet): void
     {
         // UDP 通道（硬约束⑲）：服务端身份只取自 Token 载荷，报文不带 Token 会被
         // 静默拒绝。attach_token 开启时所有上行报文统一携带（Token 参与签名，
@@ -776,7 +776,7 @@ class SessionManager
      *
      * @return void
      */
-    private function setState($new)
+    private function setState(string $new): void
     {
         $old         = $this->state;
         $this->state = $new;
@@ -798,7 +798,7 @@ class SessionManager
      *
      * @return void
      */
-    private function scheduleHeartbeat()
+    private function scheduleHeartbeat(): void
     {
         if ($this->heartbeatTimerId !== null) {
             return;
@@ -820,7 +820,7 @@ class SessionManager
      *
      * @return void
      */
-    private function clearHeartbeat()
+    private function clearHeartbeat(): void
     {
         if ($this->heartbeatTimerId !== null) {
             $this->delTimer($this->heartbeatTimerId);
@@ -837,9 +837,9 @@ class SessionManager
      *
      * @return int 计时器 ID
      */
-    private function addTimer($interval, $persistent, $fn)
+    private function addTimer(float $interval, bool $persistent, $fn): int
     {
-        return (int)($this->timerAdd)((float)$interval, $persistent, $fn);
+        return (int)($this->timerAdd)($interval, $persistent, $fn);
     }
 
     /**
@@ -849,7 +849,7 @@ class SessionManager
      *
      * @return void
      */
-    private function delTimer($timerId)
+    private function delTimer($timerId): void
     {
         if ($timerId) {
             ($this->timerDel)((int)$timerId);
@@ -863,7 +863,7 @@ class SessionManager
      *
      * @return void
      */
-    private function fireError(ClientException $e)
+    private function fireError(ClientException $e): void
     {
         if ($this->onErrorCb !== null) {
             ($this->onErrorCb)($e);

@@ -12,7 +12,7 @@
  * 写入策略（避免高频 Redis 写放大）：
  *  - 业务侧只做进程内内存累加，零 IO
  *  - 由定时任务周期性批量刷入 Redis
- *  - 累加型指标用 HINCRBY（多进程原子安全），覆盖型指标用 HSET
+ *  - 累加型指标用 HINCRBY（多进程原子安全），覆盖型指标用 HMSET（本进程字段一次写完）
  *
  * Redis 键（键名声明于 RedisKeys）：
  *   metrics:counter:{YYYYMMDD}   Hash  当日累加型指标，保留 7 天
@@ -40,7 +40,7 @@ class Monitor
     /**
      * gauge Hash 中「按 PID 独立」的字段前缀
      *
-     * 写入侧（report / flushProcessMeta）与清理侧（purgeExitedProcesses）共用，
+     * 写入侧（report / processMetaFields）与清理侧（purgeExitedProcesses）共用，
      * 避免两处各写一份字面量而漂移 —— 前缀一旦不一致，清理就会漏删（残留累积）
      * 或误删（活进程字段被清）。
      */
@@ -54,7 +54,7 @@ class Monitor
      *
      * @var array<string, mixed>
      */
-    protected static $config = [
+    protected static array $config = [
         'enable'   => true,
         'interval' => 60,
         'ttl'      => 600,
@@ -66,14 +66,14 @@ class Monitor
      *
      * @var array<string, mixed>
      */
-    protected static $counters = [];
+    protected static array $counters = [];
 
     /**
      * 进程内瞬时值
      *
      * @var array<string, mixed>
      */
-    protected static $gauges = [];
+    protected static array $gauges = [];
 
     /**
      * 初始化
@@ -82,7 +82,7 @@ class Monitor
      *
      * @return void
      */
-    public static function init(array $config)
+    public static function init(array $config): void
     {
         self::$config = array_merge(self::$config, $config);
     }
@@ -95,7 +95,7 @@ class Monitor
      *
      * @return void
      */
-    public static function incr($metric, $step = 1)
+    public static function incr(string $metric, int $step = 1): void
     {
         if (empty(self::$config['enable'])) {
             return;
@@ -103,7 +103,7 @@ class Monitor
         if (!isset(self::$counters[$metric])) {
             self::$counters[$metric] = 0;
         }
-        self::$counters[$metric] += (int)$step;
+        self::$counters[$metric] += $step;
     }
 
     /**
@@ -114,7 +114,7 @@ class Monitor
      *
      * @return void
      */
-    public static function gauge($metric, $value)
+    public static function gauge(string $metric, $value): void
     {
         if (empty(self::$config['enable'])) {
             return;
@@ -131,7 +131,7 @@ class Monitor
      *
      * @return void
      */
-    public static function report($withOnline = true)
+    public static function report(bool $withOnline = true): void
     {
         if (empty(self::$config['enable'])) {
             return;
@@ -139,21 +139,23 @@ class Monitor
 
         self::flushCounters();
 
-        // 覆盖型指标：内存占用按进程粒度上报
-        $pid      = getmypid();
-        $now      = time();
-        $ttl      = (int)self::$config['ttl'];
-        $gaugeKey = RedisKeys::METRICS_GAUGE;
-
-        RedisClient::hSet($gaugeKey, self::FIELD_MEMORY_BYTES . $pid, Logger::memoryUsage());
+        // 覆盖型指标：本进程字段一次 HMSET 写入（原先 5 次 HSET，省 4 次往返）
+        $pid       = getmypid();
+        $now       = time();
+        $ttl       = (int)self::$config['ttl'];
+        $gaugeKey  = RedisKeys::METRICS_GAUGE;
+        $fields    = [
+            self::FIELD_MEMORY_BYTES . $pid => Logger::memoryUsage(),
+            'report_at'                     => $now,
+        ];
 
         // 进程元信息：pid_at 用于判定进程存活（gauge TTL 远长于上报周期，
         // 进程退出后其字段仍会残留，面板必须靠时间戳识别幽灵进程）；
         // tasks 为定时任务健康度 —— 纯进程内状态，跨进程读不到，必须随指标落库。
         // 二者按 PID 独立成字段（与 memory_bytes:{pid} 同一命名风格），多 worker 不会互相覆盖。
-        self::flushProcessMeta($gaugeKey, $pid, $now);
+        $fields += self::processMetaFields($pid, $now);
 
-        RedisClient::hSet($gaugeKey, 'report_at', $now);
+        RedisClient::hMSet($gaugeKey, $fields);
         RedisClient::expire($gaugeKey, $ttl);
 
         // 必须显式清理：Hash 的 field 没有独立 TTL，而上面的 expire() 每次上报都会
@@ -189,7 +191,7 @@ class Monitor
      *
      * @return void
      */
-    public static function snapshot(callable $cb)
+    public static function snapshot(callable $cb): void
     {
         RedisClient::hGetAll(RedisKeys::METRICS_GAUGE, function ($gauge) use ($cb) {
             RedisClient::hGetAll(RedisKeys::metricsCounter(), function ($counter) use ($gauge, $cb) {
@@ -207,7 +209,7 @@ class Monitor
      *
      * @return array<string, mixed>
      */
-    public static function pending()
+    public static function pending(): array
     {
         return [
             'counters' => self::$counters,
@@ -231,7 +233,7 @@ class Monitor
      *
      * @return array<int|string, mixed> 待删除的 field 列表；无需清理时为空数组
      */
-    public static function staleFields(array $gauge, $ttl, $now)
+    public static function staleFields(array $gauge, int $ttl, int $now): array
     {
         if ($ttl <= 0 || !$gauge) {
             return [];
@@ -274,7 +276,7 @@ class Monitor
      *
      * @return void
      */
-    protected static function flushCounters()
+    protected static function flushCounters(): void
     {
         $counters = self::$counters;
         self::$counters = [];
@@ -293,7 +295,7 @@ class Monitor
     }
 
     /**
-     * 上报本进程的元信息（身份 + 存活时间戳 + 定时任务健康度）
+     * 构造本进程在 gauge 中的字段集（身份 + 存活时间戳 + 定时任务健康度）
      *
      * 三者都是纯进程内状态，跨进程无法读取，面板进程要展示「这个 PID 是谁」
      * 与「定时任务是否卡住」就必须依赖这里的落库。
@@ -302,18 +304,19 @@ class Monitor
      * 一是多 worker 各写各的、不会互相覆盖；二是进程退出后其字段仍会随 gauge
      * 存活到 TTL 结束，调用方需凭 pid_at 判断该 PID 是否仍在线。
      *
-     * @param string $gaugeKey
-     * @param int    $pid
-     * @param int    $now
+     * @param int $pid
+     * @param int $now
      *
-     * @return void
+     * @return array<string, mixed>
      */
-    protected static function flushProcessMeta($gaugeKey, $pid, $now)
+    protected static function processMetaFields(int $pid, int $now): array
     {
         $workerId = Task::workerId();
         $role     = defined('APP_ROLE') ? APP_ROLE : 'all';
 
-        RedisClient::hSet($gaugeKey, self::FIELD_PID_AT . $pid, $now);
+        $fields = [
+            self::FIELD_PID_AT . $pid => $now,
+        ];
 
         // 进程身份：光有 PID 无法判断它是什么进程 —— PID 会被系统回收复用，
         // 同一角色下的多个 worker 也肉眼不可分。APP_ROLE 由 start.php 定义，
@@ -324,7 +327,7 @@ class Monitor
         ], JSON_UNESCAPED_UNICODE);
 
         if ($proc !== false) {
-            RedisClient::hSet($gaugeKey, self::FIELD_PROC . $pid, $proc);
+            $fields[self::FIELD_PROC . $pid] = $proc;
         }
 
         $payload = json_encode([
@@ -333,8 +336,10 @@ class Monitor
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
 
         if ($payload !== false) {
-            RedisClient::hSet($gaugeKey, self::FIELD_TASKS . $pid, $payload);
+            $fields[self::FIELD_TASKS . $pid] = $payload;
         }
+
+        return $fields;
     }
 
     /**
@@ -362,7 +367,7 @@ class Monitor
      *
      * @return void
      */
-    protected static function purgeExitedProcesses($gaugeKey, $ttl, $now)
+    protected static function purgeExitedProcesses(string $gaugeKey, int $ttl, int $now): void
     {
         if ($ttl <= 0) {
             return;

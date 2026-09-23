@@ -20,7 +20,7 @@ final class EchoApi extends AbstractApi
      *
      * @return string 本请求 seq
      */
-    public function send(array $params, $cb = null)
+    public function send(array $params, $cb = null): string
     {
         return $this->call('echo', $params, $cb);
     }

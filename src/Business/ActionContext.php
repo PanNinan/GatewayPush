@@ -53,91 +53,91 @@ class ActionContext
      *
      * @var string
      */
-    protected $action;
+    protected string $action;
 
     /**
      * 原始报文
      *
      * @var array<string, mixed>
      */
-    protected $packet;
+    protected array $packet;
 
     /**
      * 已校验并归一化的业务参数
      *
      * @var array<string, mixed>
      */
-    protected $params;
+    protected array $params;
 
     /**
      * 连接标识
      *
      * @var string
      */
-    protected $clientId;
+    protected string $clientId;
 
     /**
      * 用户标识（未鉴权为空串）
      *
      * @var string
      */
-    protected $uid;
+    protected string $uid;
 
     /**
      * 设备标识
      *
      * @var string
      */
-    protected $deviceId;
+    protected string $deviceId;
 
     /**
      * 协议类型（ws / udp / http）
      *
      * @var string
      */
-    protected $protocol;
+    protected string $protocol;
 
     /**
      * 来源通道（ws / udp / http）
      *
      * @var string
      */
-    protected $channel;
+    protected string $channel;
 
     /**
      * 回执方式
      *
      * @var string
      */
-    protected $replyMode;
+    protected string $replyMode;
 
     /**
      * 报文下发器，签名 function (array $packet): void
      *
      * @var callable
      */
-    protected $sender;
+    protected mixed $sender;
 
     /**
      * 是否已回执（含被抑制的回执）
      *
      * @var bool
      */
-    protected $replied = false;
+    protected bool $replied = false;
 
     /**
      * 首次回执后的钩子，供 ActionRunner 注销超时定时器
      *
      * @var null|callable
      */
-    protected $replyHook;
+    protected mixed $replyHook = null;
 
     /**
      * 动作私有配置（来自 config/actions.php 的 options 段）
      *
      * @var array<string, mixed>
      */
-    protected $options = [];
+    protected array $options = [];
 
     /**
      * @param string               $action    动作名
@@ -149,18 +149,18 @@ class ActionContext
      * @param callable             $sender    function (array $packet): void
      * @param array<string, mixed> $options   动作私有配置
      */
-    public function __construct($action, array $packet, array $params, array $identity, $channel, $replyMode, callable $sender, array $options = [])
+    public function __construct(string $action, array $packet, array $params, array $identity, string $channel, string $replyMode, callable $sender, array $options = [])
     {
         $this->options = $options;
-        $this->action    = (string)$action;
+        $this->action    = $action;
         $this->packet    = $packet;
         $this->params    = $params;
         $this->clientId  = isset($identity['client_id']) ? (string)$identity['client_id'] : '';
         $this->uid       = isset($identity['uid']) ? (string)$identity['uid'] : '';
         $this->deviceId  = isset($identity['device_id']) ? (string)$identity['device_id'] : '';
         $this->protocol  = isset($identity['protocol']) ? (string)$identity['protocol'] : '';
-        $this->channel   = (string)$channel;
-        $this->replyMode = (string)$replyMode === self::REPLY_NONE ? self::REPLY_NONE : self::REPLY_SYNC;
+        $this->channel   = $channel;
+        $this->replyMode = $replyMode === self::REPLY_NONE ? self::REPLY_NONE : self::REPLY_SYNC;
         $this->sender    = $sender;
     }
 
@@ -171,7 +171,7 @@ class ActionContext
     /**
      * @return string
      */
-    public function action()
+    public function action(): string
     {
         return $this->action;
     }
@@ -179,7 +179,7 @@ class ActionContext
     /**
      * @return string
      */
-    public function clientId()
+    public function clientId(): string
     {
         return $this->clientId;
     }
@@ -187,7 +187,7 @@ class ActionContext
     /**
      * @return string
      */
-    public function uid()
+    public function uid(): string
     {
         return $this->uid;
     }
@@ -195,7 +195,7 @@ class ActionContext
     /**
      * @return string
      */
-    public function deviceId()
+    public function deviceId(): string
     {
         return $this->deviceId;
     }
@@ -203,7 +203,7 @@ class ActionContext
     /**
      * @return string
      */
-    public function protocol()
+    public function protocol(): string
     {
         return $this->protocol;
     }
@@ -211,7 +211,7 @@ class ActionContext
     /**
      * @return string
      */
-    public function channel()
+    public function channel(): string
     {
         return $this->channel;
     }
@@ -221,7 +221,7 @@ class ActionContext
      *
      * @return string
      */
-    public function seq()
+    public function seq(): string
     {
         return isset($this->packet['seq']) ? (string)$this->packet['seq'] : '';
     }
@@ -231,7 +231,7 @@ class ActionContext
      *
      * @return array<string, mixed>
      */
-    public function packet()
+    public function packet(): array
     {
         return $this->packet;
     }
@@ -245,7 +245,7 @@ class ActionContext
      *
      * @return array<string, mixed>
      */
-    public function params()
+    public function params(): array
     {
         return $this->params;
     }
@@ -258,7 +258,7 @@ class ActionContext
      *
      * @return mixed
      */
-    public function param($key, $default = null)
+    public function param(string $key, $default = null)
     {
         return array_key_exists($key, $this->params) ? $this->params[$key] : $default;
     }
@@ -271,7 +271,7 @@ class ActionContext
      *
      * @return mixed
      */
-    public function option($key, $default = null)
+    public function option(string $key, $default = null)
     {
         return array_key_exists($key, $this->options) ? $this->options[$key] : $default;
     }
@@ -281,7 +281,7 @@ class ActionContext
      *
      * @return array<string, mixed>
      */
-    public function options()
+    public function options(): array
     {
         return $this->options;
     }
@@ -295,7 +295,7 @@ class ActionContext
      *
      * @return string
      */
-    public function replyMode()
+    public function replyMode(): string
     {
         return $this->replyMode;
     }
@@ -305,7 +305,7 @@ class ActionContext
      *
      * @return bool
      */
-    public function isReplied()
+    public function isReplied(): bool
     {
         return $this->replied;
     }
@@ -317,7 +317,7 @@ class ActionContext
      *
      * @return void
      */
-    public function setReplyHook(callable $hook)
+    public function setReplyHook(callable $hook): void
     {
         $this->replyHook = $hook;
     }
@@ -331,7 +331,7 @@ class ActionContext
      *
      * @return bool 是否真正下发
      */
-    public function reply(array $data = [])
+    public function reply(array $data = []): bool
     {
         return $this->send(Message::ack($this->seq(), $data));
     }
@@ -344,7 +344,7 @@ class ActionContext
      *
      * @return bool 是否真正下发
      */
-    public function replyError($code, $msg = '')
+    public function replyError(int $code, string $msg = ''): bool
     {
         return $this->send(Message::error(
             $code,
@@ -361,7 +361,7 @@ class ActionContext
      *
      * @return bool 是否真正下发
      */
-    public function send(array $packet)
+    public function send(array $packet): bool
     {
         $first = !$this->replied;
 

@@ -63,35 +63,35 @@ class Env
      *
      * @var bool
      */
-    protected static $loaded = false;
+    protected static bool $loaded = false;
 
     /**
      * 实际读取到的文件（按优先级从高到低）
      *
      * @var array<int|string, mixed>
      */
-    protected static $files = [];
+    protected static array $files = [];
 
     /**
      * 当前环境标识
      *
      * @var string
      */
-    protected static $envName = self::DEFAULT_ENV;
+    protected static string $envName = self::DEFAULT_ENV;
 
     /**
      * 加载根目录
      *
      * @var string
      */
-    protected static $basePath = '';
+    protected static string $basePath = '';
 
     /**
      * 加载阶段异常信息
      *
      * @var string
      */
-    protected static $error = '';
+    protected static string $error = '';
 
     /* =================================================================
      | 加载
@@ -104,7 +104,7 @@ class Env
      *
      * @return array<string, mixed> 实际读取到的文件名列表（按加载顺序，即优先级从低到高）
      */
-    public static function load($basePath = null)
+    public static function load($basePath = null): array
     {
         if (self::$loaded) {
             return self::$files;
@@ -155,7 +155,7 @@ class Env
      *
      * @return string
      */
-    public static function lastError()
+    public static function lastError(): string
     {
         return self::$error;
     }
@@ -165,7 +165,7 @@ class Env
      *
      * @return bool
      */
-    public static function isLoaded()
+    public static function isLoaded(): bool
     {
         return self::$loaded;
     }
@@ -175,7 +175,7 @@ class Env
      *
      * @return array<int|string, mixed>
      */
-    public static function loadedFiles()
+    public static function loadedFiles(): array
     {
         return self::$files;
     }
@@ -185,7 +185,7 @@ class Env
      *
      * @return string
      */
-    public static function envName()
+    public static function envName(): string
     {
         if (!self::$loaded) {
             self::load();
@@ -201,9 +201,9 @@ class Env
      *
      * @return string
      */
-    public static function generateSecret($bytes = self::SECRET_BYTES)
+    public static function generateSecret(int $bytes = self::SECRET_BYTES): string
     {
-        $bytes = (int)$bytes;
+        $bytes = $bytes;
         if ($bytes < 16) {
             $bytes = 16;
         }
@@ -227,7 +227,7 @@ class Env
      *
      * @return bool
      */
-    public static function has($key)
+    public static function has(string $key): bool
     {
         return self::lookup($key, null) !== null;
     }
@@ -240,7 +240,7 @@ class Env
      *
      * @return mixed
      */
-    public static function get($key, $default = null)
+    public static function get(string $key, $default = null)
     {
         if (!self::$loaded) {
             self::load();
@@ -257,11 +257,11 @@ class Env
      *
      * @return string
      */
-    public static function str($key, $default = '')
+    public static function str(string $key, string $default = ''): string
     {
         $value = self::get($key, null);
         if ($value === null || is_array($value)) {
-            return (string)$default;
+            return $default;
         }
 
         return (string)$value;
@@ -275,11 +275,11 @@ class Env
      *
      * @return int
      */
-    public static function int($key, $default = 0)
+    public static function int(string $key, int $default = 0): int
     {
         $value = self::get($key, null);
         if ($value === null || $value === '' || is_array($value) || !is_numeric($value)) {
-            return (int)$default;
+            return $default;
         }
 
         return (int)$value;
@@ -293,11 +293,11 @@ class Env
      *
      * @return float
      */
-    public static function float($key, $default = 0.0)
+    public static function float(string $key, float $default = 0.0): float
     {
         $value = self::get($key, null);
         if ($value === null || $value === '' || is_array($value) || !is_numeric($value)) {
-            return (float)$default;
+            return $default;
         }
 
         return (float)$value;
@@ -314,11 +314,11 @@ class Env
      *
      * @return bool
      */
-    public static function bool($key, $default = false)
+    public static function bool(string $key, bool $default = false): bool
     {
         $value = self::get($key, null);
         if ($value === null || is_array($value)) {
-            return (bool)$default;
+            return $default;
         }
         if (is_bool($value)) {
             return $value;
@@ -326,7 +326,7 @@ class Env
 
         $normalized = strtolower(trim((string)$value));
         if ($normalized === '') {
-            return (bool)$default;
+            return $default;
         }
 
         return in_array($normalized, ['1', 'true', 'yes', 'on'], true);
@@ -340,7 +340,7 @@ class Env
      *
      * @return array<int|string, mixed>
      */
-    public static function list($key, $default = [])
+    public static function list(string $key, $default = []): array
     {
         $value = self::get($key, null);
         if (!is_string($value) || trim($value) === '') {
@@ -372,9 +372,9 @@ class Env
      *
      * @return mixed
      */
-    protected static function lookup($key, $default = null)
+    protected static function lookup(string $key, $default = null)
     {
-        if (!is_string($key) || $key === '') {
+        if ($key === '') {
             return $default;
         }
 
@@ -382,7 +382,8 @@ class Env
             return self::normalize($_ENV[$key], $default);
         }
 
-        if (isset($_SERVER) && is_array($_SERVER) && array_key_exists($key, $_SERVER)) {
+        // $_SERVER 是超全局，恒存在且恒为数组 —— 只需判键
+        if (array_key_exists($key, $_SERVER)) {
             return self::normalize($_SERVER[$key], $default);
         }
 
@@ -421,7 +422,7 @@ class Env
      *
      * @return string
      */
-    protected static function detectEnvName($basePath)
+    protected static function detectEnvName(string $basePath): string
     {
         $name = self::lookup('APP_ENV', '');
 
@@ -429,7 +430,7 @@ class Env
             $name = self::peek($basePath . '/.env', 'APP_ENV');
         }
 
-        $name = trim((string)$name);
+        $name = trim($name);
 
         if ($name === '' || preg_match('/^[A-Za-z0-9_]+$/', $name) !== 1) {
             return self::DEFAULT_ENV;
@@ -448,7 +449,7 @@ class Env
      *
      * @return string
      */
-    protected static function peek($file, $key)
+    protected static function peek(string $file, string $key): string
     {
         if (!is_file($file) || !is_readable($file)) {
             return '';

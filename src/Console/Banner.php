@@ -39,7 +39,7 @@ final class Banner
      *
      * @return string
      */
-    public static function render(array $appConfig, array $gatewayConfig, array $businessConfig, array $roles = [], $withProbe = false, $modeLabel = '')
+    public static function render(array $appConfig, array $gatewayConfig, array $businessConfig, array $roles = [], bool $withProbe = false, string $modeLabel = ''): string
     {
         $isLinux = DIRECTORY_SEPARATOR === '/';
         // 入口变量 BASE_PATH 指向项目根；兜底值按本类所在层级（src/Console）回退两级
@@ -148,7 +148,7 @@ final class Banner
      *
      * @return string
      */
-    private static function packageVersion($package)
+    private static function packageVersion(string $package): string
     {
         if (!class_exists('Composer\InstalledVersions')) {
             return '-';

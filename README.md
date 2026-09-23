@@ -2085,8 +2085,8 @@ class OrderQueryAction implements ActionInterface
 ### 13.1 命令
 
 ```bash
-composer analyse        # PHPStan（level 6；baseline 冻结存量：生产代码 8 条 + 测试 324 条目/339 条）
-composer test           # PHPUnit（467 tests / 1317 assertions；含 client/tests/Unit）
+composer analyse        # PHPStan（level 6；生产 baseline 已清空，测试 baseline 301 条目/311 条 = 273 missingType + 38 语义）
+composer test           # PHPUnit（510 tests / 1431 assertions；含 client/tests/Unit）
 composer lint           # phpcs 审计：注释 / 命名 / 业务红线（只读，不写文件）
 composer lint:self      # phpcs 自定义嗅探器自检（RedisKeys 漂移 + 作用域/豁免矩阵）
 composer cs:check       # php-cs-fixer 排版体检（只报不改；落地用 composer cs）
@@ -2116,11 +2116,11 @@ composer test:client-e2e # 客户端 SDK 端到端对齐（A~O 共 15 个用例�
 | ---------- | ------------------------------------------------------------------------ |
 | PHPStan 版本 | `^2.0`                                                                   |
 | 内存         | **必须带 `--memory-limit=512M`**（本机 php.ini 仅 128M，否则子进程崩溃）；已写入 composer 脚本 |
-| 分析范围       | `paths` = `src`、`client/src`、`start.php`、`tests`、`client/tests`（共 114 文件）。**`tests` 必须在列**，否则 `phpstan-phpunit` 的断言 / mock 规则不会生效 |
+| 分析范围       | `paths` = `src`、`client/src`、`start.php`、`tests`、`client/tests`（共 117 文件）。**`tests` 必须在列**，否则 `phpstan-phpunit` 的断言 / mock 规则不会生效 |
 | 分析口径       | `phpVersion: 80200` —— 刻意锚定在**项目下限**，用于**拦截 8.3+ 语法误用**，保证 8.2 兼容性                 |
 | 扩展         | `phpstan-strict-rules` + `phpstan-phpunit`，**在 `includes` 里显式声明**（本项目未装 `phpstan/extension-installer`，不写 `includes` 则规则一条都不生效） |
 | strict-rules | `strictRules.allRules: true`，仅刻意关闭 4 条：`disallowedEmpty`、`booleansInConditions`(+`booleansInLoopConditions`)、`dynamicCallOnStaticMethod`（理由见 `phpstan.neon` 内的逐条注释） |
-| 收敛策略       | **两份 baseline**：`phpstan-baseline.neon`（生产代码，8 条）/ `phpstan-tests-baseline.neon`（测试存量，324 条目 / 339 条）。两份都**只减不增**；**不为让工具通过而改业务代码** |
+| 收敛策略       | **两份 baseline**：`phpstan-baseline.neon`（生产代码，2026-09-23 语义清洗后**已清空** `ignoreErrors: []`，保留文件维持双 baseline 结构）/ `phpstan-tests-baseline.neon`（测试存量，**301 条目 / 311 条** = 273 missingType + 38 有意语义条目）。两份都**只减不增**；**不为让工具通过而改业务代码** |
 
 > **⚠ `level` 与 baseline 必须同源**：baseline 是用哪个 level 生成的，`parameters.level` 就得是哪个值。
 > 二者不一致时，PHPStan 会对每条不再命中的条目报 `ignore.unmatched (non-ignorable)` ——
@@ -2133,10 +2133,11 @@ composer test:client-e2e # 客户端 SDK 端到端对齐（A~O 共 15 个用例�
 > 标注完整性」，不新增逻辑类检查，风险为零、收益是文档性的。
 >
 > 处置方式按目录分层：
-> - **生产侧（`src` / `client/src` / `start.php`）265 条已全部补齐 phpdoc 标注** → 0 errors，
->   生产 baseline 由 9 条降至 **8 条**（删掉的是 `@throws Random\RandomException`
->   那条 —— `phpVersion` 抬到 80200 后它变成合法类型，冻结条目反而失配）；
-> - **测试侧（`tests` / `client/tests`）273 条冻结进 `phpstan-tests-baseline.neon`** ——
+> - **生产侧（`src` / `client/src` / `start.php`）265 条已全部补齐 phpdoc 标注** → 0 errors；
+>   2026-09-23 语义清洗又修掉剩余 8 条历史告警 → **生产 baseline 已清空**（`ignoreErrors: []`，
+>   保留文件以维持双 baseline 结构）；
+> - **测试侧（`tests` / `client/tests`）273 条 missingType + 38 条有意语义条目（共 301 条目 / 311 条）
+>   冻结进 `phpstan-tests-baseline.neon`** ——
 >   测试替身补 `: void` 之类收益低且有 TypeError 风险，沿用「测试噪音单独一份」的既有设计。
 >
 > 补标注时**只加 phpdoc、不加原生类型**（原生返回类型会改变运行期行为）；且以
@@ -2215,7 +2216,7 @@ php tests/e2e_check.php <uid> [device_id] [timeout]
 
 ```bash
 composer test
-# OK (443 tests, 1246 assertions)
+# OK (510 tests, 1431 assertions)
 ```
 
 **只测「纯函数 / 零 IO」组件**：
@@ -2232,9 +2233,15 @@ composer test
 | `RedisKeys`      | 键名金标（拦截误改）、前缀↔完整键分隔符约定、队列键唯一性、动态后缀编码方式        |
 | `RoleCatalog`    | `roles` 命令契约（角色顺序 / `enabled` / `env` 字段）、真实环境变量覆盖语义、开关名与 `config` 双向一致、启动脚本的过滤点 |
 | `Monitor`        | `staleFields()` 残留判定（边界保活 / 全局字段与脏字段越界保护 / 四字段同删）、字段前缀金标、面板 JS 前缀一致性、清理调用未被摘除 |
+| `Router`         | action / command 注册与查询（空键拒绝、重注册覆盖、数字串键保留、未知键 null） |
+| `Auth`           | `verifyLocal` Token 契约（非 string / 空串 / 结构畸形 / 非法签名 / claims 恢复） |
+| `Push`           | `init`/getter 幂等、目标与通道判定、key / nonce 校验、入队参数归一 |
 
-> **未覆盖**：`ActionRunner::run()`、`RateLimiter::acquire()`、`Monitor::purgeExitedProcesses()`、全部 Redis 路径 ——  
+> **未覆盖**：`ActionRunner::run()`、`RateLimiter::acquire()`、`Monitor::purgeExitedProcesses()`、
+> `Session::bind` / `SessionManager` Redis 路径、`Push` 实际入队 ——
 > 它们依赖 workerman 生命周期与异步回调，mock 成本过高（静态类 + 回调），由 e2e 覆盖。
+> **coverage 摘要**：本机无 xdebug / pcov，无法生成 phpunit 覆盖率报告；上述清单即
+> 「哪些纯函数已测 / 哪些 Redis IO 归 e2e」的结构化替代。
 
 **写测试的两个硬性坑**（`phpunit.xml` 开了 `beStrictAboutOutputDuringTests` + `failOnWarning` + `failOnRisky`）：
 

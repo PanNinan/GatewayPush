@@ -41,7 +41,7 @@ final class RoleCatalog
      *
      * @return array<string, mixed> 角色名 => array(name, listen, probe, count, enable, env)
      */
-    public static function build(array $gatewayConfig, array $businessConfig, array $appConfig, $isLinux = false)
+    public static function build(array $gatewayConfig, array $businessConfig, array $appConfig, bool $isLinux = false): array
     {
         // 进程数必须与各 Bootstrap 的 resolveCount() 口径一致：Windows 下 workerman
         // 单启动文件只允许 1 个 Worker 实例，会强制降级为 1。若直接展示 .env 的配置值，

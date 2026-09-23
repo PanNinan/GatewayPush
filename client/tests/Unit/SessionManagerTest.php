@@ -32,7 +32,8 @@ final class SessionManagerTest extends TestCase
     public function testMissingRequiredConfigThrows()
     {
         try {
-            $this->makeSession(['secret' => '']);
+            $unusedTransport = new FakeTransport();
+            $this->makeSession(['secret' => ''], $unusedTransport);
             self::fail('缺少 secret 必须抛 ClientException');
         } catch (ClientException $e) {
             self::assertSame(ErrorCode::CLIENT_CONFIG, $e->getCode());
@@ -100,7 +101,7 @@ final class SessionManagerTest extends TestCase
         self::assertSame('1', $auth['seq']);
 
         // token 载荷须携带同一身份（服务端据此识别 uid）
-        $payload = json_decode(base64_decode(str_replace(['-', '_'], ['+', '/'], explode('.', $auth['token'])[0])), true);
+        $payload = json_decode(base64_decode(str_replace(['-', '_'], ['+', '/'], explode('.', $auth['token'])[0]), true), true);
         self::assertSame('alice', $payload['uid']);
         self::assertSame('dev1', $payload['device_id']);
     }

@@ -33,14 +33,14 @@ final class AdminApi
     /**
      * @var HttpTransport
      */
-    private $transport;
+    private HttpTransport $transport;
 
     /**
      * 接口密钥（服务端 api.secret；留空回退 auth.secret）
      *
      * @var string
      */
-    private $secret;
+    private string $secret;
 
     /**
      * @param string             $apiUrl    http://host:port
@@ -48,12 +48,12 @@ final class AdminApi
      * @param float              $timeout   请求超时（秒）
      * @param null|HttpTransport $transport 缺省按 url/timeout 构造
      */
-    public function __construct($apiUrl, $apiSecret, $timeout = 5.0, ?HttpTransport $transport = null)
+    public function __construct(string $apiUrl, string $apiSecret, float $timeout = 5.0, ?HttpTransport $transport = null)
     {
         $this->transport  = $transport !== null
             ? $transport
             : new HttpTransport($apiUrl, $timeout);
-        $this->secret = (string)$apiSecret;
+        $this->secret = $apiSecret;
     }
 
     /**
@@ -67,11 +67,11 @@ final class AdminApi
      *
      * @return void
      */
-    public function push($targetType, $target, array $payload, array $opts = [], $cb = null)
+    public function push(string $targetType, string $target, array $payload, array $opts = [], $cb = null): void
     {
         $job = [
-            'target_type' => (string)$targetType,
-            'target'      => (string)$target,
+            'target_type' => $targetType,
+            'target'      => $target,
             'payload'     => $payload,
         ];
         if (isset($opts['msg_id']) && (string)$opts['msg_id'] !== '') {
@@ -91,7 +91,7 @@ final class AdminApi
      *
      * @return void
      */
-    public function stats($cb = null)
+    public function stats($cb = null): void
     {
         $this->call('GET', '/stats', null, $cb);
     }
@@ -103,7 +103,7 @@ final class AdminApi
      *
      * @return void
      */
-    public function health($cb = null)
+    public function health($cb = null): void
     {
         $this->call('GET', '/health', null, $cb);
     }
@@ -122,7 +122,7 @@ final class AdminApi
      *
      * @return void
      */
-    private function call($method, $path, ?array $job = null, $cb = null)
+    private function call(string $method, string $path, ?array $job = null, $cb = null): void
     {
         $body = $job !== null ? $this->encode($job) : '';
         $ts   = time();
@@ -186,7 +186,7 @@ final class AdminApi
      *
      * @return string 密钥为空时返回空串（服务端会以 500 拒绝，与「未配置密钥」语义对齐）
      */
-    private function sign($ts, $rawBody)
+    private function sign(int $ts, string $rawBody): string
     {
         if ($this->secret === '') {
             return '';
@@ -202,7 +202,7 @@ final class AdminApi
      *
      * @return string
      */
-    private function encode(array $job)
+    private function encode(array $job): string
     {
         $json = json_encode($job, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 

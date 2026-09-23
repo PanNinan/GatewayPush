@@ -10,57 +10,39 @@
 #   唯一例外是 PHPStan 对「按引用捕获的闭包」看不穿赋值导致的误判 ——
 #   这类条目若要新增，必须逐条注明原因。
 #
-# 存量构成（339 条 / 324 条目）：
-#   【2026-09-22 提级至 level 6 时重新生成 —— 新增的 273 条全部是 missingType.*】
-#   - missingType.return（165）：测试替身 / 辅助方法缺返回类型。测试里
-#     `private function open() { ... }` 这类写法补 `: void` 收益极低，
+# 存量构成（311 条 / 301 条目，2026-09-23 语义清洗后）：
+#   - missingType.*（273 条）：测试替身 / 辅助方法缺返回类型、参数与值类型标注。
+#     测试里 `private function open() { ... }` 这类写法补 `: void` 收益极低，
 #     且引入原生类型反而有 TypeError 风险，故整批冻结。
-#   - missingType.iterableValue（68）/ parameter（33）/ property（7）：
-#     测试夹具的 `array` 形参、`public $x;` 属性缺值类型，同属低收益标注。
-#   - staticMethod/method.alreadyNarrowedType（26）：golden 值钉桩。
+#   - staticMethod/method.alreadyNarrowedType（26 条）：golden 值钉桩。
 #     如 assertSame(4004, ErrorCode::HTTP_NOT_FOUND) —— 常量被静态解析成字面量，
 #     PHPStan 判定断言恒真；但该断言的意图正是「钉住未来被改动的数值」。
-#   - staticMethod.impossibleType（4）：PHPUnit 断言落在按引用捕获的变量上，
+#   - staticMethod.impossibleType（4 条）：PHPUnit 断言落在按引用捕获的变量上，
 #     PHPStan 看不到闭包里的赋值，误判为 null / 空数组。
-#   - cast.useless（13）/ closure.unusedUse（2）：纯机械噪音。
-#   - property.onlyWritten（4）/ parameterByRef.unusedType（3）/ nullsafe.neverNull（2）等。
+#   - parameterByRef.unusedType（3 条）：makeReady/makeSession 的出参模式
+#     （`?FakeTransport &$transport = null`，调用点传未定义变量）——方法体恒写
+#     `new FakeTransport()` 故从不写 null，但去掉 `?` 会让未定义变量出参报
+#     variable.undefined；默认 `= null` 又是 PHP 8.4 隐式可空弃用的冲突点，
+#     8.2~8.5 矩阵下三者不可兼得，故保留 `?` 并冻结该提示。
+#   - booleanOr/booleanNot（5 条）：E2E 用例里跨闭包的 by-ref 状态旗标
+#     （$nEcho1Acked / $kReported / $iReported），PHPStan 看不到其他闭包里的
+#     赋值，误判恒 false/true —— 与 impossibleType 同源。
+#
+# 2026-09-23 语义清洗：修掉全部 8 条生产侧 baseline 与测试侧可修的语义告警
+#   （无用 use / nullsafe / 无用类型断言 / 恒死分支等），并删除对应 ignore。
 #
 # 重新生成方法（仅在提级等结构变化时用，且必须在提交信息里写明原因）：
 #   1) phpstan.neon 的 level 改为目标级别，并**临时注释掉两个 baseline 的 includes**
 #      —— 否则已冻结的条目会先把错误吃掉，生成出来的 baseline 会缺条目；
 #   2) php vendor/bin/phpstan analyse --generate-baseline=phpstan-tests-baseline.neon
-#      —— 注意它按 `parameters.paths` 全量生成，会把生产侧那 9 条一并写进来；
-#   3) 剔除 path 不以 `tests/` 或 `client/tests/` 开头的条目（那 9 条属 phpstan-baseline.neon）；
+#      —— 注意它按 `parameters.paths` 全量生成，会把生产侧条目一并写进来；
+#   3) 剔除 path 不以 `tests/` 或 `client/tests/` 开头的条目（生产侧属 phpstan-baseline.neon）；
 #   4) 恢复 includes 后再跑一次 `composer analyse`，必须 0 errors
 #      —— 若出现 `ignore.unmatched`，说明第 3 步剔错了条目。
 # ---------------------------------------------------------------------
 
 parameters:
 	ignoreErrors:
-		-
-			message: '#^Anonymous function has an unused use \$ws\.$#'
-			identifier: closure.unusedUse
-			count: 1
-			path: client/tests/E2E/ClientE2E.php
-
-		-
-			message: '#^Call to function in_array\(\) with arguments 4008, array\{\} and true will always evaluate to false\.$#'
-			identifier: function.impossibleType
-			count: 1
-			path: client/tests/E2E/ClientE2E.php
-
-		-
-			message: '#^Strict comparison using \=\=\= between \*NEVER\* and 0 will always evaluate to false\.$#'
-			identifier: identical.alwaysFalse
-			count: 1
-			path: client/tests/E2E/ClientE2E.php
-
-		-
-			message: '#^Using nullsafe method call on non\-nullable type GatewayPush\\Client\\Session\\SessionManager\. Use \-\> instead\.$#'
-			identifier: nullsafe.neverNull
-			count: 2
-			path: client/tests/E2E/ClientE2E.php
-
 		-
 			message: '#^Method GatewayPush\\Client\\Tests\\Support\\FakeHttpConnection\:\:connect\(\) has no return type specified\.$#'
 			identifier: missingType.return
@@ -256,12 +238,6 @@ parameters:
 		-
 			message: '#^Property GatewayPush\\Client\\Tests\\Support\\FakeTransport\:\:\$errCb has no type specified\.$#'
 			identifier: missingType.property
-			count: 1
-			path: client/tests/Support/FakeTransport.php
-
-		-
-			message: '#^Property GatewayPush\\Client\\Tests\\Support\\FakeTransport\:\:\$errCb is never read, only written\.$#'
-			identifier: property.onlyWritten
 			count: 1
 			path: client/tests/Support/FakeTransport.php
 
@@ -680,12 +656,6 @@ parameters:
 			path: client/tests/Unit/HttpTransportTest.php
 
 		-
-			message: '#^Property GatewayPush\\Client\\Tests\\Unit\\HttpTransportTest\:\:\$fake is never read, only written\.$#'
-			identifier: property.onlyWritten
-			count: 1
-			path: client/tests/Unit/HttpTransportTest.php
-
-		-
 			message: '#^Property GatewayPush\\Client\\Tests\\Unit\\HttpTransportTest\:\:\$timers type has no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
@@ -936,12 +906,6 @@ parameters:
 			identifier: missingType.iterableValue
 			count: 1
 			path: client/tests/Unit/ServiceApiTest.php
-
-		-
-			message: '#^Call to function base64_decode\(\) requires parameter \#2 to be set\.$#'
-			identifier: function.strict
-			count: 1
-			path: client/tests/Unit/SessionManagerTest.php
 
 		-
 			message: '#^Call to static method PHPUnit\\Framework\\Assert\:\:assertTrue\(\) with null will always evaluate to false\.$#'
@@ -1334,12 +1298,6 @@ parameters:
 			path: client/tests/Unit/UdpTransportTest.php
 
 		-
-			message: '#^Property GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:\$fake is never read, only written\.$#'
-			identifier: property.onlyWritten
-			count: 1
-			path: client/tests/Unit/UdpTransportTest.php
-
-		-
 			message: '#^Property GatewayPush\\Client\\Tests\\Unit\\UdpTransportTest\:\:\$timers type has no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
@@ -1392,27 +1350,6 @@ parameters:
 			identifier: missingType.return
 			count: 1
 			path: client/tests/Unit/WsTransportTest.php
-
-		-
-			message: '#^Property GatewayPush\\Client\\Tests\\Unit\\WsTransportTest\:\:\$fake is never read, only written\.$#'
-			identifier: property.onlyWritten
-			count: 1
-			path: client/tests/Unit/WsTransportTest.php
-
-
-
-
-
-
-
-
-
-
-		-
-			message: '#^Casting to string something that''s already string\.$#'
-			identifier: cast.useless
-			count: 2
-			path: tests/Api/http_demo.php
 
 		-
 			message: '#^Left side of \|\| is always false\.$#'
@@ -1577,48 +1514,6 @@ parameters:
 			path: tests/E2E/Harness.php
 
 		-
-			message: '#^Casting to string something that''s already string\.$#'
-			identifier: cast.useless
-			count: 2
-			path: tests/Manual/_p3_udp_check.php
-
-		-
-			message: '#^Empty array passed to foreach\.$#'
-			identifier: foreach.emptyArray
-			count: 1
-			path: tests/Manual/_p4_admin_check.php
-
-		-
-			message: '#^Parameter \#2 \$cb of method Workerman\\Redis\\Client\:\:select\(\) expects null, Closure given\.$#'
-			identifier: argument.type
-			count: 1
-			path: tests/Manual/_p5_bind_check.php
-
-		-
-			message: '#^Casting to string something that''s already string\.$#'
-			identifier: cast.useless
-			count: 1
-			path: tests/Manual/_p5_push_offline.php
-
-		-
-			message: '#^Anonymous function has an unused use \$failMsg\.$#'
-			identifier: closure.unusedUse
-			count: 1
-			path: tests/Manual/_p5_reconnect_check.php
-
-		-
-			message: '#^Casting to string something that''s already string\.$#'
-			identifier: cast.useless
-			count: 2
-			path: tests/Manual/_p5_reconnect_check.php
-
-		-
-			message: '#^Empty array passed to foreach\.$#'
-			identifier: foreach.emptyArray
-			count: 1
-			path: tests/Manual/_p5_reconnect_check.php
-
-		-
 			message: '#^Method GatewayPush\\Tests\\Unit\\ActionContextTest\:\:context\(\) has parameter \$options with no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
@@ -1757,12 +1652,6 @@ parameters:
 			path: tests/Unit/LoggerTest.php
 
 		-
-			message: '#^Parameter \#1 \$seq of static method GatewayPush\\Business\\Message\:\:ack\(\) expects string, int given\.$#'
-			identifier: argument.type
-			count: 1
-			path: tests/Unit/MessageTest.php
-
-		-
 			message: '#^Call to method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with ''memory_bytes\:'' and ''memory_bytes\:'' will always evaluate to true\.$#'
 			identifier: method.alreadyNarrowedType
 			count: 1
@@ -1783,12 +1672,6 @@ parameters:
 		-
 			message: '#^Call to method PHPUnit\\Framework\\Assert\:\:assertSame\(\) with ''tasks\:'' and ''tasks\:'' will always evaluate to true\.$#'
 			identifier: method.alreadyNarrowedType
-			count: 1
-			path: tests/Unit/MonitorTest.php
-
-		-
-			message: '#^Casting to int something that''s already int\<\-1, max\>\.$#'
-			identifier: cast.useless
 			count: 1
 			path: tests/Unit/MonitorTest.php
 
@@ -1943,12 +1826,6 @@ parameters:
 			path: tests/Unit/RedisKeysTest.php
 
 		-
-			message: '#^Casting to string something that''s already string\.$#'
-			identifier: cast.useless
-			count: 2
-			path: tests/Unit/RoleCatalogTest.php
-
-		-
 			message: '#^Method GatewayPush\\Tests\\Unit\\RoleCatalogTest\:\:byRole\(\) has parameter \$env with no value type specified in iterable type array\.$#'
 			identifier: missingType.iterableValue
 			count: 1
@@ -1971,15 +1848,3 @@ parameters:
 			identifier: missingType.iterableValue
 			count: 1
 			path: tests/Unit/RoleCatalogTest.php
-
-		-
-			message: '#^Casting to int something that''s already int\<0, max\>\.$#'
-			identifier: cast.useless
-			count: 1
-			path: tests/Unit/StartupBannerTest.php
-
-		-
-			message: '#^Casting to string something that''s already string\.$#'
-			identifier: cast.useless
-			count: 1
-			path: tests/Unit/StartupBannerTest.php

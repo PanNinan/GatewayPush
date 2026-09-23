@@ -47,7 +47,7 @@ class WorkerEvents
      *
      * @var array<string, mixed>
      */
-    protected static $bound = [];
+    protected static array $bound = [];
 
     /**
      * 为指定 Worker 绑定通用事件
@@ -58,13 +58,13 @@ class WorkerEvents
      *
      * @return void
      */
-    public static function bind($worker, $name, array $opts = [])
+    public static function bind($worker, string $name, array $opts = []): void
     {
         if (!is_object($worker)) {
             return;
         }
 
-        $key = (string)$name . '#' . spl_object_id($worker);
+        $key = $name . '#' . spl_object_id($worker);
         if (isset(self::$bound[$key])) {
             return;
         }
@@ -88,7 +88,7 @@ class WorkerEvents
      *
      * @return void
      */
-    protected static function bindError($worker, $name)
+    protected static function bindError($worker, string $name): void
     {
         $worker->onError = function ($connection, $code, $msg) use ($name) {
             Monitor::incr('conn_error');
@@ -112,7 +112,7 @@ class WorkerEvents
      *
      * @return void
      */
-    protected static function bindBuffer($worker, $name)
+    protected static function bindBuffer($worker, string $name): void
     {
         $worker->onBufferFull = function ($connection) use ($name) {
             Monitor::incr('buffer_full');
@@ -139,7 +139,7 @@ class WorkerEvents
      *
      * @return void
      */
-    protected static function bindReload($worker, $name)
+    protected static function bindReload($worker, string $name): void
     {
         $worker->onWorkerReload = function ($worker) use ($name) {
             Logger::info('Worker 收到平滑重启信号', [
@@ -156,7 +156,7 @@ class WorkerEvents
      *
      * @return string
      */
-    protected static function peer($connection)
+    protected static function peer($connection): string
     {
         if (!$connection instanceof ConnectionInterface) {
             return '';

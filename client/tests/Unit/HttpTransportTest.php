@@ -22,9 +22,6 @@ final class HttpTransportTest extends TestCase
 {
     use FakeTimers;
 
-    /** @var FakeHttpConnection */
-    private $fake;
-
     public function testInvalidUrlThrowsConfig()
     {
         $this->makeTimers();
@@ -173,9 +170,8 @@ final class HttpTransportTest extends TestCase
     {
         $this->makeTimers();
 
-        $fake       = new FakeHttpConnection();
-        $this->fake = $fake;
-        $captured   = &$fake;
+        $fake     = new FakeHttpConnection();
+        $captured = &$fake;
 
         return new HttpTransport(
             'http://127.0.0.1:8290',

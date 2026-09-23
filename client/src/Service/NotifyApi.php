@@ -23,12 +23,12 @@ final class NotifyApi extends AbstractApi
      *
      * @return string 本请求 seq
      */
-    public function notify($value = null, $msgId = '', $offlineMode = '', $cb = null)
+    public function notify($value = null, string $msgId = '', string $offlineMode = '', $cb = null): string
     {
         return $this->call('notify', [
             'value'        => $value,
-            'msg_id'       => (string)$msgId,
-            'offline_mode' => (string)$offlineMode,
+            'msg_id'       => $msgId,
+            'offline_mode' => $offlineMode,
         ], $cb);
     }
 }

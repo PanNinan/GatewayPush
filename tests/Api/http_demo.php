@@ -458,7 +458,7 @@ function loadEnv(string $path): array
     }
 
     foreach (file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
-        $line = trim((string)$line);
+        $line = trim($line);
         if ($line === '' || str_starts_with($line, '#')) {
             continue;
         }
@@ -527,7 +527,7 @@ function httpCall(string $method, string $url, array $headers, string $body, int
 
     $raw   = curl_exec($ch);
     $errNo = curl_errno($ch);
-    $err   = (string)curl_error($ch);
+    $err   = curl_error($ch);
     $code  = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
     curl_close($ch);
 

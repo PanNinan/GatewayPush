@@ -45,7 +45,7 @@ final class Commands
      *
      * @return string 合法 JSON；极端编码失败时退化为空清单而非非法输出
      */
-    public static function roles(array $gatewayConfig, array $businessConfig, array $appConfig)
+    public static function roles(array $gatewayConfig, array $businessConfig, array $appConfig): string
     {
         $items = [];
         foreach (RoleCatalog::build(
@@ -76,7 +76,7 @@ final class Commands
      *
      * @return int 退出码
      */
-    public static function envInit($basePath)
+    public static function envInit(string $basePath): int
     {
         $target  = $basePath . '/.env';
         $example = $basePath . '/.env.example';
@@ -159,7 +159,7 @@ final class Commands
      *
      * @return string
      */
-    public static function usage()
+    public static function usage(): string
     {
         $isLinux = DIRECTORY_SEPARATOR === '/';
         $text    = [];

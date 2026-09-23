@@ -51,22 +51,22 @@ class Debugger
      *
      * @var array<string, mixed>
      */
-    private $config;
+    private array $config;
 
     /** @var null|SessionManager */
-    private $session;
+    private ?SessionManager $session = null;
 
     /** @var null|PushReceiver */
-    private $receiver;
+    private ?PushReceiver $receiver = null;
 
     /** @var array<string,object> 已装配的业务 API */
-    private $apis = [];
+    private array $apis = [];
 
     /** @var bool REPL 模式（输出需保护输入行） */
-    private $repl = false;
+    private bool $repl = false;
 
     /** @var null|resource */
-    private $stdin;
+    private mixed $stdin = null;
 
     /**
      * @param array<string, mixed> $config uid / device_id / secret / proto / ws_url / udp_url / api_url /
@@ -97,7 +97,7 @@ class Debugger
      *
      * @throws ClientException 配置非法
      */
-    public function run(array $args)
+    public function run(array $args): int
     {
         $parsed  = CommandParser::parse($args);
         $command = (string)$parsed['command'];
@@ -155,7 +155,7 @@ class Debugger
      *
      * @return void
      */
-    private function applyOptions(array $options)
+    private function applyOptions(array $options): void
     {
         $map = [
             'uid'        => 'uid',
@@ -195,7 +195,7 @@ class Debugger
      *
      * @return void
      */
-    private function boot(array $parsed)
+    private function boot(array $parsed): void
     {
         $command = (string)$parsed['command'];
 
@@ -239,7 +239,7 @@ class Debugger
      *
      * @throws ClientException 传输层配置非法
      */
-    private function bootSession()
+    private function bootSession(): void
     {
         $transport = $this->createTransport();
 
@@ -325,7 +325,7 @@ class Debugger
      *
      * @return void
      */
-    private function awaitReady(callable $cb)
+    private function awaitReady(callable $cb): void
     {
         $waited  = 0.0;
         $timerId = null;
@@ -358,7 +358,7 @@ class Debugger
      *
      * @return void
      */
-    private function execute($command, array $parsed, $exitAfter)
+    private function execute(string $command, array $parsed, bool $exitAfter): void
     {
         $args = $parsed['args'];
         $opts = $parsed['options'];
@@ -451,7 +451,7 @@ class Debugger
      *
      * @return void
      */
-    private function chainTopics($action, array $args, $index, $exitAfter)
+    private function chainTopics(string $action, array $args, int $index, bool $exitAfter): void
     {
         if (!isset($args[$index])) {
             $this->settle(true, $exitAfter);
@@ -493,7 +493,7 @@ class Debugger
      *
      * @return void
      */
-    private function runHttp($command, array $parsed)
+    private function runHttp(string $command, array $parsed): void
     {
         $secret = CommandParser::str($parsed['options'], 'api-secret', (string)$this->config['api_secret']);
         if ($secret === '') {
@@ -553,7 +553,7 @@ class Debugger
      *
      * @return void
      */
-    private function startRepl()
+    private function startRepl(): void
     {
         $this->repl = true;
         $stdin      = fopen('php://stdin', 'r');
@@ -579,7 +579,7 @@ class Debugger
      *
      * @return void
      */
-    private function startListen(array $parsed)
+    private function startListen(array $parsed): void
     {
         $topics = $parsed['args'];
         $this->session()->connect();
@@ -598,7 +598,7 @@ class Debugger
      *
      * @return void
      */
-    private function pollStdin()
+    private function pollStdin(): void
     {
         $stdin = $this->stdin;
         if (!is_resource($stdin)) {
@@ -660,7 +660,7 @@ class Debugger
      *
      * @return void
      */
-    private function handleLine($line)
+    private function handleLine(string $line): void
     {
         if ($line === 'quit' || $line === 'exit') {
             $this->line('[repl] 退出');
@@ -727,7 +727,7 @@ class Debugger
      *
      * @return void
      */
-    private function line($text)
+    private function line(string $text): void
     {
         if ($this->repl) {
             echo "\r" . str_repeat(' ', 100) . "\r" . $text . PHP_EOL;
@@ -743,7 +743,7 @@ class Debugger
      *
      * @return void
      */
-    private function prompt()
+    private function prompt(): void
     {
         if (!$this->repl) {
             return;
@@ -757,7 +757,7 @@ class Debugger
      *
      * @return void
      */
-    private function printState()
+    private function printState(): void
     {
         $session = $this->session();
         $this->line('state=' . $session->state()
@@ -778,7 +778,7 @@ class Debugger
      *
      * @return void
      */
-    private function result($label, $ok, $data, $error, $exitAfter)
+    private function result(string $label, bool $ok, $data, $error, bool $exitAfter): void
     {
         if ($ok) {
             $this->line('[ok] ' . $label . ' -> ' . json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
@@ -799,7 +799,7 @@ class Debugger
      *
      * @return void
      */
-    private function settle($ok, $exitAfter)
+    private function settle(bool $ok, bool $exitAfter): void
     {
         if (!$exitAfter) {
             return; // REPL 下每条输出已自带提示符，避免重复
@@ -821,7 +821,7 @@ class Debugger
      *
      * @throws ClientException 未装配
      */
-    private function api($key)
+    private function api(string $key)
     {
         if (!isset($this->apis[$key])) {
             throw ClientException::state('API 未装配：' . $key);
@@ -839,7 +839,7 @@ class Debugger
      *
      * @return mixed
      */
-    private function jsonArg(array $args, $index, $default = null)
+    private function jsonArg(array $args, int $index, $default = null)
     {
         if (!isset($args[$index]) || $args[$index] === '') {
             return $default;
@@ -858,7 +858,7 @@ class Debugger
      *
      * @return void
      */
-    private function printHelp()
+    private function printHelp(): void
     {
         echo <<<TXT
             gwclient —— GatewayPush 客户端调试器 v{$this->version()}
@@ -895,7 +895,7 @@ class Debugger
      *
      * @return void
      */
-    private function printReplHelp()
+    private function printReplHelp(): void
     {
         $this->line('可用：ping / echo <json> / session / report <topic> [n] [json] / '
             . 'subscribe <t...> / unsubscribe <t...> / topics / notify <json> / '
@@ -907,7 +907,7 @@ class Debugger
      *
      * @return string
      */
-    private function version()
+    private function version(): string
     {
         return self::VERSION;
     }

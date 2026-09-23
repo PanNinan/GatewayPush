@@ -32,19 +32,19 @@ final class PushReceiver
     /**
      * @var SessionManager
      */
-    private $session;
+    private SessionManager $session;
 
     /**
      * @var null|callable function (array $payload, array $meta): void
      */
-    private $onPushCb;
+    private mixed $onPushCb = null;
 
     /**
      * 已自动回执的推送数
      *
      * @var int
      */
-    private $acked = 0;
+    private int $acked = 0;
 
     /**
      * @param SessionManager $session 构造即接管其 onPush 分发
@@ -66,7 +66,7 @@ final class PushReceiver
      *
      * @return void
      */
-    public function onPush($cb)
+    public function onPush($cb): void
     {
         $this->onPushCb = $cb;
     }
@@ -78,7 +78,7 @@ final class PushReceiver
      *
      * @return void
      */
-    public function handle(array $packet)
+    public function handle(array $packet): void
     {
         $msgId = isset($packet['msg_id']) && (string)$packet['msg_id'] !== ''
             ? (string)$packet['msg_id']
@@ -110,7 +110,7 @@ final class PushReceiver
      *
      * @return int
      */
-    public function ackedCount()
+    public function ackedCount(): int
     {
         return $this->acked;
     }

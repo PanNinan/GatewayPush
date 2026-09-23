@@ -28,7 +28,7 @@ class UnsubscribeAction implements ActionInterface
      *
      * @return void
      */
-    public function handle(ActionContext $ctx)
+    public function handle(ActionContext $ctx): void
     {
         Monitor::incr('action_unsubscribe');
 

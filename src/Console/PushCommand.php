@@ -40,7 +40,7 @@ final class PushCommand
      *
      * @return int 退出码
      */
-    public static function run(array $appConfig, array $gatewayConfig, array $businessConfig, array $argvList)
+    public static function run(array $appConfig, array $gatewayConfig, array $businessConfig, array $argvList): int
     {
         $targetType  = isset($argvList[2]) ? strtolower(trim((string)$argvList[2])) : '';
         $target      = isset($argvList[3]) ? trim((string)$argvList[3]) : '';

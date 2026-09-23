@@ -23,40 +23,40 @@ final class PendingRequest
      *
      * @var string
      */
-    public $seq;
+    public string $seq;
 
     /**
      * 请求描述（排障用，如 auth / ping / data.echo）
      *
      * @var string
      */
-    public $what;
+    public string $what;
 
     /**
      * 发出时刻（ microtime(true)，用于计算 RTT）
      *
      * @var float
      */
-    public $sentAt;
+    public float $sentAt;
 
     /**
      * 超时秒数
      *
      * @var float
      */
-    public $timeout;
+    public float $timeout;
 
     /**
      * 超时定时器 id（workerman Timer；0 表示无）
      *
      * @var int
      */
-    public $timerId = 0;
+    public int $timerId = 0;
 
     /**
      * 结算回调 function (bool $ok, array $packet): void
      *
      * @var null|callable
      */
-    public $onReply;
+    public mixed $onReply = null;
 }

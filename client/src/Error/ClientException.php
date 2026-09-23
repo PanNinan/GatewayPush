@@ -25,7 +25,7 @@ class ClientException extends \RuntimeException
      *
      * @var array<string, mixed>
      */
-    protected $packet;
+    protected array $packet;
 
     /**
      * @param int                  $code     错误码（报文码或客户端本地码）
@@ -33,9 +33,9 @@ class ClientException extends \RuntimeException
      * @param array<string, mixed> $packet   原始报文
      * @param null|\Throwable      $previous 上游异常
      */
-    public function __construct($code, $message, array $packet = [], ?\Throwable $previous = null)
+    public function __construct(int $code, string $message, array $packet = [], ?\Throwable $previous = null)
     {
-        parent::__construct($message, (int)$code, $previous);
+        parent::__construct($message, $code, $previous);
         $this->packet = $packet;
     }
 
@@ -44,7 +44,7 @@ class ClientException extends \RuntimeException
      *
      * @return array<string, mixed>
      */
-    public function packet()
+    public function packet(): array
     {
         return $this->packet;
     }
@@ -85,7 +85,7 @@ class ClientException extends \RuntimeException
      *
      * @return self
      */
-    public static function timeout($what, $seq = '', $waited = 0.0)
+    public static function timeout(string $what, string $seq = '', float $waited = 0.0)
     {
         $detail = $seq !== '' ? '，seq=' . $seq : '';
         $detail .= $waited > 0 ? '，已等待 ' . round($waited, 2) . 's' : '';
@@ -104,7 +104,7 @@ class ClientException extends \RuntimeException
      *
      * @return self
      */
-    public static function transport($message, ?\Throwable $previous = null)
+    public static function transport(string $message, ?\Throwable $previous = null)
     {
         return new self(ErrorCode::CLIENT_TRANSPORT, $message, [], $previous);
     }
@@ -116,7 +116,7 @@ class ClientException extends \RuntimeException
      *
      * @return self
      */
-    public static function config($message)
+    public static function config(string $message)
     {
         return new self(ErrorCode::CLIENT_CONFIG, $message);
     }
@@ -128,7 +128,7 @@ class ClientException extends \RuntimeException
      *
      * @return self
      */
-    public static function state($message)
+    public static function state(string $message)
     {
         return new self(ErrorCode::CLIENT_STATE, $message);
     }
@@ -141,7 +141,7 @@ class ClientException extends \RuntimeException
      *
      * @return self
      */
-    public static function internal($message, ?\Throwable $previous = null)
+    public static function internal(string $message, ?\Throwable $previous = null)
     {
         return new self(ErrorCode::CLIENT_INTERNAL, $message, [], $previous);
     }

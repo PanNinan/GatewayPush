@@ -78,7 +78,7 @@ class ActionReply
      *
      * @var int
      */
-    protected static $ttl = self::DEFAULT_TTL;
+    protected static int $ttl = self::DEFAULT_TTL;
 
     /**
      * 初始化
@@ -87,7 +87,7 @@ class ActionReply
      *
      * @return void
      */
-    public static function init(array $config = [])
+    public static function init(array $config = []): void
     {
         if (isset($config['result_ttl'])) {
             self::$ttl = max(1, (int)$config['result_ttl']);
@@ -97,7 +97,7 @@ class ActionReply
     /**
      * @return int
      */
-    public static function ttl()
+    public static function ttl(): int
     {
         return self::$ttl;
     }
@@ -109,9 +109,9 @@ class ActionReply
      *
      * @return string
      */
-    public static function clientId($requestId)
+    public static function clientId(string $requestId): string
     {
-        return self::CLIENT_PREFIX . (string)$requestId;
+        return self::CLIENT_PREFIX . $requestId;
     }
 
     /**
@@ -121,9 +121,9 @@ class ActionReply
      *
      * @return string
      */
-    public static function requestId($clientId)
+    public static function requestId(string $clientId): string
     {
-        $clientId = (string)$clientId;
+        $clientId = $clientId;
         if (!self::isHttpClient($clientId)) {
             return '';
         }
@@ -138,9 +138,9 @@ class ActionReply
      *
      * @return bool
      */
-    public static function isHttpClient($clientId)
+    public static function isHttpClient(string $clientId): bool
     {
-        return str_starts_with((string)$clientId, self::CLIENT_PREFIX);
+        return str_starts_with($clientId, self::CLIENT_PREFIX);
     }
 
     /**
@@ -150,9 +150,9 @@ class ActionReply
      *
      * @return bool
      */
-    public static function validRequestId($requestId)
+    public static function validRequestId(string $requestId): bool
     {
-        return preg_match(self::REQUEST_ID_PATTERN, (string)$requestId) === 1;
+        return preg_match(self::REQUEST_ID_PATTERN, $requestId) === 1;
     }
 
     /* ---------------------------------------------------------------------
@@ -170,7 +170,7 @@ class ActionReply
      *
      * @return void
      */
-    public static function store($clientId, array $packet, ?callable $cb = null)
+    public static function store(string $clientId, array $packet, ?callable $cb = null): void
     {
         $requestId = self::requestId($clientId);
 
@@ -209,9 +209,9 @@ class ActionReply
      *
      * @return void
      */
-    public static function fetch($requestId, callable $cb)
+    public static function fetch(string $requestId, callable $cb): void
     {
-        $requestId = (string)$requestId;
+        $requestId = $requestId;
         if (!self::validRequestId($requestId)) {
             $cb(null);
 

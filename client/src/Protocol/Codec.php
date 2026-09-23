@@ -33,7 +33,7 @@ final class Codec
      *
      * @return string
      */
-    public static function encode($packet)
+    public static function encode($packet): string
     {
         return Message::encode($packet);
     }
@@ -46,7 +46,7 @@ final class Codec
      *
      * @return null|array<string, mixed> 校验失败返回 null
      */
-    public static function decode($raw, &$error = null)
+    public static function decode($raw, ?string &$error = null)
     {
         return Message::decode($raw, $error);
     }
@@ -60,7 +60,7 @@ final class Codec
      *
      * @return array<string, mixed>
      */
-    public static function packet($cmd, array $data = [], array $extra = [])
+    public static function packet(string $cmd, array $data = [], array $extra = []): array
     {
         return Message::packet($cmd, $data, $extra);
     }
@@ -73,7 +73,7 @@ final class Codec
      *
      * @return array<string, mixed>
      */
-    public static function ack($seq = '', array $data = [])
+    public static function ack($seq = '', array $data = []): array
     {
         return Message::ack($seq, $data);
     }
@@ -88,7 +88,7 @@ final class Codec
      *
      * @return array<string, mixed>
      */
-    public static function error($code, $msg = '', $seq = '', $ref = '')
+    public static function error(int $code, string $msg = '', $seq = '', string $ref = ''): array
     {
         return Message::error($code, $msg, $seq, $ref);
     }
@@ -105,10 +105,10 @@ final class Codec
      *
      * @return array<string, mixed>
      */
-    public static function dataPacket($action, array $params = [])
+    public static function dataPacket(string $action, array $params = []): array
     {
         return Message::packet(Message::CMD_DATA, [
-            'action' => (string)$action,
+            'action' => $action,
             'params' => $params,
         ]);
     }
@@ -120,7 +120,7 @@ final class Codec
      *
      * @return string
      */
-    public static function actionOf(array $packet)
+    public static function actionOf(array $packet): string
     {
         if (!isset($packet['data']) || !is_array($packet['data'])) {
             return '';
@@ -138,7 +138,7 @@ final class Codec
      *
      * @return array<string, mixed>
      */
-    public static function paramsOf(array $packet)
+    public static function paramsOf(array $packet): array
     {
         if (!isset($packet['data']) || !is_array($packet['data'])) {
             return [];
@@ -160,7 +160,7 @@ final class Codec
      *
      * @return bool
      */
-    public static function isTransportAck(array $packet)
+    public static function isTransportAck(array $packet): bool
     {
         $cmd = isset($packet['cmd']) ? (string)$packet['cmd'] : '';
 

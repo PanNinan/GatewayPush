@@ -39,7 +39,7 @@ class Auth
      *
      * @var array<string, mixed>
      */
-    protected static $config = [
+    protected static array $config = [
         'enable'       => true,
         'mode'         => 'hmac',
         'secret'       => '',
@@ -58,7 +58,7 @@ class Auth
      *
      * @return void
      */
-    public static function init(array $config)
+    public static function init(array $config): void
     {
         self::$config = array_merge(self::$config, $config);
         if (self::$config['secret'] === '') {
@@ -71,7 +71,7 @@ class Auth
      *
      * @return bool
      */
-    public static function enabled()
+    public static function enabled(): bool
     {
         return !empty(self::$config['enable']);
     }
@@ -83,7 +83,7 @@ class Auth
      *
      * @return bool
      */
-    public static function isAllowedBeforeAuth($cmd)
+    public static function isAllowedBeforeAuth(string $cmd): bool
     {
         return in_array($cmd, (array)self::$config['allow_cmds'], true);
     }
@@ -93,7 +93,7 @@ class Auth
      *
      * @return int
      */
-    public static function authTimeout()
+    public static function authTimeout(): int
     {
         return (int)self::$config['auth_timeout'];
     }
@@ -103,7 +103,7 @@ class Auth
      *
      * @return bool
      */
-    public static function shouldCloseOnFail()
+    public static function shouldCloseOnFail(): bool
     {
         return !empty(self::$config['fail_close']);
     }
@@ -125,10 +125,10 @@ class Auth
      *
      * @throws RandomException nonce 生成失败时抛出
      */
-    public static function issue(array $claims, $ttl = 0)
+    public static function issue(array $claims, int $ttl = 0): string
     {
         $now = time();
-        $ttl = $ttl > 0 ? (int)$ttl : (int)self::$config['token_ttl'];
+        $ttl = $ttl > 0 ? $ttl : (int)self::$config['token_ttl'];
 
         $payload = array_merge([
             'uid'       => '',
@@ -156,11 +156,11 @@ class Auth
      *
      * @return array<string, mixed> ['ok'=>bool, 'code'=>int, 'msg'=>string, 'claims'=>array]
      */
-    public static function verifyLocal($token)
+    public static function verifyLocal(string $token): array
     {
         $fail = fn ($code, $msg) => ['ok' => false, 'code' => $code, 'msg' => $msg, 'claims' => []];
 
-        if (!is_string($token) || $token === '') {
+        if ($token === '') {
             return $fail(Message::CODE_AUTH_FAILED, 'Token 不能为空');
         }
 
@@ -202,7 +202,7 @@ class Auth
      *
      * @return void
      */
-    public static function isRevoked($token, callable $cb)
+    public static function isRevoked(string $token, callable $cb): void
     {
         RedisClient::get(RedisKeys::authRevoked(self::tokenFingerprint($token)), function ($result, $client = null) use ($cb) {
             $error = '';
@@ -224,9 +224,9 @@ class Auth
      *
      * @return void
      */
-    public static function revoke($token, $ttl = 0, ?callable $cb = null)
+    public static function revoke(string $token, int $ttl = 0, ?callable $cb = null): void
     {
-        $ttl = $ttl > 0 ? (int)$ttl : (int)self::$config['token_ttl'];
+        $ttl = $ttl > 0 ? $ttl : (int)self::$config['token_ttl'];
         RedisClient::set(RedisKeys::authRevoked(self::tokenFingerprint($token)), 1, $ttl, function ($result, $client = null) use ($token, $cb) {
             $error = $client && method_exists($client, 'error') ? $client->error() : '';
             if ($error === '') {
@@ -254,7 +254,7 @@ class Auth
      *
      * @return void
      */
-    public static function checkDeviceBind($uid, $deviceId, callable $cb)
+    public static function checkDeviceBind(string $uid, string $deviceId, callable $cb): void
     {
         if (empty(self::$config['bind_device'])) {
             $cb(true, 'device bind check disabled');
@@ -282,7 +282,7 @@ class Auth
 
                 return;
             }
-            if ((string)$result !== (string)$deviceId) {
+            if ($result !== $deviceId) {
                 $cb(false, '设备不匹配，该账号已绑定其他设备');
 
                 return;
@@ -299,7 +299,7 @@ class Auth
      *
      * @return void
      */
-    public static function unbindDevice($uid, ?callable $cb = null)
+    public static function unbindDevice(string $uid, ?callable $cb = null): void
     {
         RedisClient::del(RedisKeys::authBind($uid), $cb);
     }
@@ -315,7 +315,7 @@ class Auth
      *
      * @return string 二进制摘要
      */
-    protected static function hash($body)
+    protected static function hash(string $body): string
     {
         return hash_hmac('sha256', $body, (string)self::$config['secret'], true);
     }
@@ -327,9 +327,9 @@ class Auth
      *
      * @return string
      */
-    protected static function tokenFingerprint($token)
+    protected static function tokenFingerprint(string $token): string
     {
-        return substr(hash('sha256', (string)$token), 0, 32);
+        return substr(hash('sha256', $token), 0, 32);
     }
 
     /**
@@ -339,7 +339,7 @@ class Auth
      *
      * @return string
      */
-    protected static function base64UrlEncode($data)
+    protected static function base64UrlEncode(string $data): string
     {
         return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
     }
@@ -351,7 +351,7 @@ class Auth
      *
      * @return string
      */
-    protected static function base64UrlDecode($data)
+    protected static function base64UrlDecode(string $data): string
     {
         $data = strtr($data, '-_', '+/');
         $pad  = strlen($data) % 4;

@@ -93,7 +93,7 @@ class RedisClient
      *
      * @var array<string, mixed>
      */
-    protected static $config = [
+    protected static array $config = [
         'host'       => '127.0.0.1',
         'port'       => 6379,
         'password'   => '',
@@ -109,21 +109,28 @@ class RedisClient
      *
      * @var Client[]
      */
-    protected static $pool = [];
+    protected static array $pool = [];
 
     /**
      * 轮询游标
      *
      * @var int
      */
-    protected static $cursor = 0;
+    protected static int $cursor = 0;
 
     /**
      * 是否已初始化
      *
      * @var bool
      */
-    protected static $inited = false;
+    protected static bool $inited = false;
+
+    /**
+     * 绑定连接（pipeline() 执行期间非空，connection() 优先返回它）
+     *
+     * @var null|Client
+     */
+    protected static ?Client $pinned = null;
 
     /**
      * 连接预设结果（spl_object_id => bool）
@@ -132,7 +139,7 @@ class RedisClient
      *
      * @var array<string, mixed>
      */
-    protected static $primed = [];
+    protected static array $primed = [];
 
     /**
      * 初始化连接配置
@@ -141,7 +148,7 @@ class RedisClient
      *
      * @return void
      */
-    public static function init(array $config = [])
+    public static function init(array $config = []): void
     {
         self::$config = array_merge(self::$config, $config);
         self::$inited = true;
@@ -154,7 +161,7 @@ class RedisClient
      *
      * @return string
      */
-    public static function key($name)
+    public static function key(string $name): string
     {
         return self::$config['prefix'] . $name;
     }
@@ -175,14 +182,48 @@ class RedisClient
             throw new RuntimeException('缺少依赖 workerman/redis，请先执行 composer install');
         }
 
+        // pipeline() 期间钉住单连接：组内命令在同一 socket 上顺序写出，
+        // 由内核缓冲合批、Redis 顺序执行 —— 等效 pipeline，只付一次往返。
+        if (self::$pinned !== null) {
+            return self::$pinned;
+        }
+
         $size  = max(1, (int)self::$config['pool_size']);
         $index = self::$cursor++ % $size;
 
-        if (!isset(self::$pool[$index]) || self::$pool[$index] === null) {
+        // isset() 对 null 键也返回 false，故无需再判 === null
+        if (!isset(self::$pool[$index])) {
             self::$pool[$index] = self::createConnection($index);
         }
 
         return self::$pool[$index];
+    }
+
+    /**
+     * 在同一条连接上执行一组命令（热路径减往返）
+     *
+     * 连接池默认轮询：bind 这类连续 5~8 条命令会散落到多条连接上，
+     * 每条各付一次 RTT。钉住单连接后命令在同一 socket 背靠背写出，
+     * 对端按序执行、回包合批 —— 语义与逐条发送完全一致（各命令仍独立、
+     * 无事务性），只是网络往返从 N 降到 1。
+     *
+     * 支持嵌套：内层结束时恢复外层绑定。异常也会恢复，不泄漏钉扎状态。
+     *
+     * @param callable $fn function(): void 体内通过本类静态方法发命令即可
+     *
+     * @return void
+     */
+    public static function pipeline(callable $fn): void
+    {
+        $prev = self::$pinned;
+        // 连接自身也可能在 pipeline 外首次创建 —— 借 connection() 取可用连接
+        self::$pinned = $prev ?? self::connection();
+
+        try {
+            $fn();
+        } finally {
+            self::$pinned = $prev;
+        }
     }
 
     /* ---------------------------------------------------------------------
@@ -194,7 +235,7 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function get($key, ?callable $cb = null)
+    public static function get(string $key, ?callable $cb = null)
     {
         return self::connection()->get(self::key($key), self::wrap('GET', $cb, $key));
     }
@@ -209,11 +250,11 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function set($key, $value, $ttl = 0, ?callable $cb = null)
+    public static function set(string $key, $value, int $ttl = 0, ?callable $cb = null)
     {
         $fullKey = self::key($key);
-        if ((int)$ttl > 0) {
-            return self::connection()->setEx($fullKey, (int)$ttl, $value, self::wrap('SETEX', $cb, $key));
+        if ($ttl > 0) {
+            return self::connection()->setEx($fullKey, $ttl, $value, self::wrap('SETEX', $cb, $key));
         }
 
         return self::connection()->set($fullKey, $value, self::wrap('SET', $cb, $key));
@@ -249,7 +290,7 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function exists($key, ?callable $cb = null)
+    public static function exists(string $key, ?callable $cb = null)
     {
         return self::connection()->exists(self::key($key), self::wrap('EXISTS', $cb, $key));
     }
@@ -263,9 +304,9 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function expire($key, $ttl, ?callable $cb = null)
+    public static function expire(string $key, int $ttl, ?callable $cb = null)
     {
-        return self::connection()->expire(self::key($key), (int)$ttl, self::wrap('EXPIRE', $cb, $key));
+        return self::connection()->expire(self::key($key), $ttl, self::wrap('EXPIRE', $cb, $key));
     }
 
     /**
@@ -276,7 +317,7 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function ttl($key, ?callable $cb = null)
+    public static function ttl(string $key, ?callable $cb = null)
     {
         return self::connection()->ttl(self::key($key), self::wrap('TTL', $cb, $key));
     }
@@ -290,9 +331,9 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function incr($key, $step = 1, ?callable $cb = null)
+    public static function incr(string $key, int $step = 1, ?callable $cb = null)
     {
-        return self::connection()->incr(self::key($key), (int)$step, self::wrap('INCRBY', $cb, $key));
+        return self::connection()->incr(self::key($key), $step, self::wrap('INCRBY', $cb, $key));
     }
 
     /* ---------------------------------------------------------------------
@@ -333,7 +374,7 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function hSet($key, $field, $value, ?callable $cb = null)
+    public static function hSet(string $key, string $field, $value, ?callable $cb = null)
     {
         return self::connection()->hSet(self::key($key), $field, $value, self::wrap('HSET', $cb, $key));
     }
@@ -349,7 +390,7 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function hMSet($key, array $hash, ?callable $cb = null)
+    public static function hMSet(string $key, array $hash, ?callable $cb = null)
     {
         return self::connection()->hMSet(self::key($key), $hash, self::wrap('HMSET', $cb, $key));
     }
@@ -363,7 +404,7 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function hGet($key, $field, ?callable $cb = null)
+    public static function hGet(string $key, string $field, ?callable $cb = null)
     {
         return self::connection()->hGet(self::key($key), $field, self::wrap('HGET', $cb, $key));
     }
@@ -376,7 +417,7 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function hGetAll($key, ?callable $cb = null)
+    public static function hGetAll(string $key, ?callable $cb = null)
     {
         return self::connection()->hGetAll(self::key($key), self::wrap('HGETALL', $cb, $key));
     }
@@ -390,7 +431,7 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function hDel($key, $fields, ?callable $cb = null)
+    public static function hDel(string $key, $fields, ?callable $cb = null)
     {
         $args   = [self::key($key)];
         foreach ((array)$fields as $field) {
@@ -411,9 +452,9 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function hIncrBy($key, $field, $step = 1, ?callable $cb = null)
+    public static function hIncrBy(string $key, string $field, int $step = 1, ?callable $cb = null)
     {
-        return self::connection()->hIncrBy(self::key($key), $field, (int)$step, self::wrap('HINCRBY', $cb, $key));
+        return self::connection()->hIncrBy(self::key($key), $field, $step, self::wrap('HINCRBY', $cb, $key));
     }
 
     /* ---------------------------------------------------------------------
@@ -429,7 +470,7 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function rPush($key, $value, ?callable $cb = null)
+    public static function rPush(string $key, $value, ?callable $cb = null)
     {
         return self::connection()->rPush(self::key($key), $value, self::wrap('RPUSH', $cb, $key));
     }
@@ -442,7 +483,7 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function lLen($key, ?callable $cb = null)
+    public static function lLen(string $key, ?callable $cb = null)
     {
         return self::connection()->lLen(self::key($key), self::wrap('LLEN', $cb, $key));
     }
@@ -457,12 +498,12 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function lRange($key, $start, $stop, ?callable $cb = null)
+    public static function lRange(string $key, int $start, int $stop, ?callable $cb = null)
     {
         return self::connection()->lRange(
             self::key($key),
-            (int)$start,
-            (int)$stop,
+            $start,
+            $stop,
             self::wrap('LRANGE', $cb, $key)
         );
     }
@@ -477,12 +518,12 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function lTrim($key, $start, $stop, ?callable $cb = null)
+    public static function lTrim(string $key, int $start, int $stop, ?callable $cb = null)
     {
         return self::connection()->lTrim(
             self::key($key),
-            (int)$start,
-            (int)$stop,
+            $start,
+            $stop,
             self::wrap('LTRIM', $cb, $key)
         );
     }
@@ -498,9 +539,9 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function lTrimKeepLast($key, $keep, ?callable $cb = null)
+    public static function lTrimKeepLast(string $key, int $keep, ?callable $cb = null)
     {
-        $keep = max(1, (int)$keep);
+        $keep = max(1, $keep);
 
         return self::connection()->lTrim(
             self::key($key),
@@ -523,7 +564,7 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function sAdd($key, $members, ?callable $cb = null)
+    public static function sAdd(string $key, $members, ?callable $cb = null)
     {
         $args = [self::key($key)];
         foreach ((array)$members as $member) {
@@ -543,7 +584,7 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function sRem($key, $members, ?callable $cb = null)
+    public static function sRem(string $key, $members, ?callable $cb = null)
     {
         $args = [self::key($key)];
         foreach ((array)$members as $member) {
@@ -562,7 +603,7 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function sMembers($key, ?callable $cb = null)
+    public static function sMembers(string $key, ?callable $cb = null)
     {
         return self::connection()->sMembers(self::key($key), self::wrap('SMEMBERS', $cb, $key));
     }
@@ -575,7 +616,7 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function sCard($key, ?callable $cb = null)
+    public static function sCard(string $key, ?callable $cb = null)
     {
         return self::connection()->sCard(self::key($key), self::wrap('SCARD', $cb, $key));
     }
@@ -589,7 +630,7 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function sIsMember($key, $member, ?callable $cb = null)
+    public static function sIsMember(string $key, string $member, ?callable $cb = null)
     {
         return self::connection()->sIsMember(self::key($key), $member, self::wrap('SISMEMBER', $cb, $key));
     }
@@ -611,9 +652,9 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function popBatch($key, $batch = 100, ?callable $cb = null)
+    public static function popBatch(string $key, int $batch = 100, ?callable $cb = null)
     {
-        $batch   = max(1, (int)$batch);
+        $batch   = max(1, $batch);
         $fullKey = self::key($key);
 
         return self::eval(
@@ -647,14 +688,14 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function setNxEx($key, $value, $ttl = 0, ?callable $cb = null)
+    public static function setNxEx(string $key, string $value, int $ttl = 0, ?callable $cb = null)
     {
-        $ttl     = max(1, (int)$ttl);
+        $ttl     = max(1, $ttl);
         $fullKey = self::key($key);
 
         return self::eval(
             self::LUA_SET_NX_EX,
-            [$fullKey, (string)$value, (string)$ttl],
+            [$fullKey, $value, (string)$ttl],
             1,
             function ($result, $client = null) use ($key, $cb) {
                 if ($client && method_exists($client, 'error') && $client->error() !== '') {
@@ -680,7 +721,7 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function tokenBuckets(array $buckets, $cost = 1, ?callable $cb = null)
+    public static function tokenBuckets(array $buckets, int $cost = 1, ?callable $cb = null)
     {
         if (!$buckets) {
             if ($cb) {
@@ -690,7 +731,7 @@ class RedisClient
             return true;
         }
 
-        $cost  = max(1, (int)$cost);
+        $cost  = max(1, $cost);
         $keys  = [];
         $rates = [];
         $sizes = [];
@@ -757,12 +798,12 @@ class RedisClient
      *
      * @return mixed
      */
-    public static function eval($script, array $args = [], $numKeys = 0, ?callable $cb = null)
+    public static function eval(string $script, array $args = [], int $numKeys = 0, ?callable $cb = null)
     {
-        $flat = array_merge([(int)$numKeys], array_values($args));
+        $flat = array_merge([$numKeys], array_values($args));
 
         return self::connection()->eval(
-            (string)$script,
+            $script,
             $flat,
             self::wrap('EVAL', $cb)
         );
@@ -797,7 +838,7 @@ class RedisClient
      *
      * @return void
      */
-    public static function closeAll()
+    public static function closeAll(): void
     {
         foreach (self::$pool as $client) {
             if ($client instanceof Client) {
@@ -807,6 +848,7 @@ class RedisClient
         self::$pool   = [];
         self::$cursor = 0;
         self::$primed = [];
+        self::$pinned = null;
     }
 
     /**
@@ -816,7 +858,7 @@ class RedisClient
      *
      * @return Client
      */
-    protected static function createConnection($index)
+    protected static function createConnection(int $index)
     {
         $address = sprintf('redis://%s:%d', self::$config['host'], (int)self::$config['port']);
         $options = [
@@ -886,7 +928,7 @@ class RedisClient
      *
      * @return void
      */
-    protected static function primeConnection(Client $client)
+    protected static function primeConnection(Client $client): void
     {
         $database = (int)self::$config['database'];
         $password = (string)self::$config['password'];
@@ -934,7 +976,7 @@ class RedisClient
      *
      * @return callable
      */
-    protected static function wrap($command, ?callable $cb = null, $traceKey = '')
+    protected static function wrap(string $command, ?callable $cb = null, string $traceKey = '')
     {
         if ($cb !== null) {
             return $cb;
@@ -963,7 +1005,7 @@ class RedisClient
      *
      * @return array<int|string, mixed>
      */
-    protected static function prefixKeys(array $keys)
+    protected static function prefixKeys(array $keys): array
     {
         $result = [];
         foreach ($keys as $key) {

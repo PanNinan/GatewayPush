@@ -43,7 +43,7 @@ final class EnvChecker
      *
      * @throws RuntimeException 运行时目录无法创建时抛出
      */
-    public static function check(array $appConfig, array $gatewayConfig, array $businessConfig, array $actionConfig = [])
+    public static function check(array $appConfig, array $gatewayConfig, array $businessConfig, array $actionConfig = []): array
     {
         $runtime = $appConfig['runtime'];
         $lines   = [];
@@ -61,7 +61,7 @@ final class EnvChecker
         $phpMin  = $runtime['php_min'];
         $verOk   = version_compare(PHP_VERSION, $phpMin, '>=');
         $lines[] = sprintf('[%-4s] PHP 版本 >= %s', $verOk ? 'OK' : 'FAIL', $phpMin);
-        $ok      = $ok && $verOk;
+        $ok      = $verOk;
 
         $phpMaxWarn = $runtime['php_max_warn'];
         if (version_compare(PHP_VERSION, $phpMaxWarn, '>')) {

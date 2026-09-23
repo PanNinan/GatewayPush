@@ -39,5 +39,5 @@ interface ActionInterface
      *
      * @return void
      */
-    public function handle(ActionContext $ctx);
+    public function handle(ActionContext $ctx): void;
 }

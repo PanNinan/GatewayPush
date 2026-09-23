@@ -45,14 +45,14 @@ class Router
      *
      * @var array<string, mixed>
      */
-    protected static $commands = [];
+    protected static array $commands = [];
 
     /**
      * 二级路由表：action => callable
      *
      * @var array<string, mixed>
      */
-    protected static $actions = [];
+    protected static array $actions = [];
 
     /* ---------------------------------------------------------------------
      | 注册
@@ -66,9 +66,9 @@ class Router
      *
      * @return void
      */
-    public static function registerCommand($cmd, callable $handler)
+    public static function registerCommand(string $cmd, callable $handler): void
     {
-        $cmd = (string)$cmd;
+        $cmd = $cmd;
         if ($cmd === '') {
             return;
         }
@@ -83,9 +83,9 @@ class Router
      *
      * @return void
      */
-    public static function registerAction($action, callable $handler)
+    public static function registerAction(string $action, callable $handler): void
     {
-        $action = (string)$action;
+        $action = $action;
         if ($action === '') {
             return;
         }
@@ -103,9 +103,9 @@ class Router
      *
      * @return null|callable 未注册返回 null
      */
-    public static function command($cmd)
+    public static function command(string $cmd)
     {
-        $cmd = (string)$cmd;
+        $cmd = $cmd;
 
         return self::$commands[$cmd] ?? null;
     }
@@ -117,9 +117,9 @@ class Router
      *
      * @return null|callable 未注册返回 null
      */
-    public static function action($action)
+    public static function action(string $action)
     {
-        $action = (string)$action;
+        $action = $action;
 
         return self::$actions[$action] ?? null;
     }
@@ -129,7 +129,7 @@ class Router
      *
      * @return list<string>
      */
-    public static function commands()
+    public static function commands(): array
     {
         return array_keys(self::$commands);
     }
@@ -139,7 +139,7 @@ class Router
      *
      * @return list<string>
      */
-    public static function actions()
+    public static function actions(): array
     {
         return array_keys(self::$actions);
     }
@@ -151,9 +151,9 @@ class Router
      *
      * @return bool
      */
-    public static function hasCommand($cmd)
+    public static function hasCommand(string $cmd): bool
     {
-        return isset(self::$commands[(string)$cmd]);
+        return isset(self::$commands[$cmd]);
     }
 
     /**
@@ -163,8 +163,8 @@ class Router
      *
      * @return bool
      */
-    public static function hasAction($action)
+    public static function hasAction(string $action): bool
     {
-        return isset(self::$actions[(string)$action]);
+        return isset(self::$actions[$action]);
     }
 }

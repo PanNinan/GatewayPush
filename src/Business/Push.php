@@ -71,7 +71,7 @@ class Push
      *
      * @var array<string, mixed>
      */
-    protected static $config = [
+    protected static array $config = [
         'enable'         => true,
         'offline_mode'   => self::MODE_QUEUE,
         'offline_ttl'    => 86400,
@@ -87,7 +87,7 @@ class Push
      *
      * @var array<string, mixed>
      */
-    protected static $queueConfig = [
+    protected static array $queueConfig = [
         'key'     => RedisKeys::QUEUE_PUSH_OUT,
         'batch'   => 200,
         'enable'  => true,
@@ -99,7 +99,7 @@ class Push
      *
      * @var array<string, mixed>
      */
-    protected static $udpOutConfig = [
+    protected static array $udpOutConfig = [
         'enable' => true,
         'key'    => RedisKeys::QUEUE_UDP_OUT,
     ];
@@ -113,7 +113,7 @@ class Push
      *
      * @return void
      */
-    public static function init(array $config, array $queue = [], array $udpOut = [])
+    public static function init(array $config, array $queue = [], array $udpOut = []): void
     {
         self::$config = array_merge(self::$config, $config);
         if ($queue) {
@@ -136,7 +136,7 @@ class Push
      *
      * @return bool
      */
-    public static function enabled()
+    public static function enabled(): bool
     {
         return !empty(self::$config['enable']);
     }
@@ -146,7 +146,7 @@ class Push
      *
      * @return string
      */
-    public static function offlineMode()
+    public static function offlineMode(): string
     {
         return (string)self::$config['offline_mode'];
     }
@@ -166,7 +166,7 @@ class Push
      *
      * @return void
      */
-    public static function enqueue($targetType, $target, array $payload, array $opts = [], ?callable $cb = null)
+    public static function enqueue(string $targetType, string $target, array $payload, array $opts = [], ?callable $cb = null): void
     {
         if (!self::enabled()) {
             Logger::warn('推送功能未启用，任务已丢弃', ['target_type' => $targetType, 'target' => $target]);
@@ -178,7 +178,7 @@ class Push
         }
 
         $targetType = self::normalizeTargetType($targetType);
-        $target     = (string)$target;
+        $target     = $target;
         if ($target === '') {
             Logger::warn('推送目标为空，任务已丢弃', ['target_type' => $targetType]);
             if ($cb) {
@@ -246,11 +246,11 @@ class Push
      *
      * @return void
      */
-    public static function direct($targetType, $target, array $payload, array $opts = [])
+    public static function direct(string $targetType, string $target, array $payload, array $opts = []): void
     {
         self::dispatch([
             'target_type'  => self::normalizeTargetType($targetType),
-            'target'       => (string)$target,
+            'target'       => $target,
             'payload'      => $payload,
             'msg_id'       => isset($opts['msg_id']) ? (string)$opts['msg_id'] : '',
             'offline_mode' => isset($opts['offline_mode']) ? (string)$opts['offline_mode'] : '',
@@ -273,15 +273,15 @@ class Push
      *
      * @return bool
      */
-    public static function sendToUdpClient($clientId, array $packet, $uid = '', $msgId = '')
+    public static function sendToUdpClient(string $clientId, array $packet, string $uid = '', string $msgId = ''): bool
     {
-        if (!str_starts_with((string)$clientId, self::UDP_PREFIX)) {
+        if (!str_starts_with($clientId, self::UDP_PREFIX)) {
             Logger::warn('非 UDP 连接不可经出站队列投递', ['client_id' => $clientId]);
 
             return false;
         }
 
-        self::deliverUdp($clientId, Message::encode($packet), (string)$uid, (string)$msgId);
+        self::deliverUdp($clientId, Message::encode($packet), $uid, $msgId);
 
         return true;
     }
@@ -304,9 +304,9 @@ class Push
      *
      * @return void
      */
-    public static function enqueueTopic($topic, array $payload, array $opts = [], ?callable $cb = null)
+    public static function enqueueTopic(string $topic, array $payload, array $opts = [], ?callable $cb = null): void
     {
-        $topic = (string)$topic;
+        $topic = $topic;
         if ($topic === '') {
             if ($cb) {
                 $cb(0);
@@ -356,7 +356,7 @@ class Push
      *
      * @return void
      */
-    public static function consumeQueue()
+    public static function consumeQueue(): void
     {
         if (!self::enabled() || empty(self::$queueConfig['enable'])) {
             return;
@@ -397,7 +397,7 @@ class Push
      *
      * @return void
      */
-    public static function dispatch(array $job)
+    public static function dispatch(array $job): void
     {
         if (!self::enabled()) {
             return;
@@ -456,7 +456,7 @@ class Push
         if ($msgId !== '' && !empty(self::$config['idempotent'])) {
             RedisClient::setNxEx(
                 RedisKeys::pushDedup($msgId),
-                1,
+                '1',
                 (int)self::$config['idempotent_ttl'],
                 function ($first) use ($msgId, $execute, $target) {
                     if (!$first) {
@@ -491,7 +491,7 @@ class Push
      *
      * @return void
      */
-    public static function replayOffline($uid, $clientId, ?callable $cb = null)
+    public static function replayOffline(string $uid, string $clientId, ?callable $cb = null): void
     {
         if ($uid === '' || $clientId === '') {
             if ($cb) {
@@ -508,7 +508,7 @@ class Push
             return;
         }
 
-        $isUdp = str_starts_with((string)$clientId, self::UDP_PREFIX);
+        $isUdp = str_starts_with($clientId, self::UDP_PREFIX);
         if ($isUdp && empty(self::$udpOutConfig['enable'])) {
             // UDP 出站通道关闭时无处投递，明确跳过而非静默丢弃
             Logger::warn('UDP 出站队列未启用，离线消息本轮不补投', [
@@ -606,7 +606,7 @@ class Push
      *
      * @return void
      */
-    protected static function resolveTargets($targetType, $target, callable $cb)
+    protected static function resolveTargets(string $targetType, string $target, callable $cb): void
     {
         switch ($targetType) {
             case self::TARGET_CLIENT:
@@ -704,7 +704,7 @@ class Push
      *
      * @return void
      */
-    protected static function deliverAll(array $targets, $uid, $targetType, $target, array $payload, $msgId, array $job)
+    protected static function deliverAll(array $targets, string $uid, string $targetType, string $target, array $payload, string $msgId, array $job): void
     {
         $frame = self::buildFrame($payload, $msgId, $job);
         $json  = Message::encode($frame);
@@ -753,7 +753,7 @@ class Push
      *
      * @return void
      */
-    protected static function deliverUdp($clientId, $json, $uid, $msgId)
+    protected static function deliverUdp(string $clientId, string $json, string $uid, string $msgId): void
     {
         if (empty(self::$udpOutConfig['enable'])) {
             Monitor::incr('push_fail');
@@ -763,10 +763,10 @@ class Push
         }
 
         $task = [
-            'client_id' => (string)$clientId,
-            'frame'     => (string)$json,
-            'uid'       => (string)$uid,
-            'msg_id'    => (string)$msgId,
+            'client_id' => $clientId,
+            'frame'     => $json,
+            'uid'       => $uid,
+            'msg_id'    => $msgId,
             'queued_at' => microtime(true),
         ];
 
@@ -809,7 +809,7 @@ class Push
      *
      * @return void
      */
-    protected static function handleOffline($uid, array $payload, $msgId, $mode, array $job)
+    protected static function handleOffline(string $uid, array $payload, string $msgId, string $mode, array $job): void
     {
         Monitor::incr('push_offline');
 
@@ -829,7 +829,7 @@ class Push
 
         $item = [
             'payload'    => $payload,
-            'msg_id'     => (string)$msgId,
+            'msg_id'     => $msgId,
             'source'     => isset($job['source']) ? (string)$job['source'] : '',
             'offline_at' => time(),
         ];
@@ -881,16 +881,16 @@ class Push
      *
      * @return array<string, mixed>
      */
-    protected static function target($clientId, $channel = '', $via = 'session')
+    protected static function target(string $clientId, string $channel = '', string $via = 'session'): array
     {
         if ($channel === '') {
-            $channel = str_starts_with((string)$clientId, self::UDP_PREFIX) ? self::CHANNEL_UDP : self::CHANNEL_WS;
+            $channel = str_starts_with($clientId, self::UDP_PREFIX) ? self::CHANNEL_UDP : self::CHANNEL_WS;
         }
 
         return [
-            'client_id' => (string)$clientId,
+            'client_id' => $clientId,
             'channel'   => $channel,
-            'via'       => (string)$via,
+            'via'       => $via,
         ];
     }
 
@@ -905,9 +905,9 @@ class Push
      *
      * @return bool
      */
-    protected static function isOnline($clientId, array $session)
+    protected static function isOnline(string $clientId, array $session): bool
     {
-        if (str_starts_with((string)$clientId, self::UDP_PREFIX)) {
+        if (str_starts_with($clientId, self::UDP_PREFIX)) {
             return !empty($session) && empty($session['offline_at']);
         }
         if (empty($session)) {
@@ -932,7 +932,7 @@ class Push
      *
      * @return bool
      */
-    protected static function nativeUidOnline($uid)
+    protected static function nativeUidOnline(string $uid): bool
     {
         try {
             return (bool)GatewayClient::isUidOnline($uid);
@@ -953,11 +953,11 @@ class Push
      *
      * @return array<string, mixed>
      */
-    protected static function buildFrame(array $payload, $msgId, array $job, $offline = false)
+    protected static function buildFrame(array $payload, string $msgId, array $job, bool $offline = false): array
     {
         return Message::packet(Message::CMD_PUSH, $payload, [
             'seq'       => $msgId !== '' ? $msgId : self::genMsgId(),
-            'msg_id'    => (string)$msgId,
+            'msg_id'    => $msgId,
             'source'    => isset($job['source']) ? (string)$job['source'] : '',
             'offline'   => $offline ? 1 : 0,
             'pushed_at' => time(),
@@ -969,7 +969,7 @@ class Push
      *
      * @return string
      */
-    protected static function genMsgId()
+    protected static function genMsgId(): string
     {
         try {
             return 'p-' . bin2hex(random_bytes(8));
@@ -985,9 +985,9 @@ class Push
      *
      * @return string
      */
-    protected static function resolveMode($mode)
+    protected static function resolveMode(string $mode): string
     {
-        $mode = (string)$mode;
+        $mode = $mode;
         if ($mode === self::MODE_DROP || $mode === self::MODE_QUEUE) {
             return $mode;
         }
@@ -1002,9 +1002,9 @@ class Push
      *
      * @return string
      */
-    protected static function normalizeTargetType($type)
+    protected static function normalizeTargetType(string $type): string
     {
-        $type = strtolower(trim((string)$type));
+        $type = strtolower(trim($type));
         if ($type === self::TARGET_UID || $type === self::TARGET_DEVICE || $type === self::TARGET_CLIENT) {
             return $type;
         }

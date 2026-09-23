@@ -52,7 +52,7 @@ class Logger
      *
      * @var array<string, mixed>
      */
-    protected static $weight = [
+    protected static array $weight = [
         self::DEBUG => 0,
         self::INFO  => 1,
         self::WARN  => 2,
@@ -64,7 +64,7 @@ class Logger
      *
      * @var array<string, mixed>
      */
-    protected static $config = [
+    protected static array $config = [
         'path'               => '',
         'level'              => self::DEBUG,
         'role'               => self::CHANNEL_DEFAULT,
@@ -82,21 +82,21 @@ class Logger
      *
      * @var bool
      */
-    protected static $handlerRegistered = false;
+    protected static bool $handlerRegistered = false;
 
     /**
      * 进程标识，便于在多进程日志中区分来源
      *
      * @var string
      */
-    protected static $processTag = '-';
+    protected static string $processTag = '-';
 
     /**
      * 单条日志 context 最大长度（字符），防止堆栈内容撑爆日志
      *
      * @var int
      */
-    protected static $contextMaxLength = 2000;
+    protected static int $contextMaxLength = 2000;
 
     /**
      * 初始化日志组件
@@ -107,7 +107,7 @@ class Logger
      *
      * @throws RuntimeException 日志目录无法创建时抛出
      */
-    public static function init(array $config = [])
+    public static function init(array $config = []): void
     {
         self::$config = array_merge(self::$config, $config);
         self::$config['role'] = self::sanitizeRole(self::$config['role']);
@@ -138,7 +138,7 @@ class Logger
      *
      * @return void
      */
-    public static function useChannel($role)
+    public static function useChannel(string $role): void
     {
         self::$config['role'] = self::sanitizeRole($role);
         self::$processTag     = 'pid:' . getmypid();
@@ -149,7 +149,7 @@ class Logger
      *
      * @return void
      */
-    public static function registerHandlers()
+    public static function registerHandlers(): void
     {
         if (self::$handlerRegistered) {
             return;
@@ -168,13 +168,10 @@ class Logger
             return true;
         });
 
-        set_exception_handler(function ($e) {
-            if ($e instanceof Throwable) {
-                self::exception($e, 'uncaught');
-
-                return;
-            }
-            self::error('未捕获的异常对象', ['value' => var_export($e, true)]);
+        // set_exception_handler 的回调参数在 PHP 7+ 恒为 Throwable，
+        // 原先的 instanceof 分支与「非异常对象」兜底均不可达，故直接类型化收参
+        set_exception_handler(function (Throwable $e) {
+            self::exception($e, 'uncaught');
         });
 
         register_shutdown_function(function () {
@@ -200,7 +197,7 @@ class Logger
      *
      * @return void
      */
-    public static function debug($message, array $context = [])
+    public static function debug($message, array $context = []): void
     {
         self::log(self::DEBUG, $message, $context);
     }
@@ -213,7 +210,7 @@ class Logger
      *
      * @return void
      */
-    public static function info($message, array $context = [])
+    public static function info($message, array $context = []): void
     {
         self::log(self::INFO, $message, $context);
     }
@@ -226,7 +223,7 @@ class Logger
      *
      * @return void
      */
-    public static function warn($message, array $context = [])
+    public static function warn($message, array $context = []): void
     {
         self::log(self::WARN, $message, $context);
     }
@@ -239,7 +236,7 @@ class Logger
      *
      * @return void
      */
-    public static function error($message, array $context = [])
+    public static function error($message, array $context = []): void
     {
         self::log(self::ERROR, $message, $context);
     }
@@ -252,7 +249,7 @@ class Logger
      *
      * @return void
      */
-    public static function exception(Throwable $e, $tag = '')
+    public static function exception(Throwable $e, string $tag = ''): void
     {
         self::log(self::ERROR, $e->getMessage(), [
             'tag'   => $tag,
@@ -271,7 +268,7 @@ class Logger
      *
      * @return void
      */
-    public static function log($level, $message, array $context = [])
+    public static function log(string $level, $message, array $context = []): void
     {
         if (!isset(self::$weight[$level])) {
             $level = self::INFO;
@@ -314,7 +311,7 @@ class Logger
      *
      * @return int 删除的文件数
      */
-    public static function cleanup()
+    public static function cleanup(): int
     {
         $keepDays = (int)self::$config['keep_days'];
         if ($keepDays <= 0 || !is_dir(self::$config['path'])) {
@@ -362,7 +359,7 @@ class Logger
      *
      * @return int 本次归档的明文文件数
      */
-    public static function archive()
+    public static function archive(): int
     {
         if (empty(self::$config['archive_enable'])) {
             return 0;
@@ -474,9 +471,9 @@ class Logger
      *
      * @return null|string 形如 2026-09；命名不匹配返回 null
      */
-    public static function archiveMonthOf($name)
+    public static function archiveMonthOf(string $name)
     {
-        if (!preg_match('/^[a-z][a-z0-9_-]{0,15}_(\d{4})-(\d{2})-\d{2}\.log$/', (string)$name, $m)) {
+        if (!preg_match('/^[a-z][a-z0-9_-]{0,15}_(\d{4})-(\d{2})-\d{2}\.log$/', $name, $m)) {
             return null;
         }
 
@@ -488,7 +485,7 @@ class Logger
      *
      * @return int
      */
-    public static function memoryUsage()
+    public static function memoryUsage(): int
     {
         return memory_get_usage(true);
     }
@@ -502,7 +499,7 @@ class Logger
      *
      * @return string
      */
-    protected static function archiveDir()
+    protected static function archiveDir(): string
     {
         $dir = trim((string)self::$config['archive_dir']);
         if ($dir === '') {
@@ -527,7 +524,7 @@ class Logger
      *
      * @return bool 是否写入成功
      */
-    protected static function appendTarGz($pack, array $items, $level)
+    protected static function appendTarGz(string $pack, array $items, int $level): bool
     {
         $raw = '';
         if (is_file($pack)) {
@@ -577,7 +574,7 @@ class Logger
      *
      * @return int 删除的包数
      */
-    protected static function purgeArchives($dir, $keepDays)
+    protected static function purgeArchives(string $dir, int $keepDays): int
     {
         if ($keepDays <= 0 || !is_dir($dir)) {
             return 0;
@@ -616,7 +613,7 @@ class Logger
      *
      * @return string
      */
-    protected static function sanitizeRole($role)
+    protected static function sanitizeRole($role): string
     {
         $role = strtolower(trim((string)$role));
         if ($role === '' || !preg_match('/^[a-z][a-z0-9_-]{0,15}$/', $role)) {
@@ -636,7 +633,7 @@ class Logger
      *
      * @return string
      */
-    protected static function stringifyContext(array $context)
+    protected static function stringifyContext(array $context): string
     {
         $json = json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         if ($json === false) {
@@ -656,7 +653,7 @@ class Logger
      *
      * @return array<int|string, mixed>
      */
-    protected static function shortTrace(Throwable $e)
+    protected static function shortTrace(Throwable $e): array
     {
         $frames = [];
         $trace  = $e->getTrace();
@@ -694,14 +691,14 @@ class Logger
      *
      * @return string 512 字节的头块
      */
-    protected static function tarHeader($name, $size, $mtime, $mode = 0o644)
+    protected static function tarHeader(string $name, int $size, int $mtime, int $mode = 0o644): string
     {
-        $header  = str_pad(substr((string)$name, 0, 100), 100, "\0");
+        $header  = str_pad(substr($name, 0, 100), 100, "\0");
         $header .= str_pad(decoct($mode & 0o7777), 7, '0', STR_PAD_LEFT) . "\0";
         $header .= str_pad('0', 7, '0', STR_PAD_LEFT) . "\0";   // uid
         $header .= str_pad('0', 7, '0', STR_PAD_LEFT) . "\0";   // gid
-        $header .= str_pad(decoct((int)$size), 11, '0', STR_PAD_LEFT) . "\0";
-        $header .= str_pad(decoct((int)$mtime), 11, '0', STR_PAD_LEFT) . "\0";
+        $header .= str_pad(decoct($size), 11, '0', STR_PAD_LEFT) . "\0";
+        $header .= str_pad(decoct($mtime), 11, '0', STR_PAD_LEFT) . "\0";
         $header .= '        ';                                  // checksum 占位（8 空格）
         $header .= '0';                                         // typeflag：普通文件
         $header .= str_repeat("\0", 100);                       // linkname
@@ -732,7 +729,7 @@ class Logger
      *
      * @return int 有效载荷长度（不含尾部空块）
      */
-    protected static function tarPayloadEnd($raw)
+    protected static function tarPayloadEnd(string $raw): int
     {
         $len = strlen($raw);
         $off = 0;
@@ -756,7 +753,7 @@ class Logger
      *
      * @return int
      */
-    protected static function normalizeGzipLevel($level)
+    protected static function normalizeGzipLevel($level): int
     {
         $level = (int)$level;
 

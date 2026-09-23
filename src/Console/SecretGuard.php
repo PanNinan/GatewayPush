@@ -24,9 +24,9 @@ final class SecretGuard
      *
      * @return bool
      */
-    public static function isPlaceholder($secret)
+    public static function isPlaceholder(string $secret): bool
     {
-        $secret = (string)$secret;
+        $secret = $secret;
 
         $placeholders = [
             'change_me', 'changeme', 'change_me_gateway_push_auth_secret',

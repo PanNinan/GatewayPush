@@ -34,26 +34,26 @@ final class HttpTransport
      *
      * @var float
      */
-    private $timeout;
+    private float $timeout;
 
     /**
      * 连接工厂 function (string $tcpUrl): object
      *
      * @var callable
      */
-    private $connFactory;
+    private mixed $connFactory;
 
     /** @var callable 计时器创建 function (float $interval, bool $persistent, callable $fn): int */
-    private $timerAdd;
+    private mixed $timerAdd;
 
     /** @var callable 计时器删除 function (int $timerId): void */
-    private $timerDel;
+    private mixed $timerDel;
 
     /** @var string */
-    private $host;
+    private string $host;
 
     /** @var int */
-    private $port;
+    private int $port;
 
     /**
      * @param string        $baseUrl     http://host:port
@@ -110,11 +110,11 @@ final class HttpTransport
      *
      * @return void
      */
-    public function request($method, $path, $body, array $headers, $cb)
+    public function request(string $method, string $path, string $body, array $headers, $cb): void
     {
-        $method = strtoupper((string)$method);
-        $path   = '/' . ltrim((string)$path, '/');
-        $body   = (string)$body;
+        $method = strtoupper($method);
+        $path   = '/' . ltrim($path, '/');
+        $body   = $body;
 
         $head = "{$method} {$path} HTTP/1.1\r\n";
         $head .= "Host: {$this->host}:{$this->port}\r\n";
