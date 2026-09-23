@@ -88,6 +88,10 @@ a:hover { text-decoration: underline; }
 .btn:hover { border-color: var(--accent); color: var(--accent); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn.primary:hover { opacity: 0.9; color: #fff; }
+/* danger：不可恢复的破坏性动作（清空离线队列）—— 描边警示而非实底，避免误点观感过轻 */
+.btn.danger { border-color: #c0392b; color: #c0392b; }
+.btn.danger:hover { border-color: #96281b; color: #96281b; }
+.btn.danger:disabled:hover { border-color: #c0392b; color: #c0392b; }
 .btn.mini { padding: 2px 9px; font-size: 12px; }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn:disabled:hover { border-color: var(--line); color: var(--fg); }

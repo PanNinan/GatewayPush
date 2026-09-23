@@ -114,8 +114,8 @@ final class SessionController
     /**
      * 离线队列只读分页（`LLEN` + `LRANGE push:offline:{uid}`）。
      *
-     * **刻意不提供任何删除 / 清空入口**：清空离线队列是写操作，属 P4 的显式授权范围
-     * （且必须落审计）。一期只读。
+     * 本端点保持只读。清空离线队列走 P4 后半段的运维端点
+     * `POST /api/ops-action/purge-offline`（主项目 `purge_offline` 动作转签，落审计）。
      */
     public function offline(string $uid, Request $request): Response
     {

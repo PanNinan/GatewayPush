@@ -41,7 +41,11 @@ final class GatewayPushClient
     public const CODE_BAD_PARAM = 4000;
     public const CODE_BAD_SIGN = 4001;
     public const CODE_EXPIRED = 4002;
+    /** 动作声明 `auth=true` 但请求未给 `uid`（`src/Api/Bootstrap.php:546`），P3 动作页必然遇到 */
+    public const CODE_UNAUTHORIZED = 4003;
     public const CODE_NOT_FOUND = 4004;
+    /** 未知指令 / 动作未开放该通道（HTTP 下即「动作未开放 HTTP 通道」） */
+    public const CODE_UNKNOWN_CMD = 4006;
     public const CODE_RATE_LIMIT = 4029;
     public const CODE_SERVER_ERROR = 5000;
     /** 传输层失败（连不上 / 超时），对应 client 的 CLIENT_TRANSPORT */
@@ -83,6 +87,24 @@ final class GatewayPushClient
                 'User-Agent' => 'GatewayPush-Admin/1.0',
             ],
         ]);
+    }
+
+    /**
+     * 从后台配置构造（`config/gateway_push.php` 的 `api_url` / `api_secret`）。
+     *
+     * 集中在此而不是让每个控制器各写一遍：**密钥来源只能有一处**。
+     * 若有人另写一条「直接读 env」的路径，在 `.env` 键改名后会静默拿到空密钥 ——
+     * 表现是「所有写操作都 401」，而比对的双方都是合法字符串，查起来很费劲。
+     */
+    public static function fromConfig(): self
+    {
+        $url = config('gateway_push.api_url', 'http://127.0.0.1:8290');
+        $secret = config('gateway_push.api_secret', '');
+
+        return new self(
+            is_scalar($url) ? (string)$url : 'http://127.0.0.1:8290',
+            is_scalar($secret) ? (string)$secret : ''
+        );
     }
 
     /**
@@ -136,7 +158,7 @@ final class GatewayPushClient
     }
 
     // ---------------------------------------------------------------------
-    // 业务方法（P0 仅 health / stats；/push 与 /action 在 P3 落地）
+    // 业务方法（P0 health / stats；P3 补 push / action；/action/{id} 见 actionResult）
     // ---------------------------------------------------------------------
 
     /**
@@ -162,7 +184,56 @@ final class GatewayPushClient
     }
 
     /**
-     * 取动作执行结果（P3 用；`ACTION_RESULT_TTL` 仅 60s，调用方须即时轮询）。
+     * 发起一次定向推送（**异步受理**）。
+     *
+     * **只看 `HTTP 200` + `code=0`** —— 那只表示「已入队」，真实投递由 business 进程异步完成，
+     * 服务端**不承诺任何逐条投递回执**（设计文档 R5）。
+     *
+     * ⚠ 两个由调用方兜住的语义（本类**无法**从响应里区分，详见 {@see Pusher} 的文案常量）：
+     *   ① **去重是静默的**：`Push::enqueue()` 的 `setNxEx` 非首次只做
+     *      `Monitor::incr('push_dedup')` + `Logger::debug`，响应与首次逐字段相同 ⇒
+     *      **「本次是否被去重」不可判定**；
+     *   ② **payload 超限会在业务进程里静默丢弃**：`PUSH_PAYLOAD_MAX` 的判定点在
+     *      `Push::dispatch()`（`src/Business/Push.php:421`），即本方法**已经返回调用方之后**；
+     *      超限只记 `push_fail` + warn 日志 ⇒ 必须先过 `Pusher::payloadBytes()` 同源预估。
+     *
+     * @param array{target_type: string, target: string, payload: array<mixed>, msg_id: string, offline_mode: string} $job
+     *        字段与顺序无关；`offline_mode` 传空串表示取服务端默认值
+     *
+     * @return array{ok: bool, status: int, code: int, msg: string, data: array<string, mixed>}
+     *         `data` 为服务端回带：`{target_type, target, msg_id, offline_mode}`，
+     *         其中 **`offline_mode` 是实际生效值**（未传时回带服务端默认值），应原样落库
+     */
+    public function push(array $job): array
+    {
+        return $this->request('POST', '/push', $job);
+    }
+
+    /**
+     * 调用一个业务动作（**同步等待**，服务端最长阻塞 `API_ACTION_WAIT_MS`）。
+     *
+     * 响应有四种形态、其中两种的 HTTP 状态码与成败方向相反 ⇒
+     * **调用方必须经 {@see ActionOutcome::of()} 归一后再判成败**，不要自己看 HTTP 状态码。
+     *
+     * ⚠ 超时必须大于服务端的等待窗（`ActionCatalog::WAIT_MS_MIRROR` = 6000ms），
+     * 否则本类会先于服务端放弃，把「超窗转 202」误报成连接失败。
+     * `$timeout` 默认 8s 满足该关系；若传入更小的值，构造方必须自行确认。
+     *
+     * @param array{action: string, uid?: string, device_id?: string, params?: array<string, mixed>} $job
+     *
+     * @return array{ok: bool, status: int, code: int, msg: string, data: array<string, mixed>}
+     */
+    public function action(array $job): array
+    {
+        return $this->request('POST', '/action', $job);
+    }
+
+    /**
+     * 取动作执行结果（`ACTION_RESULT_TTL` 仅 60s，调用方须在窗口内即时补查）。
+     *
+     * ⚠ 未命中时服务端返回 `404` + `4004`，且**刻意不区分**「仍在执行」与「已被回收」
+     * （见 `src/Api/Bootstrap.php:600` 的 hint）—— 归一后一律是
+     * `ActionOutcome::STATE_EXPIRED`，不要在前端猜成 `pending`。
      *
      * @return array{ok: bool, status: int, code: int, msg: string, data: array<string, mixed>}
      */

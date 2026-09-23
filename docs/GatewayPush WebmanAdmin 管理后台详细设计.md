@@ -1074,7 +1074,7 @@ P4 若落地 `channels` 与 3 个动作，**必须**补跑：
 
 ## 11. 实施记录与实测偏差（2026-09-23）
 
-> §11.1~§11.3 为 **P0**；§11.4 为 **P1**；§11.5 为 **P2**。偏差表 **D1~D25 累计**，冲突一律以本表为准。
+> §11.1~§11.3 为 **P0**；§11.4 为 **P1**；§11.5 为 **P2**；§11.6 为 **P3**；**§11.7 为 P4**。偏差表 **D1~D35 累计**，冲突一律以本表为准。
 
 ### 11.1 P0 状态
 
@@ -1274,6 +1274,7 @@ P4 若落地 `channels` 与 3 个动作，**必须**补跑：
 | **D23** | §5.1 只写了「只读 Redis」，未提 SCAN 的前缀语义 | **Predis 的 `KeyPrefixProcessor` 映射表里有 `KEYS`/`SSCAN`/`HSCAN`/`ZSCAN`，唯独没有 `SCAN`** ⇒ `MATCH` 模式**不会**被自动加前缀，而**返回的键带前缀**。实测依据：`MATCH=gwpush:*` 能命中 `gwpush:metrics:gauge`（若被二次加前缀则必然空）。另：`illuminate/redis` v12.69.2 的 `pipeline()` **只定义在 `PhpRedisConnection` 子类**上，基类 `Connection` 没有，`Connection::__call()` 会把未知方法转成 `command($method)` ⇒ `Redis::connection()->pipeline($cb)` 会被当成一条名为 `PIPELINE` 的 Redis 命令而报错 | ① `RedisReader::scanKeys()` **手工拼** `prefix . $logicalPattern`、返回前**手工剥离**前缀；② 批量读取走 `Redis::connection()->client()->pipeline($cb)`（phpredis 与 predis **都在原始客户端上**有 `pipeline`，且前缀在 pipeline 内部照常生效），失败由 `batch()` 退化为逐键读取 —— **只影响往返次数，不影响正确性** |
 | **D24** | §4.3 的路由表（`/api/sessions/{clientId}` 等）与 §6 的 16 个语义权限点 | P2 实际落地路由**与 §4.3 有三处形状差异**：① 详情是 **`/api/session/{clientId}`（单数）**，与列表 `/api/sessions`（复数）**刻意区分**，避免与 `/api/sessions/by-uid/{uid}` 之类的静态段路由产生前缀歧义；② 新增 §4.3 未列的 **`/api/sessions/subscriptions`** 与 **`/api/auth/revoked`**；③ 列表多了 `scope` / `page` / `size` 之外的 `protocol` 过滤（与 §4.3 一致）但**没有** `uid` 之外的维度。权限键仍为 `{FQCN}@{action}` 形态（`wa_rules.key`），**不是** §6 的 `admin.session.view` | ① §4.3 路由表按本节为准；② §6 权限点矩阵的**键名形态**须整体改写（**D3 已记**，P2 只补了 8 个 `sess.*` 节点 + 1 个页面菜单节点，`install.php` 幂等可重跑）；③ 页面控制器与 API 控制器**同名不同命名空间**（`app\controller\SessionController` vs `app\controller\api\SessionController`），权限键字符串**不可混用** |
 | **D25** | 未预见（**本次修的缺陷**，属最容易静默的一类） | **`RedisReader::scanKeys()` 与 `RedisReader::sessions()` 处于两个不同「键空间」**：前者返回**已剥离 Redis 前缀的逻辑键名**（`session:ws-abc`），后者收 **clientId**（`ws-abc`）并**自行**拼 `RedisKeys::session()` ⇒ 直接对接会得到 `session:session:ws-abc`，**全部读空**。表现为 `scope=retained` 返回 0 条而 `scan.scanned=1`（SCAN 明明扫到了键），**不报错、不打日志** | 新增**唯一转换点** `SessionInspector::clientIdsFromKeys()`（纯函数，可单测），并在 `list()` 的 docblock 写明；单测用「`RedisKeys::session()` 往返必须回到同一个键」做契约断言（`testClientIdsFromKeysRoundTripMatchesRedisKeysSession`），而非只断言字符串被切掉。⚠ **凡「扫描产物」交给「按 clientId 取数」的函数前，必须先过这一层** —— 同类边界（`heartbeat:` / `uid:clients:` 等）未来照此办理 |
+| **D26**（P2 加固，用户报出） | §11.5 的 `disableDefaultRoute` 段覆盖了**本项目自己的 5 个控制器**，但漏了 webman **脚手架自带**的 `app\controller\IndexController` | 该控制器是 `composer create-project` 的产物，**本项目从未在 `route.php` 注册过它**，于是它的三个公有动作**只经默认路由暴露、零鉴权**（实测：未带任何 Cookie 全部 **HTTP 200**）：`/index/index`（内嵌 `workerman.net` 欢迎页 iframe，白送一条指纹）、`/index/view`（渲染脚手架视图）、**`/index/json`**（返回 `{"code":0,"msg":"ok"}`）。⚠ `/index/json` 最危险：它的信封与本项目成功响应**形状完全一致**，未鉴权即可拿到一个「看起来成功」的响应，会**误导健康探针与扫描器**。另有一处连带影响：**根路径 `/` 的默认路由恰好落在 `IndexController::index` 上**，禁用后若无人显式接管，`/` 会从 200 变成 **404**（对运维是倒退）| ① 补 `Route::disableDefaultRoute(IndexController::class);`（第 6 行；**仍不得**一刀切全局禁用 —— webman-admin 的 `/app/admin/*` 靠默认路由解析）；② `/` 已由显式闭包路由接管为 `302 → /app/admin`，新增断言守住；③ **把「新增控制器必须禁用默认路由」从注释升级为门禁** —— 新增 `tests/Unit/RouteGuardTest.php`（6 用例：逐个扫 `app/controller/**` 比对禁用清单 / 反向断言禁用目标只落在自己的控制器上 / 脚手架具名锚点 / 不得全局禁用 / 每个显式路由必须被 `AdminAuth` 覆盖（语句自带或落在 `/api` 组区间内）/ `/` 必须是显式重定向），**6 组变异体全部被抓**；④ `p2_acceptance.php` 增 6 项检查（3 条静态 + 3 条线上探针 + 根路径），**70 PASS / 0 FAIL**；⑤ 线上反向对照已取证：注掉该行 → 1~3 秒内 `/index/*` 立刻变回未鉴权 **200**，`/index/json` 实回 `{"code":0,"msg":"ok"}` |
 
 #### P2 刻意不做（宁缺勿假）
 
@@ -1290,6 +1291,71 @@ P4 若落地 `channels` 与 3 个动作，**必须**补跑：
 
 ---
 
+---
+
+### 11.6 P3 实施记录与实测偏差（2026-09-23）
+
+> §7 P3 的任务项全部落地，**侵入性 0**（主项目 `src/`、`config/`、`tests/` 零改动）。
+> 偏差 **D27~D31** 为本次新增。四项形态选择由用户拍板：
+> **两页（`/push` + `/actions`）** · **审计提前到 P3 启用** · **复用 P2 离线队列端点** · **只读角色仅历史 + 模板查看**。
+
+#### 交付物与门禁
+
+| 层 | 文件 | 门禁结果 |
+|---|---|---|
+| 服务层 | `Pusher.php`（`Message::encode()` 同源字节预校验 + 4 条口径 NOTE） · `PushRepository.php`（分页 / 筛选 / 汇总） · `TemplateRepository.php`（CRUD） · `ActionCatalog.php`（6 个 `http=true` 动作白名单 + 元信息） · `ActionOutcome.php`（六态归一 + `RESEND_*` 三值） · `Perm.php`（权限求值，纯渲染期） · `Auditor.php` | `PushContractTest` **18 tests / 135 assertions** · `ActionContractTest` **21 tests** · `ActionOutcomeTest` 补 3 条常量不变量 |
+| API 控制器 | `app/controller/api/PushController.php`（5 端点） · `app/controller/api/ActionController.php`（2 端点，含 `result()` 复用于补查） | 路由动词由契约测试静态钉住 |
+| 页面控制器 | `app/controller/PushController.php` · `app/controller/ActionController.php`（`POLL_DELAYS_MS` 契约常量） | 同上 |
+| 视图 / 前端 | `app/view/push/index.html` · `app/view/action/index.html` · `public/static/{push,action}.{js,css}` | `push_render_check.js` **122 项** · `action_render_check.js` **103 项**；P1 的 **144 项**与 P2 的 **122 项** 无回归 |
+| 共用 harness | `tests/Frontend/lib/fake_env.js`（假 DOM：`confirm` 可注入、计时器**既记账又入队**、可逐项推进） | 两个 P3 校验共用；两个既有校验**刻意不动** |
+| 验收脚本 | `tests/Manual/p3_acceptance.php`（只读 **88 PASS / 0 FAIL / 2 SKIP**；`--seed` **123 PASS / 0 FAIL / 2 SKIP**） | 4 层：服务层 / 模板 / HTTP / 三条线上反证 |
+| 后端总门禁 | `phpunit` · `phpstan`（L6，无 baseline） | **201 tests / 1053 assertions** · **0 errors** |
+
+**变异测试**：3 组前端注入（删 `<select>` 默认值 / 删 `clearTimeout` / 用 `retryable` 冒充 `resend_*`）
+→ **31 / 2 / 9 项失败全部被抓**，证明新校验不是恒真的。
+
+#### 本次新增偏差
+
+| # | 前文表述 | 实测事实 | 影响 |
+|---|---|---|---|
+| **D27** | §7 P3 写「后台提示**已去重**」，并拟新增端点 `/api/push/queue/{uid}` | ① **去重不可观测**：`Push::enqueue()` 用 `setNxEx(pushDedup)`，非首次仅 `Monitor::incr('push_dedup')`，**响应体键集合与首次完全一致**。线上反证：同 `msg_id` 连发两次，两次 `code=0`、键集合相同、**没有任何字段能区分**；② `/api/push/queue/{uid}` 与 P2 已落地的 `/api/sessions/offline/{uid}` **同源** | ① 「后台提示已去重」**不可实现**，改为后端下发 `Pusher::DEDUP_NOTE` 明示「去重是静默的、本次是否被去重不可判定」，验收脚本用**反证**（两次响应无差异）把它钉成事实；② **不新增端点**，直接复用 P2 的（用户已确认，登记为偏差） |
+| **D28** | 未预见（**主项目侧语义缺陷**，后台只能绕开、不碰主项目） | `PUSH_PAYLOAD_MAX`(4096) 的判定点在 **business 进程**（`src/Business/Push.php:421 dispatch()`），即 `/push` 已返回 `200 accepted` **之后**；超限只 `incr('push_fail')` + `Logger::warn` ⇒ **静默丢弃、调用方零反馈**。线上反证：直连主项目发 **10KB** 载荷 → 仍回 `HTTP 200 / code=0 / msg=accepted`，但 `push_fail` 计数 **0 → 1** | 后台用 `Message::encode()` 做**逐字节同源**预校验（服务端判据是 `strlen()`，故必须**紧凑重新编码**才计数 —— 否则 3KB 格式化载荷会被报成 6KB 并误拦）；回执一律写「**已受理**」不写「已投递」，并下发 `PAYLOAD_DROP_NOTE` 说明「超额在服务端被静默丢弃」。验收脚本以 `push_fail` 增量作为**反证** |
+| **D29** | `ActionOutcome::$retryable` 被当成「可重试」在界面上渲染 | `retryable` 的定义是「**补查**是否可重试」（只对 `pending` 为真），与「**重发**动作是否安全」**是两件事**：`rejected` 从未入队 ⇒ 重发**安全**；`transport` 未取到响应 ⇒ **不要自动重发**；`expired` 两义 ⇒ **待确认**。**一个布尔表达不了三种结论** | 新增三值 `RESEND_SAFE/UNSAFE/UNKNOWN` + `resend_label` / `resend_tone` / `resend_note` **由后端下发**（前端只渲染不编词，与「文案不得在前端复述」的既有纪律一致）；`retryable` 保留原义不变，二者在 `ActionOutcomeTest` 中分别钉住 |
+| **D30** | 未预见（**本次修的缺陷**，两页同源） | `action.js` 的 `fillActions()` 只 `appendChild` option、**从不给 `node.value` 赋值**。真浏览器会自动选中首项，**假 DOM 不会** ⇒ 首屏 `val('a-action') === ''` ⇒ `validate()` 命中「动作不在 HTTP 开放清单内」⇒ **首屏直接拒发、一个请求都不发**（29 项校验失败的单一根因）。`/push` 侧漏掉的后果更隐蔽：主项目对未知 `target_type` **兜底回落成 `uid`**，推送目标类型被**悄悄换掉且全程零报错** | ① `fillActions()` 填充后显式 `node.value = names[0]`；② `push.js` 的 `fillSelect()` 同口径补「**无前缀项时**显式选中首项」，**带 `prefixText` 的筛选下拉不设默认**（那里的空串本身就是「不限」，塞值会让筛选默认收窄、用户看到的历史条数莫名变少）；③ 两页各自的首屏初值由渲染校验钉住 |
+| **D31** | 未预见（**本次修的缺陷**） | `stopPoll()` 只靠 `poll.seq += 1` 作废旧链，**不真的取消定时器** ⇒ 「手动补查作废自动链」在**语义**上成立、在**实现**上是假的：队列里还挂着定时器，回调只是被 seq 挡住。假 DOM 的 `clearTimeout` 原为空实现 ⇒ 「已作废」**不可断言** | ① 补 `window.clearTimeout(poll.handle)` 并持有句柄；② 假 DOM 的 `clearTimeout` 改为**真的出队**，使「作废」成为可断言的事实（A10 场景）；③ 两处修复各有一组变异体验证（删 `clearTimeout` → 2 项失败） |
+
+#### P3 其他实测要点（易再犯）
+
+1. **`push_task.request_id` 是 `CHAR(16)`**（值来自 `bin2hex(random_bytes(8))`）：验收脚本夹具曾写 20 字符，直接
+   `SQLSTATE 22001 / 1406 Data too long` **致命退出**（不是干净 FAIL）。已加「夹具自检」先量列宽，把常量漂移变成可诊断的断言。
+   同理 **`operator_id` 是 `INT UNSIGNED`**：夹具取负数会 `1264 out of range`，改取 `0`（真实行恒 `> 0`）；
+   ⚠ 但清理**只按 `target`/`name` 的 `p3test%` 前缀**，绝不按 `operator_id` —— 那会连带删掉任何 `operator_id = 0` 的行。
+2. **`POST /action` 的四种响应形态不可按 HTTP 判成败**：`200+code0+done` / `200+业务码+failed`（**HTTP 是 200 却失败**） /
+   `202+pending`（**超窗不是失败**）/ `4xx|5xx`（入队前失败）。另有 `expired`：**服务端对 `404 + 4004` 刻意不区分**
+   「仍在执行」与「已过 `ACTION_RESULT_TTL` 被回收」⇒ 后台**同样不替用户猜**（线上反证 C：补查未命中回 `HTTP 200 + code=0`
+   而非 404，否则前端会把它当接口故障并打断补查）。
+3. **定时器政策三级分工**（与 P1/P2 一致性）：`/dashboard` 周期轮询 → `/sessions` + `/push` **零定时器** →
+   `/actions` **恰好一个** `setTimeout` 递归退避（`POLL_DELAYS_MS = [1000,2000,4000,8000,8000]`，总 23s
+   < `ACTION_RESULT_TTL`×1000 且 ≤ 其 80%，由 `ActionContractTest::testBackoffWindowFitsInsideResultTtl` 钉住）。
+   「启动退避」必须从渲染函数里**抽出来**（`maybeStartPoll()`），只在 `invoke` 成功后调一次 ——
+   否则补查响应仍是 `pending` 时会重置计数，形成**无限退避**（延迟恒为第一个值、次数永远耗尽不了、请求量翻几倍）。
+4. **动作白名单只能列 `http=true` 的 6 个**：`session` 未开放 HTTP，放进清单等于给用户一个**必然失败**的选项；
+   `requires_uid` 由后端元信息驱动，**不许前端写死**「uid 必填」（否则 P4 的 `auth=false` 动作会被前端挡住）。
+   另 `'http' => true` 是「**额外**开放 HTTP」而非「**仅限** HTTP」（主项目 `ActionRunner.php:321` 只单向拦），与红线 ㊸ 同向。
+
+#### P3 刻意不做（宁缺勿假）
+
+1. **不宣称投递结果**。受理成功只意味着「主项目已入队」，是否送达取决于目标是否在线、载荷是否在服务端被丢弃（**D28**）——
+   回执统一写「已受理」并附三条口径说明。
+2. **不提供「按主题推送」**。主项目 `Push::TARGET_*` 只有 `uid`/`device`/`client`，主题广播走 `Push::enqueueTopic()`
+   且**无 HTTP 入口** ⇒ UI 里不得出现该选项（`NO_TOPIC_NOTE` + 契约测试双钉，对应 §7 风险 R1）。
+3. **不做动作的重发按钮**。`report` 累加计数、`notify` 会再推一条 ⇒ 自动重发产生**重复业务效果**；
+   只在回执里如实给出 `resend_label`（安全 / 不要重发 / 待确认），由人工判断。
+所有写操作（kick / revoke / unbind / 清空离线队列）属 **P4**。*
+
+*下一步为 **P3 推送管理**（发起推送转签、推送历史 `push_task`、动作调用、模板 CRUD）。*
+
+---
 *本文件为设计方案，落地实现以代码为准。§3 的 6 处主项目改动（C1~C6）需逐项确认后再实施；
 其推荐取值见 §0.4；「运维动作的信任域」已于 2026-09-23 拍板为**选项 A**
 （落地清单 A1~A5 尚未执行，须在 C1~C6 上线前完成，见 §9.2 的 R11）。*
@@ -1308,11 +1374,105 @@ P1 验收脚本 **41 PASS / 0 FAIL / 1 SKIP**。**主项目 `src/`、`config/`�
 ***P2 已完成（2026-09-23）**：会话只读面板（列表 `scope=online|retained|all` / 页内抽屉详情 /
 uid·device 反查 / 订阅双向 / 离线队列只读 / Token 撤销名单）+ 修掉 P1 遗留的
 **默认路由鉴权绕过**（`Route::disableDefaultRoute()` 按控制器精确禁用，见 **D24**）；
-后端 PHPStan L6 **0 errors** / PHPUnit **83 tests / 361 assertions** /
-前端渲染校验 **122 项**（P1 的 144 项无回归）/ P2 验收脚本 **64 PASS / 0 FAIL / 1 SKIP**。
-**主项目 `src/`、`config/`、`tests/` 仍为零改动。** 实施记录与实测偏差 **D1~D25 覆盖前文表述，冲突以 §11 为准**。*
+随后按用户报出的漏项加固：关掉 webman **脚手架欢迎页控制器**留下的免鉴权入口
+（`/index/index`、`/index/view`、**`/index/json`**），并把「新增控制器必须禁用默认路由」
+**从注释升级为门禁** `tests/Unit/RouteGuardTest.php`（见 **D26**，6 组变异体全部被抓）。
+后端 PHPStan L6 **0 errors** / PHPUnit **89 tests / 383 assertions** /
+前端渲染校验 **122 项**（P1 的 144 项无回归）/ P2 验收脚本 **70 PASS / 0 FAIL / 1 SKIP**；
+线上已做**反向对照取证**（注掉禁用行 → 1~3 秒内 `/index/*` 立刻变回未鉴权 200）。
+**主项目 `src/`、`config/`、`tests/` 仍为零改动。** 实施记录与实测偏差 **D1~D26 覆盖前文表述，冲突以 §11 为准**。*
 
-***P2 明确不做**：实时日志 tail（仍缓做）；「本会话是否已撤销」标志（不可判定，见 §11.5 末）。
-所有写操作（kick / revoke / unbind / 清空离线队列）属 **P4**。*
+***P2 明确不做**：实时日志 tail（仍缓做）；「本会话是否已撤销」标志（不可判定，见 §11.5 末）。*
 
-*下一步为 **P3 推送管理**（发起推送转签、推送历史 `push_task`、动作调用、模板 CRUD）。*
+***P3 已完成（2026-09-23）**：推送管理与动作调试两页 —— `/push`（发起推送 / 推送历史 / 模板管理）与
+`/actions`（动作调试器，只列 6 个 `http=true` 动作）；`admin_audit_log` **提前到 P3 启用**
+（`push.create` / `push.template.save` / `push.template.delete` / `action.invoke` 四条全部落库，补查**刻意不落**）；
+离线队列**复用 P2 端点**未新增；只读角色范围 = **仅历史 + 模板查看**。
+三条「不可观测 / 静默」已由**线上反证**定案并写进后端 NOTE：**去重不可判定**（**D27**）、
+**超限载荷被主项目静默丢弃**（**D28**，10KB 仍回 `code=0` 而 `push_fail` 0→1）、
+**补查未命中不区分「执行中」与「已回收」**（反证 C，`HTTP 200 + code=0`）。
+后端 PHPStan L6 **0 errors** / PHPUnit **201 tests / 1053 assertions** /
+前端渲染校验 **491 项**（144 + 122 + 122 + 103，P1/P2 无回归）/ P3 验收脚本
+**只读 88 PASS · `--seed` 123 PASS，均 0 FAIL**，3 组前端变异体全部被抓。
+**主项目 `src/`、`config/`、`tests/` 仍为零改动。** 实施记录与实测偏差 **D1~D31 覆盖前文表述，冲突以 §11 为准**。*
+
+***P3 刻意不做**：不宣称投递结果（只写「已受理」）；不提供「按主题推送」（无 HTTP 入口）；
+不做动作重发按钮（`report` 累加计数 / `notify` 再推一条 ⇒ 重复业务效果）。*
+
+### 11.7 P4 实施记录与实测偏差（2026-09-24）
+
+> §7 P4 的任务项全部落地：**§3 的 6 处主项目改动（C1~C6）已实施**（本阶段起主项目侧不再零改动，
+> 但全部属于设计内改动、无未经确认的偏差）；「运维动作的信任域」按 §9.2 的 **选项 A** 落地
+> （`API_SECRET` 兼任管理面凭证，等式「持有 API_SECRET ⇒ 可踢任意人」在 API_LISTEN 回环 + 单一可信调用方下决策接受）。
+> 偏差 **D32~D35** 为本次新增。
+
+#### 主项目侧交付（C1~C6）
+
+| 项 | 文件 | 说明 |
+|---|---|---|
+| C1/C2 通道白名单 | `src/Business/ActionRunner.php`（`channelExposed()` + `declaredChannels()`）· `src/Api/Bootstrap.php`（入队侧同口径判定） | **双防线**：执行侧裁定（动作队列是 Redis 键，持 Redis 凭证者可直写）+ 入队侧拒绝（只是体验）；**缺省必须全放行**（既有 7 个动作未声明，收紧即线上行为变更），未注册动作返回 false |
+| C3 动作声明 | `config/actions.php`：`kick` / `revoke` / `unbind`，均 `'channels' => [http]`、`'auth' => false`、`'http' => true` | ⚠ 红线 ㊸ 落地：运维动作必须声明 `channels`，否则任何已鉴权终端客户端都能经 WS 踢任意 clientId（终端提权） |
+| C4 处理器 | `src/Business/Action/KickAction.php` · `RevokeTokenAction.php` · `UnbindDeviceAction.php` | kick：`udp:` 前缀计 `skipped`（不在 Gateway 连接表，`closeClient()` 无效）；revoke：指纹**闭包外算好**（不捕获明文进闭包作用域）；unbind：幂等 |
+| C5 指标 | `config/app.php` `monitor.metrics` + `action_kick/action_revoke/action_unbind` | 不另加 `action_http_*` 分通道计数 |
+| C6 文档 | 对外接口文档 §8/§9.4 · README · `.env.example`（三处同步） | §9.4 =「管理面凭证（API_SECRET 的第二重身份）」三个升级触发条件 |
+
+#### 后台侧交付
+
+| 层 | 文件 | 门禁 |
+|---|---|---|
+| 服务层 | `OpsAction.php`（转签 + `CAVEATS` 三条「不做什么」+ `fingerprint()`=sha256 前 32 位，**第四处**指纹实现，四处必须同口径） | `OpsActionContractTest` **12 tests / 61 assertions**（含明文 token 不外泄三条断言） |
+| API | `app/controller/api/OpsActionController.php`（kick / revoke / unbind / forceOffline，HTTP 恒 200） | 路由动词由契约测试钉住 |
+| 路由 / 权限 | `config/route.php`（4 条 POST + `disableDefaultRoute`）· `scripts/install.php`（节点 id 138~141，只读角色**一个都不给**） | p4 验收拿 **DB 真值**对拍（`wa_rules` 141 条） |
+| 会话页 | `SessionController.php`（cfg 注入 `ops_*` + `perms`）· `app/view/session/index.html`（运维操作区）· `public/static/session.js`（`runOps` / `renderOpsResult` / `applyOpsPerms`，零定时器） | `SessionContractTest` **19 tests / 105 assertions** · `session_render_check.js` **152 项**（P4 前 122 项无回归） |
+| 验收 | `tests/Manual/p4_acceptance.php` + `composer test:acceptance:p4` | 默认 **22 PASS / 0 FAIL / 2 SKIP**；`--live` **46 PASS / 0 FAIL / 1 SKIP**（真实调四端点 + 审计落库核对，目标 `p4test-*`） |
+| 总门禁 | 主项目：PHPStan **0 errors** · PHPUnit **533 tests / 1542 assertions** · **e2e 17 用例全过（含 [Q] 运维动作通道隔离）**；后台：PHPStan **0 errors** · PHPUnit **217 tests / 1155 assertions** · 前端 **152 项** | |
+
+**变异测试**：① 主项目删 `kick` 的 `channels` → 契约测试 1 条失败；② 后台删 `disableDefaultRoute` + 只读角色拿 `ops.unbind` → 2 条失败；③ 视图改名 `ops-token` id → 契约 2 条 + 前端 3 条失败；④ 删 kick 空值拦截 → S19 2 条失败；⑤ 删 partial 展示行 → S22 1 条失败。新校验**全部真会咬**。
+
+#### 本次新增偏差
+
+| # | 前文表述 | 实测事实 | 影响 |
+|---|---|---|---|
+| **D32** | `forceOffline` 审计 params 拟记 `has_token`（「是否提供了 token」这一事实） | `Auditor::REDACT_PATTERN` 按**子串**匹配（含 `token` 即整体打码，宁枉勿纵）⇒ 实测落库为 `has_token: "***"` —— 「禁止重连那一半到底做没做」这个**最关键的审计事实**被脱敏吞掉 | 键名改 **`revoke_applied`**（布尔事实、不含任何凭证内容、不触发脱敏）。不放宽 `REDACT_PATTERN`：误伤只损失可读性、漏掉真密钥是安全事故，两侧不对称 |
+| **D33** | §7 未预见：P4 三个动作 `http=true`，但 `/actions` 调试页**不该**给运维动作一个一键踢人按钮 | `ActionCatalogTest::testHttpExposedSetMatchesMainProjectBothWays` 的双向比对是 `names()` ⊆ 清单 ⊆ `names() ∪ 未开放`，主项目多 3 个 `http=true` 动作后两条路都不对（既不能进清单、也不是「未开放」） | `ActionCatalog` 新增第三类 **`NOT_IN_DEBUGGER`**（与 `NOT_HTTP_EXPOSED` 语义区分：前者 HTTP 开放但调试器不该列），比对口径改为 `names() ∪ NOT_IN_DEBUGGER` |
+| **D34** | 未预见（验收脚本首跑踩） | `wa_rules.key` 存的是**控制器@动作**，`ops.kick` 只是 `install.php` 里的别名 —— 拿别名查 DB **恒缺**（明明跑过 install.php 却报「缺 4 个」）；同理 revoke 审计行的 `target` 是**指纹**，按 `p4test%` 前缀查恒为 0 行 | p4 验收按「值」查节点；revoke 审计行改按「action + 本轮开始时间」捞；清理时同时按前缀与时间兜（只删本轮行，不碰历史） |
+| **D35** | §7 未预见（P2→P4 语义升级的连带） | `SessionContractTest::testScriptOnlyIssuesGetRequests` 钉死「本页零写方法」，P4 后必然红 —— 但**放宽必须收得很紧**，否则「写操作从哪发起」就没人管 | 断言改为：`method: 'POST'` 全文**恰好一处**且必须落在 `postJson()` 内；`runOps()` 调用点数 = 运维按钮数 + 1（多出即存在非按钮触发的写操作）；路由动词按端点判定（`/api/ops-action/*` 必须 POST，其余必须 GET）；`opsVal`/`bind` 补进 `ID_ACCESSORS`（新取 id 辅助漏登记会让整组输入框逃过契约检查） |
+
+#### P4 语义边界（UI 与回执一律如实表达，不许概括成败）
+
+1. `kick` 只断 TCP 不撤 Token（客户端可立即重连）；`revoke` 不断连接（WS 下次鉴权 / UDP 下一包才生效）；
+   `unbind` 不踢线；UDP 无踢线（计 `skipped` 不计 `failed`）。
+2. **「强制下线」必须 revoke → kick 串行**，顺序反了客户端会落在重连窗口内用同一 Token 重连成功。
+3. `revoke` 只接受**明文** token（指纹单向，服务端不存明文）⇒ 只能人工粘贴；它因此是本页唯一会流经后台的
+   长期凭证 —— 输入框 `type="password"`、只进 POST body 不进 URL、审计只落指纹（契约测试三道断言钉死）。
+4. 未给 token 的 force-offline **如实回 `partial=true`** + `partial_note`（不假装完成「禁止重连」），
+   前端刻意**不在客户端拦** —— 拦了用户会误以为「强制下线做不了」。
+
+---
+
+
+***P4 已完成（2026-09-24）**：运维操作区上线 —— 会话页新增 kick / revoke / unbind / 「强制下线」（revoke→kick 串行）
+四端点，`admin_audit_log` 全部落库；**§3 的 6 处主项目改动（C1~C6）已实施**：`channels` 反向通道白名单
+（执行侧 + 入队侧双防线，红线 ㊸ 落地）、3 个运维动作处理器、`config/actions.php` 声明、metrics 登记、
+三份文档同步；信任域按**选项 A**（`API_SECRET` 兼任管理面凭证）。安全前提的唯一端到端验收点 =
+主项目 e2e 用例 **[Q] 运维动作通道隔离**（已鉴权普通客户端经 WS 调三动作全部 4006）。
+主项目门禁：PHPStan **0 errors** / PHPUnit **533 tests / 1542 assertions** / e2e **17 用例全过**；
+后台门禁：PHPStan **0 errors** / PHPUnit **217 tests / 1155 assertions** / 前端 **152 项** /
+P4 验收默认 **22 PASS** · `--live` **46 PASS**，均 0 FAIL；5 组变异体全部被抓。
+实施记录与实测偏差 **D1~D35 覆盖前文表述，冲突以 §11 为准**（详见 §11.7）。*
+
+***P4 明确不做**：`/actions` 调试页**不列**运维动作（`NOT_IN_DEBUGGER`，一键踢人不属于调试器）；
+审计页对 revoke 的检索**按指纹**（明文不可得，这是设计而非缺陷）。*
+
+***P5 已完成（2026-09-24，侵入性 0 —— 主项目零改动）**：后台新增 `/ops` 运维页 +
+3 个只读端点（日志尾读 / 角色状态三源合一 / 密钥轮换引导 + 脱敏现状）；`SecretMasker`
+（前 4 后 4、<8 全掩、空值原样）与审计侧 `Auditor::redact()`（宁枉勿纵）是**两套口径**；
+日志 role 白名单与主项目 `RoleCatalog` 靠 `P5OpsServiceTest` 正则对照防漂移。
+同日还完成：viewer 演示账号（install.php 步骤 6b 幂等创建，消除三份验收的 SKIP）、
+脚手架 `IndexController` 彻底删除（D36）、`purge_offline` 运维动作（第五个运维节点，
+通道隔离已并入 e2e [Q]，D37）。
+
+**D36**：脚手架 `IndexController` 由 `disableDefaultRoute` 改为**文件删除**；
+`RouteGuardTest::testScaffoldWelcomeControllerIsRemoved` 改钉「类文件不存在 + route.php 无代码引用」。
+**D37**：`purge_offline` 使运维动作从 4 个变 5 个 —— 后续新增运维动作时，
+需同步四处：`config/actions.php` 声明 + admin `OpsAction`/控制器/路由/节点 + 两份契约测试的清单 + e2e [Q] 的动作列表。*

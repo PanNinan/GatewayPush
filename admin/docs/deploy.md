@@ -96,7 +96,7 @@ php start.php stop           # Linux 停止
 | 3 | 把 `plugin/admin/config/menu.php` 导入 `wa_rules`（插件自带的菜单 / 权限树） |
 | 4 | 后台自有四表：`database/001_gw_tables.sql`（`push_task` / `push_template` / `admin_audit_log` / `admin_settings`） |
 | 5 | 首个超管（取 `.env` 的 `ADMIN_BOOTSTRAP_USER` / `ADMIN_BOOTSTRAP_PASS`；`wa_admins` 非空则跳过） |
-| 6 | GatewayPush 权限节点 5 个 + 「运维 / 只读」两角色（按 `wa_rules.key` 与 rule id 列表 upsert） |
+| 6 | GatewayPush 权限节点 **23 个**（P1 5 + P2 9 + P3 9）+ 「运维 / 只读」两角色（按 `wa_rules.key` 与 rule id 列表 upsert） |
 
 **为什么不走官方 Web 安装页**：①它的「已安装」标记写在插件目录内，`composer update webman/admin` 会冲掉；
 ②表已存在时它会要求「强制覆盖（`DROP TABLE`）」；③它会把明文连接参数写进插件目录。
@@ -107,12 +107,16 @@ php start.php stop           # Linux 停止
 | 角色 | `wa_roles.id` | `rules` | 能访问 |
 |---|---|---|---|
 | 超级管理员 | 1 | `*` | 全部（含 webman-admin 自带的管理面） |
-| 运维 | 3 | 14 个节点 | GatewayPush 全部端点（只读 12 个 + `ops/scan` + `ops/probe`） |
-| 只读 | 2 | 12 个节点 | `/dashboard`、`/sessions` 两页 + `/api/monitor/*`（含 `mon.live`）+ `/api/sessions/*`、`/api/session/*`、`/api/auth/revoked`；`/api/ops/*` 返回 **403** |
+| 运维 | 3 | 23 个节点 | GatewayPush 全部页面与端点（含 `/push` 发起推送 · 模板增删改 · `/actions` 动作调试） |
+| 只读 | 2 | 15 个节点 | `/dashboard`、`/sessions`、`/push`（**仅**历史 + 模板查看）、`/api/monitor/*`（含 `mon.live`）、`/api/sessions/*`、`/api/session/*`、`/api/auth/revoked`、`/api/push/history`、`/api/push/templates`（GET）；`/api/ops/*`、`/api/push`（POST）、`/api/action/*` 与模板写操作返回 **403** |
 
-> P2 后「只读」= 12 节点、「运维」= 14 节点（计数可用
+> P3 后「只读」= 15 节点、「运维」= 23 节点（计数可用
 > `SELECT id,name,rules FROM wa_roles` 复核）。节点清单的**唯一真源**是
 > `scripts/install.php` 的 `$nodeSpecs`，重跑该脚本即幂等对齐（id 不变、只更新 title/key/weight）。
+>
+> ⚠ **新增阶段后必须重跑 `php scripts/install.php`** —— 节点只存在于该脚本里，不进 DB 则
+> 非超管角色一律 403。反之 **P2/P3 的验收脚本只做静态核对**（读 `install.php` 源码），
+> **不会发现 DB 落后**（本机实测：P3 落地时 `wa_rules` 仍只有 P1 的 5 个节点）。
 
 - **新建管理员**：登录后走「权限管理 → 账户管理」（webman-admin 自带页面）。
   命令行创建也可，但**没有**免验证码的创建接口。
@@ -129,7 +133,7 @@ php start.php stop           # Linux 停止
 
 ---
 
-## 4. 三条硬纪律（违反即静默故障）
+## 4. 四条硬纪律（违反即静默故障）
 
 ### 1. `ADMIN_API_SECRET` 是本后台的**管理面凭证**，不得下发业务方
 
@@ -164,6 +168,48 @@ cd admin && php tests/Manual/p0_acceptance.php
 主项目 6 个角色均为常驻进程、在 `onWorkerStart` 一次性加载配置，**无热重载**。
 后台只提供「只读视图 + 变更引导」（改哪个键 → `.env` 第几行 → 改完重启哪些角色 → 验证命令），
 **不代写文件、不代重启**。在线编辑 `.env` 会造成「以为生效了」的假象。
+
+### 4. 新增控制器 / 路由必须同时补两处，否则就是一个**免鉴权入口**
+
+webman 的**默认路由**会把 `/controller/action` 直接解析到控制器的公有动作，
+这条路径**完全不经过** `config/route.php` 上挂的 `AdminAuth`
+（判定见 `vendor/workerman/webman-framework/src/App.php:172-182`）。
+**只要默认路径与显式路径不是同一个 URL，显式路由上的鉴权就是空的。**
+
+历史实证（2026-09-23，两次）：
+
+| 控制器 | 显式路径 | 默认路径（曾免鉴权） |
+|---|---|---|
+| `api\OpsController` | `/api/ops/redis/scan` | `/api/ops/redisScan`（另含 kebab 变体 `/api/ops/redis-scan`） |
+| `api\OpsController` | `/api/ops/api/probe` | `/api/ops/apiProbe` |
+| `DashboardController` | `/dashboard` | `/dashboard/index`（**整页 HTML**） |
+| `IndexController`（webman **脚手架**自带，本项目从未注册） | — | `/index/index`、`/index/view`、**`/index/json`** —— **2026-09-24 已彻底删除**（控制器 + `app/view/index/`） |
+
+`/index/json` 最危险：它返回 `{"code":0,"msg":"ok"}` —— 与本项目成功响应**形状一致**，
+未鉴权即可拿到一个「看起来成功」的响应，会误导健康探针与扫描器；`/index/index` 则内嵌
+`workerman.net` 欢迎页 iframe，白送一条指纹。
+
+**规矩**（两条都要做，缺一即洞）：
+
+1. 在 `config/route.php` 的 `disableDefaultRoute` 段**补一行** `Route::disableDefaultRoute(X::class);`；
+2. 新路由**必须**挂在 `AdminAuth` 上 —— 页面路由写成
+   `Route::get('/x', [XController::class, 'index'])->middleware([AdminAuth::class]);`，
+   API 路由写进 `Route::group('/api', …)->middleware([AdminAuth::class])` 组内。
+
+⚠ **不得**一刀切 `Route::disableDefaultRoute()`：webman-admin 插件的 `/app/admin/*`
+正是靠默认路由解析，全站禁用会让整个后台 UI 变 404。
+
+这两条已由 **`tests/Unit/RouteGuardTest.php` 机器化守死**（6 用例；6 组变异体全部被抓）：
+
+```bash
+php vendor/bin/phpunit --filter RouteGuardTest   # 新增控制器/路由后必跑
+```
+
+> 顺带一条易漏的连带影响：脚手架控制器 2026-09-24 删除后，**根路径 `/` 已无默认路由归属**
+> （原先恰好落在 `IndexController::index` 上）。故 `/` 必须由一条**显式**路由接管
+> （本项目是 `Route::get('/', … redirect('/app/admin'))`），否则访问根路径会从 200 变成 404。
+> `RouteGuardTest::testRootPathIsAnExplicitRedirect` 守着这一点；
+> `testScaffoldWelcomeControllerIsRemoved` 则钉住「脚手架文件不得重新出现」。
 
 ---
 
@@ -200,15 +246,17 @@ mysql -h "$ADMIN_DB_HOST" -u "$ADMIN_DB_USER" -p gateway_push_admin < gwadmin-YY
 
 ```bash
 cd admin
-composer test           # PHPUnit：tests/Unit（P2 后 83 tests / 361 assertions）
+composer test           # PHPUnit：tests/Unit（P3 后 201 tests / 1053 assertions）
 composer analyse        # PHPStan L6，**刻意不引入 baseline**（新代码零容忍）
-composer test:frontend  # 运行期前端渲染校验（P1 的 144 项 + P2 的 122 项；无需浏览器 / jsdom / 服务端）
+composer test:frontend  # 运行期前端渲染校验（P1 144 + P2 122 + P3 push 122 + P3 action 103 = **491 项**；无需浏览器 / jsdom / 服务端）
 ```
 
 `composer test` 与 `composer test:frontend` **不可互相替代**：
-前者是**静态契约**（`DashboardContractTest` / `SessionContractTest`：JS 引用的 DOM id 是否都在视图里、
-`cfg.*` 是否都由控制器注入、有没有 `innerHTML` 赋值、**有没有定时器**、**读路径有没有 Redis 写命令**），
-后者是把 `dashboard.js` / `session.js` **真跑一遍**断言渲染结果
+前者是**静态契约**（`DashboardContractTest` / `SessionContractTest` / `PushContractTest` /
+`ActionContractTest`：JS 引用的 DOM id 是否都在视图里、`cfg.*` 是否都由控制器注入、
+有没有 `innerHTML` 赋值、**有没有定时器**（`/push` 零个、`/actions` 恰好一个 `setTimeout`）、
+**读路径有没有 Redis 写命令**、写请求是否都用声明过的动词与 `cfg.` 前缀 URL），
+后者是把 `dashboard.js` / `session.js` / `push.js` / `action.js` **真跑一遍**断言渲染结果
 （卡片取值、派生率 `null ≠ 0.00%`、队列条宽、进程表格式化、日切清空、失败退避倍数、
 `visibilitychange` 陈旧响应作废；会话侧则是截断回显、空态 vs 配错的区分、抽屉 URL 同步、
 离线队列用**全局**下标、UTF-8 **字节**长度校验）。
@@ -219,10 +267,17 @@ composer test:frontend  # 运行期前端渲染校验（P1 的 144 项 + P2 的 
 php tests/Manual/p1_acceptance.php    # P1 验收：服务层(真连 Redis) / HTTP 层(curl+验证码登录) / RBAC
 php tests/Manual/p2_acceptance.php    # P2 验收（只读，不写任何 Redis 键）
 php tests/Manual/p2_acceptance.php --seed   # 额外写入 p2test-* 一次性夹具，跑完**无条件清理**
+php tests/Manual/p3_acceptance.php    # P3 验收（默认只读；88 PASS / 0 FAIL）
+php tests/Manual/p3_acceptance.php --seed   # 追加真实链路：落库 + 三条语义反证（**会真实投递消息**）
 ```
 
-> ⚠ `--seed` 有安全闸：`ADMIN_REDIS_HOST` **必须是回环地址**，否则以退出码 2 直接中止 ——
-> 防止有人在连生产 Redis 的机器上跑夹具写入。该脚本是后台子项目里**唯一**会写 Redis 的地方。
+> ⚠ P2 的 `--seed` 有安全闸：`ADMIN_REDIS_HOST` **必须是回环地址**，否则以退出码 2 直接中止 ——
+> 防止有人在连生产 Redis 的机器上跑夹具写入。该脚本（与 P3 的 `--seed`）是后台子项目里**仅有的**
+> 会写 Redis / 真实投递的地方。
+>
+> ⚠ P3 的 `--seed` 会**真的向主项目发一条推送**（`p3test-uid` 目标）并写 `push_task` 夹具，
+> 故默认不执行；夹具清理**只按 `p3test%` 前缀**删，绝不 `truncate`、也**不按 `operator_id`**
+> （`operator_id = 0` 是合法的历史值）。
 
 `tests/Manual/` 与 `tests/Frontend/` 下的脚本需真实服务在线（后者其实不需要），
 **刻意不纳入套件**（判据口径与主项目一致：环境不可用时标 SKIP 而非 FAIL），
@@ -293,6 +348,27 @@ ADMIN_ROLES_CMD="php ../start.php roles"   # 正确
 | `Class "Redis" not found` | `config/redis.php` 的 `client` 键没放**顶层**（放 `redis.default` 里会被静默忽略并回退 phpredis） |
 | 只读/运维账号访问新端点一律 403 | 新增端点后忘了往 `wa_rules` 加权限节点（`{控制器全类名}@{action}`）；超管因 `rules='*'` 察觉不到 |
 
+### 7.7 后台在 Windows 下**会**热重载（与主项目相反，别搞混）
+
+**实测结论（2026-09-23）**：改 `admin/` 下的文件后，**不必重启后台** ——
+`windows.php` 末端的 `while (1) { sleep(1); … }` 主循环每秒调一次
+`$monitor->checkAllFilesChange()`，命中即 `taskkill /F /T` 杀死整个进程树并 `popen_processes()` 重生。
+**延迟约 1~3 秒**，可观测特征是 **8292 的监听 PID 会变**（`netstat -ano -p TCP | grep 8292`）。
+
+这里有个极易误判的点：`config/process.php` 的 `monitor.constructor.options.enable_file_monitor`
+写的是 `!in_array('-d', $argv) && DIRECTORY_SEPARATOR === '/'` —— **Windows 下恒为 `false`**。
+但那个选项只作用于 `Monitor::start()` 里 `Timer::add(1, …)` 的注册（Worker 侧），
+而 `windows.php` **自己**在主循环里直接调 `checkAllFilesChange()`、**根本不看这个选项**。
+⇒「Windows 无热重载」这个结论对**主项目**成立（它走 `bin\start.bat` + workerman 自身入口，
+没有这层主循环），对**后台**不成立。
+
+**反过来也是一颗雷**：正因为它会热重载，**临时改坏 `config/route.php` 不会有任何提示**，
+1~3 秒后下一个请求就直接按坏配置服务（本次做「注掉禁用行」的反向对照时就是这样——
+注掉后 `/index/json` 立刻变回未鉴权 200）。故**改完务必复验**，不要靠「没报错」判断生效。
+
+监控目录见 `config/process.php` 的 `monitorDir`（含 `app/`、`config/`、`support/`、`.env`、插件目录），
+后缀 `php|html|htm|env`。
+
 ---
 
 ## 8. 与主项目的关系速查
@@ -331,3 +407,140 @@ ADMIN_ROLES_CMD="php ../start.php roles"   # 正确
 
 **删了 `admin_settings` 里的 `monitor.ratio_thresholds` 也没事**：默认阈值只存在于
 `MetricsDeriver::RATIOS` 一处，该键刻意留空 `{}`，非法值静默回落默认。
+
+---
+
+## 10. 推送管理与动作调试（P3）
+
+```
+浏览器 /push      ── 零定时器 —— 三段：发起推送 / 推送历史 / 模板管理
+                     └─ POST /api/push · GET /api/push/history · GET|POST /api/push/templates
+                        DELETE /api/push/templates/{id}
+
+浏览器 /actions   ── 恰好一个 setTimeout 递归退避（POLL_DELAYS_MS = 1s/2s/4s/8s/8s，总 23s）
+                     └─ POST /api/action → 若 pending → GET /api/action/{requestId} 逐次补查
+```
+
+### 10.1 三条「不可观测 / 静默」—— 界面必须如实说，不许替用户猜
+
+| 事实 | 判据 / 反证 | 界面口径 |
+|---|---|---|
+| **去重不可判定** | 同 `msg_id` 连发两次，两次都回 `code=0`，**响应键集合完全一致** | 只写「已受理」，附 `DEDUP_NOTE`：幂等窗口内的重复会被**静默**去重，本次是否被去重无字段可判 |
+| **超限载荷被静默丢弃** | `PUSH_PAYLOAD_MAX` 的判定点在 **business 进程**（`/push` 已返回 200 之后）。实测发 10KB → 仍回 `code=0`，但 `push_fail` 计数 **0 → 1** | 后台用 `Message::encode()` 做**同源字节**预校验（必须**紧凑重新编码**才计数，否则 3KB 格式化载荷被报成 6KB 而误拦）；回执只写「已受理」，**不写已投递** |
+| **补查未命中两义** | `GET /action/{id}` 未命中 = `404 + 4004`，服务端**刻意不区分**「仍在执行」与「已过 `ACTION_RESULT_TTL` 被回收」 | 后台同样回 `HTTP 200 + code=0` + `state=expired`（否则前端会把它当接口故障并打断补查），重发判定给 `unknown / 待确认` |
+
+### 10.2 定时器政策（三页分工，改动前先看这行）
+
+| 页 | 定时器 | 理由 |
+|---|---|---|
+| `/dashboard` | **周期轮询**（5s / 30s） | 状态型视图，用户停留即期望自动刷新 |
+| `/sessions` · `/push` | **零定时器** | 检索型视图；`/push` 还会真实投递，自动刷新是事故源 |
+| `/actions` | **恰好一个** `setTimeout` 递归退避 | 补查必须有界：延迟来自 `cfg.poll_delays_ms`、次数 = 序列长度、总时长 < `ACTION_RESULT_TTL`×80%（由 `ActionContractTest` 钉住） |
+
+⚠ 启动退避必须**只在 `invoke` 成功后调用一次**（`maybeStartPoll()`）。放进 `renderOutcome()` 会让
+补查响应仍是 `pending` 时重置计数 ⇒ **无限退避**（延迟恒为第一个值、请求量翻几倍）。
+另 `stopPoll()` 必须**真的** `clearTimeout`（只靠会话号作废旧链是「假作废」）。
+
+### 10.3 审计（`admin_audit_log`，P3 起启用）
+
+落库动作：`push.create` · `push.template.save` · `push.template.delete` · `action.invoke` —— **全部四条**。
+**补查（`GET /api/action/{id}`）刻意不落**，否则每次轮询都写会把审计表刷满。
+审计只记元数据，**不记 payload 原文**（载荷可能含业务敏感字段，且可达 4KB）。
+
+### 10.4 易踩的坑
+
+1. **`<select>` 必须显式赋初值**。真浏览器会自动选中首项，**假 DOM 不会** —— 漏掉的表现是
+   「首屏所有请求被前端 silently 拦掉」；`/push` 侧漏掉更隐蔽：主项目对未知 `target_type`
+   **兜底回落成 `uid`**，目标类型被悄悄换掉且全程零报错。
+2. **`POST /action` 的成败只能看响应体 `code`**。`failed` 的 HTTP 可能是 **200**，
+   `pending` 是 **202 且不是失败**，`4xx/5xx` 才表示入队前就被拒。
+3. **动作清单只能列 `http=true` 的 6 个**。`session` 未开放 HTTP（放进清单 = 必然失败）；
+   `requires_uid` 由后端元信息驱动，**不许前端写死 uid 必填**。
+4. **`push_task.request_id` 是 `CHAR(16)`**、`operator_id` 是 `INT UNSIGNED`
+   （写脚本夹具时超长 / 负数会直接 `1406` / `1264` 致命退出，不是干净 FAIL）。
+
+---
+
+## 11. 运维操作区（P4，2026-09-24）
+
+会话页（`/sessions`）新增**运维操作**区块：`kick`（断开连接）· `revoke`（撤销 Token）·
+`unbind`（解绑设备）· 「强制下线」（revoke → kick **串行**）。四个端点全部
+`POST /api/ops-action/*`、HTTP 恒 200（成败看 `outcome.state`）、全部落审计。
+这是后台**第一次**具备「写主项目」的能力 —— 之前的所有页面均纯只读。
+
+### 11.1 语义边界（给运维看的，不许 UI 概括成败）
+
+| 动作 | 做什么 | **不做什么** |
+|---|---|---|
+| kick | 断开 TCP 连接 | 不撤 Token（对方可立刻重连）；UDP 连接踢不了（计 `skipped`） |
+| revoke | 让 Token 失效（下次鉴权生效） | 不断开已有连接 |
+| unbind | 清除 uid ↔ 设备绑定 | 不踢线，已在线旧设备不受影响 |
+| 强制下线 | revoke → kick 串行 | 未提供 token 时只做一半，**如实回 `partial=true`** |
+
+组合顺序**不可反**：先 kick 后 revoke 会让客户端落在重连窗口内用同一 Token 重连成功。
+
+### 11.2 明文 Token 的处理（本阶段唯一会流经后台的长期凭证）
+
+- `revoke` 只接受**明文**（主项目只存 `sha256` 前 32 位指纹，单向）⇒ 只能人工粘贴，会话详情里取不到；
+- 输入框 `type="password"`；只进 POST body，**不进 URL**（否则落浏览器历史 / 访问日志 / Referer）；
+- 审计只落**指纹**（`ops.revoke` 行的 `target` 就是指纹 —— 检索按指纹找，明文不可得是设计而非缺陷）；
+- 响应体、日志、审计 params 三处均无明文（`OpsActionContractTest` 三道断言钉死）。
+
+### 11.3 权限与审计
+
+- 权限节点：`ops.kick` / `ops.revoke` / `ops.unbind` / `ops.forceOffline`（id 138~141），
+  **只读角色一个都没有**；改完节点记得跑 `php scripts/install.php`（静态检查发现不了 DB 落后）。
+- 审计动作：`ops.kick` / `ops.revoke` / `ops.unbind` / `ops.force_offline`；入参校验失败**不落**审计。
+- ⚠ 审计键名纪律：`Auditor::REDACT_PATTERN` 按**子串**匹配脱敏（含 `token`/`secret`/`key` 即打码）。
+  想在 params 里记「是否做了某事」的布尔事实，**键名不得含敏感词** —— `has_token` 会被打成 `***`，
+  实测已改为 `revoke_applied`（**D32**）。
+- `/actions` 调试页**刻意不列**运维动作（`ActionCatalog::NOT_IN_DEBUGGER`）：一键踢人不属于调试器。
+
+### 11.4 主项目侧配套（红线 ㊸ 落地，勿动）
+
+`config/actions.php` 里三个运维动作必须声明 `'channels' => [http]`（**反向通道白名单**）。
+`'http' => true` 是「额外开放 HTTP」而非「仅限 HTTP」—— 不声明 `channels` 的话，
+任何已鉴权终端客户端都能经 WS 踢任意 clientId（**终端提权**）。判定点双防线：
+`ActionRunner::run()`（执行侧，持 Redis 凭证者可直写队列）+ `Api/Bootstrap.php`（入队侧）。
+既有 7 个动作**未声明 = 全放行**，别「顺手补全」—— 那是线上行为变更。
+
+### 11.5 易踩的坑（新增）
+
+1. **`wa_rules.key` 存的是「控制器@动作」**，`ops.kick` 只是 install.php 里的别名 ——
+   拿别名查 DB 恒缺（**D34**）；revoke 审计行 `target` 是指纹，按目标前缀查恒为 0 行。
+2. **运维回执一律摊开**：`state` / HTTP / 业务码 / `partial` / `caveats` 全部原样展示；
+   「HTTP 200」**不等于**成功（动作执行后的业务失败也是 200 + 业务码）。
+3. 验收脚本：`composer test:acceptance:p4`（默认只跑拒绝路径与 DB 真值）；
+   `php tests/Manual/p4_acceptance.php --live` 会**真实调用**四端点（目标 `p4test-*`，
+   运行期核对其不在线，否则 ABORT 退出码 2）。
+
+---
+
+## 12. 运维页（P5，2026-09-24）
+
+新增 `/ops`（`OpsPageController`，**只给运维角色**）+ 3 个只读端点（`OpsController`）：
+
+| 端点 | 节点 | 内容 |
+|---|---|---|
+| `GET /api/ops/logs` | `ops.logs` | 日志只读尾读：`role`（白名单）/`date`（`Y-m-d`）/`lines`（≤500）/`keyword` |
+| `GET /api/ops/roles` | `ops.roles` | 角色状态三源合一：`roles_cmd` JSON + netstat 实测 + `/health` |
+| `GET /api/ops/rotation` | `ops.rotation` | 密钥轮换 checklist（**只生成清单，不执行轮换**）+ 密钥现状（前 4 后 4） |
+
+三道安全/一致防线：
+
+1. **日志路径穿越防御**（设计文档 §7-P5 风险项）：role 白名单 + date 形态 + `realpath()` 复核三关；
+   文件不存在返回 `not_found=true`（「今天还没有日志」），**不是错误**。role 白名单与主项目
+   `RoleCatalog` 由 `P5OpsServiceTest::testRoleWhitelistCoversMainProjectRoleCatalog` 正则对照防漂移 ——
+   主项目加角色后若白名单没跟上，测试会红。
+2. **netstat 解析口径**：TCP 只认 `LISTEN*`（Linux 是 `LISTEN`、Windows 是 `LISTENING`，**都含** `LISTEN`）；
+   UDP **不加** LISTENING 过滤（该平台的 UDP 行没有这个字样）。同端口监听行数 >1 = 疑似两套实例
+   叠加（红线 ㊳），运维页会红字提示。
+3. **密钥脱敏**：`SecretMasker` 前 4 后 4；**长度 < 8 全掩**；空值原样（打码反而制造「已配置」假象）。
+   这与审计侧 `Auditor::redact()`（子串命中即整键打码，宁枉勿纵）是**两套口径**，勿混用。
+
+轮换 API_SECRET 的**三处同步**（轮换清单第 3 步）：主项目 `.env` 的 `API_SECRET`、
+后台 `.env` 的 `ADMIN_API_SECRET`（漏掉 = 后台转签全部 401）、其他 HTTP 调用方。
+
+前端：`public/static/ops.js` —— 零定时器（重新探测是显式按钮）、零 innerHTML、前端不编词；
+`tests/Frontend/ops_render_check.js`（15 项）已并入 `composer test:frontend`。
+单测：`tests/Unit/P5OpsServiceTest.php`（13 tests / 44 assertions）。

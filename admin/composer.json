@@ -59,10 +59,15 @@
     "test": "phpunit --colors=always",
     "test:frontend": [
       "node tests/Frontend/dashboard_render_check.js",
-      "node tests/Frontend/session_render_check.js"
+      "node tests/Frontend/session_render_check.js",
+      "node tests/Frontend/push_render_check.js",
+      "node tests/Frontend/action_render_check.js",
+      "node tests/Frontend/ops_render_check.js"
     ],
     "test:acceptance": "php tests/Manual/p1_acceptance.php",
     "test:acceptance:p2": "php tests/Manual/p2_acceptance.php",
+    "test:acceptance:p3": "php tests/Manual/p3_acceptance.php",
+    "test:acceptance:p4": "php tests/Manual/p4_acceptance.php",
     "analyse": "phpstan analyse --memory-limit=512M"
   },
   "minimum-stability": "dev",

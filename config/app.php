@@ -282,6 +282,8 @@ return [
             'action_in', 'action_ok', 'action_fail', 'action_timeout',
             'action_echo', 'action_session', 'action_report',
             'action_subscribe', 'action_unsubscribe', 'action_topics', 'action_notify',
+            // 运维动作（P4）：三个都只在 HTTP 通道可用，故不另加 action_http_* 分通道计数
+            'action_kick', 'action_revoke', 'action_unbind', 'action_purge_offline',
             'action_http_in', 'action_http_ok', 'action_http_fail', 'action_http_timeout',
             'action_http_dequeue',
             'rate_limit_hit', 'rate_limit_ip', 'rate_limit_conn', 'rate_limit_uid', 'rate_limit_ping',

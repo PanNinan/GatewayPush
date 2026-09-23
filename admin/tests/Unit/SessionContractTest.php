@@ -43,6 +43,15 @@ final class SessionContractTest extends TestCase
     private const ROUTES = 'config/route.php';
 
     /**
+     * 运维端点前缀（P4）。
+     *
+     * 既是路由动词判定的依据，也是「写操作只能指向这四个端点」的边界。
+     *
+     * ⚠ 本页新增运维端点时必须同步这里，否则新端点会被当成取数端点要求 GET。
+     */
+    private const OPS_ENDPOINT_PREFIX = '/api/ops-action/';
+
+    /**
      * 会话读取链路上**不允许出现写命令**的三个文件。
      *
      * 覆盖到 `RedisReader`（唯一 Redis 门面）与两个控制器，而不是只查 `SessionInspector` ——
@@ -80,9 +89,13 @@ final class SessionContractTest extends TestCase
      * ⚠ 在 `session.js` 里**新增取 id 的辅助函数时必须同步加进本表** ——
      * 否则新函数引用的 id 会逃过契约检查（正是本测试要防的那类漏网）。
      *
+     * `opsVal`（P4 运维区块的读框辅助）必须在此列 —— 它内部是 `$(id)` 的动态取值，
+     * 静态解析抓不到字面量，漏登记就会让整组运维输入框逃过契约检查。
+     * `bind` 同理：按钮 id 写错时页面只有一个「点了没反应」的空按钮，不报错。
+     *
      * @var list<string>
      */
-    private const ID_ACCESSORS = ['setText', 'setRowEmpty', 'setNote', 'setChips'];
+    private const ID_ACCESSORS = ['setText', 'setRowEmpty', 'setNote', 'setChips', 'opsVal', 'bind'];
 
     /* =====================================================================
      | ① DOM id 与配置键
@@ -232,15 +245,48 @@ final class SessionContractTest extends TestCase
         );
     }
 
-    public function testScriptOnlyIssuesGetRequests(): void
+    /**
+     * ★ 取数一律 GET；写方法只允许一处，且必须收在运维区块的 `postJson()` 里。
+     *
+     * P2 时本页纯只读，原断言是「不得出现任何写方法」。P4 引入运维动作后这条必须放宽，
+     * 但**放宽的口径要收得很紧**，否则「页面从哪发起写操作」就没人管了：
+     *
+     * 1. `method: 'POST'` 全文**只允许一处** —— 多一处即说明散落了第二个写入口；
+     * 2. 该处必须落在 `postJson()` 函数体内 —— 防止有人在取数函数里直接 `fetch(..., 'POST')`；
+     * 3. `runOps()` 的调用点必须与运维按钮一一对应 —— 多出一个即「存在非按钮触发的写操作」
+     *    （例如定时踢人、列表加载顺手下线），那正是 P2 钉下的「零定时器」要挡的东西。
+     *
+     * 块注释先剥掉：注释里出现 `method: 'POST'` 这类说明文字不该被当成调用。
+     */
+    public function testScriptUsesGetForReadsAndOnePostOnlyForOps(): void
     {
-        $script = $this->read(self::SCRIPT);
+        $script = $this->stripBlockComments($this->read(self::SCRIPT));
 
         $this->assertStringContainsString("method: 'GET'", $script, '取数必须显式声明 GET');
-        $this->assertDoesNotMatchRegularExpression(
-            "/method\s*:\s*'(POST|PUT|PATCH|DELETE)'/i",
-            $script,
-            '本页一期只读：不得出现任何写方法'
+
+        preg_match_all("/method\s*:\s*'POST'/", $script, $posts);
+        $this->assertCount(
+            1,
+            $posts[0],
+            '★ POST 只允许一处：本页的写操作全部收在运维区块，不得散落到取数逻辑里'
+        );
+
+        $pos = strpos($script, "method: 'POST'");
+        $fnPos = strpos($script, 'function postJson');
+        $this->assertIsInt($pos, "找不到 method: 'POST'");
+        $this->assertIsInt($fnPos, '找不到 postJson()：写操作的唯一出口被删了');
+        $this->assertGreaterThan(
+            $fnPos,
+            $pos,
+            "method: 'POST' 必须位于 postJson() 内部 —— 别在取数函数里直接发写请求"
+        );
+
+        preg_match_all('/\brunOps\(/', $script, $calls);
+        preg_match_all("/bind\('btn-ops-/", $script, $btns);
+        $this->assertSame(
+            count($btns[0]) + 1,
+            count($calls[0]),
+            'runOps 出现次数（含 1 处定义）必须恰好等于运维按钮数 +1 —— 多出来说明有非按钮触发的写操作'
         );
     }
 
@@ -386,10 +432,13 @@ final class SessionContractTest extends TestCase
                 continue;
             }
 
+            // P4 起本页不再是纯只读：`/api/ops-action/*` 是四个运维端点，必须是 POST。
+            // 其余端点仍必须是 GET —— 取数链路上出现写动词即说明有人顺手改了状态。
+            $expectedVerb = str_starts_with($endpoint, self::OPS_ENDPOINT_PREFIX) ? 'post' : 'get';
             $this->assertSame(
-                'get',
+                $expectedVerb,
                 $matched[1],
-                $endpoint . ' 命中的路由 ' . $matched[0] . ' 不是 GET —— 本页一期只读'
+                $endpoint . ' 命中的路由 ' . $matched[0] . ' 动词不对（运维端点必须 POST，取数端点必须 GET）'
             );
         }
 
@@ -429,8 +478,101 @@ final class SessionContractTest extends TestCase
     }
 
     /* =====================================================================
+     | ⑤ P4 运维区块
+     ===================================================================== */
+
+    /**
+     * ★ 运维动作区必须挂在权限后面 —— 没有权限就整个隐藏，且给出说明。
+     *
+     * 只做服务端鉴权不够：只读角色看到一排点不动（或点了 403）的按钮，
+     * 会以为系统坏了。渲染期显隐不是安全边界（真边界是 AdminAuth + wa_rules），
+     * 但它是「能不能用」的诚实表达。
+     */
+    public function testOpsSectionIsGatedByPermsAndExplainsWhenAbsent(): void
+    {
+        $view = $this->read(self::VIEW);
+        $script = $this->stripBlockComments($this->read(self::SCRIPT));
+
+        $this->assertStringContainsString('id="sec-ops"', $view, '运维区块容器缺失');
+        $this->assertStringContainsString('id="ops-readonly"', $view, '无权限时必须有无权限说明');
+
+        $this->assertStringContainsString('applyOpsPerms()', $script, '首屏必须做权限显隐');
+        $this->assertStringContainsString("cfg.perms", $script, '权限必须来自服务端下发的 perms，不得前端硬编码');
+
+        // 四项权限任一为真才显示操作区；全假时显示无权限说明
+        preg_match_all('/\bp\.ops_(kick|revoke|unbind|force)\b/', $script, $m);
+        $this->assertSame(
+            ['kick', 'revoke', 'unbind', 'force'],
+            array_values(array_unique($m[1])),
+            '权限判定必须覆盖 kick / revoke / unbind / force 四项，缺一项即漏判'
+        );
+    }
+
+    /**
+     * ★ 明文 Token 不得出现在 URL 里。
+     *
+     * `revoke` 只接受明文（服务端只存 `sha256` 前 32 位指纹，会话里取不到），
+     * 于是它是**本页唯一会被人工粘贴进来的长期凭证**。走 URL 会落进浏览器历史、
+     * 访问日志与 Referer；必须走 POST body，输入框必须是 `type="password"`。
+     */
+    public function testOpsTokenStaysInPostBodyAndIsMasked(): void
+    {
+        $view = $this->read(self::VIEW);
+        $script = $this->stripBlockComments($this->read(self::SCRIPT));
+
+        $this->assertMatchesRegularExpression(
+            '/id="ops-token"[^>]*type="password"/',
+            $view,
+            'Token 输入框必须是 password 型（明文会落在屏幕与历史里）'
+        );
+        $this->assertStringContainsString("body.token = token", $script, 'Token 只能进 POST body');
+        $this->assertDoesNotMatchRegularExpression(
+            '/token[^\n]{0,60}\?|encodeURIComponent\([^\n]{0,20}token|[+]\s*[\'"]token=/',
+            $script,
+            'Token 不得拼进查询串'
+        );
+    }
+
+    /**
+     * ★ 回执不得概括成败 —— `state` / HTTP / 业务码 / `partial` 都要摊开。
+     *
+     * 运维动作的语义边界很窄：`kick` 不撤 Token、`revoke` 不断连接、`unbind` 不踢线；
+     * 「强制下线」没给 Token 时只做到一半（`partial=true`）。任何一种被前端概括成
+     * 「操作成功」，运维都会据此做出错误的判断（例如以为对方已经连不上）。
+     */
+    public function testOpsResultNeverSummarizesOutcome(): void
+    {
+        $script = $this->stripBlockComments($this->read(self::SCRIPT));
+
+        $this->assertStringContainsString("out.state === 'done'", $script, '必须按 state 判成败，不能只看 HTTP 200');
+        foreach (['out.state', 'out.http', 'out.code', 'data.partial'] as $field) {
+            $this->assertStringContainsString(
+                $field,
+                $script,
+                '回执必须摊开 ' . $field . ' —— 概括成败会让运维误判动作效果'
+            );
+        }
+        $this->assertStringContainsString('cfg.ops_caveats', $script, '「不做什么」必须原样展示服务端下发的说明');
+        $this->assertStringContainsString('data.caveats', $script, '回执里的 caveats 也要展示');
+    }
+
+    /* =====================================================================
      | 辅助
      ===================================================================== */
+
+    /**
+     * 剥掉 JS 块注释（`/* … *\/`）。
+     *
+     * 本文件里有若干条「注释里提到的关键词不该算作调用」的断言
+     * （`method: 'POST'`、`p.ops_*`）。不剥注释，将来有人在注释里写一句说明就会假阳性。
+     *
+     * ⚠ 刻意**不**剥 `//` 行注释：JS 字符串里出现 `//`（URL、协议相对路径）的概率不低，
+     * 处理它得不偿失。块注释在字符串里出现的概率为零，是安全的那一半。
+     */
+    private function stripBlockComments(string $js): string
+    {
+        return (string)preg_replace('#/\*.*?\*/#s', '', $js);
+    }
 
     /**
      * 视图里的全部 DOM id。

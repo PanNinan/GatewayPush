@@ -22,6 +22,7 @@ declare(strict_types=1);
  *   4. 建后台自有四表（database/001_gw_tables.sql）
  *   5. 建初始超管账号（.env 的 ADMIN_BOOTSTRAP_USER / ADMIN_BOOTSTRAP_PASS），绑定角色 id=1
  *   6. 建 GatewayPush 权限节点 + 「运维 / 只读」两角色
+ *   6b. 可选 viewer 账号（.env 的 ADMIN_VIEWER_USER / ADMIN_VIEWER_PASS），绑定只读角色
  *
  * 用法：
  *   php admin/scripts/install.php
@@ -319,6 +320,11 @@ $nodeSpecs = [
     // 密钥状态属敏感展示（设计文档 §3.4 的 admin.config.secret.view「默认关，需单独授」），
     // 故只进运维角色，不进只读角色。
     'ops.probe' => ['title' => 'API 与密钥状态（API）', 'key' => 'app\\controller\\api\\OpsController@apiProbe', 'href' => '', 'type' => 2, 'weight' => 60],
+    // ---- P5 运维只读三件套：日志尾读 / 角色状态 / 密钥轮换引导 ----
+    // 日志内容可能含敏感行（密钥轮换引导含密钥指纹），与 ops.probe 同级 —— 只进运维角色。
+    'ops.logs' => ['title' => '日志尾读（API）', 'key' => 'app\\controller\\api\\OpsController@logs', 'href' => '', 'type' => 2, 'weight' => 59],
+    'ops.roles' => ['title' => '角色状态三源探测（API）', 'key' => 'app\\controller\\api\\OpsController@roles', 'href' => '', 'type' => 2, 'weight' => 58],
+    'ops.rotation' => ['title' => '密钥轮换引导（API）', 'key' => 'app\\controller\\api\\OpsController@rotation', 'href' => '', 'type' => 2, 'weight' => 57],
     // ---- M2 会话只读（P2）----
     // 全部是只读端点，按 §6「只读角色仅 *.view 类」的口径同时授予「只读」与「运维」。
     // 其中 revoked 只是**不可逆的 Token 指纹**（sha256 前 32 位，服务端不存 Token 原文），
@@ -331,6 +337,39 @@ $nodeSpecs = [
     'sess.offline' => ['title' => '离线队列只读（API）', 'key' => 'app\\controller\\api\\SessionController@offline', 'href' => '', 'type' => 2, 'weight' => 51],
     'sess.subs' => ['title' => '订阅关系（API）', 'key' => 'app\\controller\\api\\SessionController@subscriptions', 'href' => '', 'type' => 2, 'weight' => 50],
     'auth.revoked' => ['title' => 'Token 撤销名单（API）', 'key' => 'app\\controller\\api\\SessionController@revoked', 'href' => '', 'type' => 2, 'weight' => 49],
+    // ---- M3 推送管理 / 动作调试（P3）----
+    // ⚠ 本段与 M2 的**根本差别**：M2 全只读，可以整批授予只读角色；
+    //   本段含**写**（发起推送 / 模板增删改 / 动作调用），故逐节点区分。
+    //   「只读」角色只拿 push 页 + 历史 + 模板列表三项（见 $viewerRules）。
+    //
+    // ⚠ 页面节点的 key **必须与页面控制器的全类名逐字一致**，且不能写成 `api\...` 那个 ——
+    //   两个同名控制器在 wa_rules.key 里是不同字符串（`app\controller\PushController`
+    //   vs `app\controller\api\PushController@create`），不是同一个权限。
+    'push' => ['title' => '推送管理', 'key' => 'app\\controller\\PushController', 'href' => '/push', 'type' => 1, 'weight' => 91],
+    // 动作调试页只给运维：它能在**任意客户端**上执行动作（echo/notify/report…），
+    // 属「主动对生产连接施加行为」，与只读查询不是一个风险级别。
+    'actions' => ['title' => '动作调试', 'key' => 'app\\controller\\ActionController', 'href' => '/actions', 'type' => 1, 'weight' => 90],
+    'opsPage' => ['title' => '运维', 'key' => 'app\\controller\\OpsPageController', 'href' => '/ops', 'type' => 1, 'weight' => 89],
+    'push.create' => ['title' => '发起推送（API）', 'key' => 'app\\controller\\api\\PushController@create', 'href' => '', 'type' => 2, 'weight' => 48],
+    'push.history' => ['title' => '推送历史（API）', 'key' => 'app\\controller\\api\\PushController@history', 'href' => '', 'type' => 2, 'weight' => 47],
+    'push.tplList' => ['title' => '模板列表（API）', 'key' => 'app\\controller\\api\\PushController@templateList', 'href' => '', 'type' => 2, 'weight' => 46],
+    'push.tplSave' => ['title' => '模板保存（API）', 'key' => 'app\\controller\\api\\PushController@templateSave', 'href' => '', 'type' => 2, 'weight' => 45],
+    'push.tplDelete' => ['title' => '模板删除（API）', 'key' => 'app\\controller\\api\\PushController@templateDelete', 'href' => '', 'type' => 2, 'weight' => 44],
+    'action.invoke' => ['title' => '动作调用（API）', 'key' => 'app\\controller\\api\\ActionController@invoke', 'href' => '', 'type' => 2, 'weight' => 43],
+    // `action.result` 是**纯读补查**，但若不给运维角色，超窗转 pending 的动作就无任何补救手段
+    // （只能翻主项目日志）。故与 invoke 同批授予，不单独收紧。
+    'action.result' => ['title' => '动作回执补查（API）', 'key' => 'app\\controller\\api\\ActionController@result', 'href' => '', 'type' => 2, 'weight' => 42],
+
+    // ---- P4 运维动作转签 ----
+    //
+    // ⚠ 这四个**一律不给只读角色**：它们会改变别人的连接状态，且**不可撤销**。
+    //   与 P3 的 push.create 分属不同风险面 —— 推送是「多发一条消息」，
+    //   踢线是「让别人掉线」，后者对在线用户是即时可见的服务中断。
+    'ops.kick' => ['title' => '踢线（断开连接，API）', 'key' => 'app\\controller\\api\\OpsActionController@kick', 'href' => '', 'type' => 2, 'weight' => 41],
+    'ops.revoke' => ['title' => '撤销 Token（API）', 'key' => 'app\\controller\\api\\OpsActionController@revoke', 'href' => '', 'type' => 2, 'weight' => 40],
+    'ops.unbind' => ['title' => '解绑设备（API）', 'key' => 'app\\controller\\api\\OpsActionController@unbind', 'href' => '', 'type' => 2, 'weight' => 39],
+    'ops.forceOffline' => ['title' => '强制下线（revoke→kick 组合，API）', 'key' => 'app\\controller\\api\\OpsActionController@forceOffline', 'href' => '', 'type' => 2, 'weight' => 38],
+    'ops.purgeOffline' => ['title' => '清空离线队列（不可恢复，API）', 'key' => 'app\\controller\\api\\OpsActionController@purgeOffline', 'href' => '', 'type' => 2, 'weight' => 37],
 ];
 $nodeIds = [];
 foreach ($nodeSpecs as $alias => $spec) {
@@ -382,14 +421,100 @@ $viewerRules = [
     $nodeIds['sess.offline'],
     $nodeIds['sess.subs'],
     $nodeIds['auth.revoked'],
+    // ---- M3（P3）：只读角色**只**拿这三项 ----
+    // `push` 页面节点必须给：页面本身要能打开（否则点菜单 403）。
+    // 页内的「发起推送」表单与「模板新建/编辑/删除」按钮由页面控制器逐节点求值后隐藏，
+    // 后端另有独立节点兜底 —— 前端隐藏只是防误触，**不是**权限边界。
+    $nodeIds['push'],
+    $nodeIds['push.history'],
+    $nodeIds['push.tplList'],
 ];
-$operatorRules = array_merge($viewerRules, [$nodeIds['ops.scan'], $nodeIds['ops.probe']]);
+// 运维角色在只读之上追加：运维自检 + 动作调试 + 推送写路径。
+$operatorRules = array_merge($viewerRules, [
+    $nodeIds['ops.scan'],
+    $nodeIds['ops.probe'],
+    // P5 运维只读三件套（与 ops.probe 同级，不给只读角色）
+    $nodeIds['ops.logs'],
+    $nodeIds['ops.roles'],
+    $nodeIds['ops.rotation'],
+    // M3 写路径。这三项与 `push` / `push.history` / `push.tplList` **刻意分开**：
+    // 合成一个节点会让「给某人看历史」连带给出「以他的名义向任意 uid 推任意载荷」的能力。
+    $nodeIds['push.create'],
+    $nodeIds['push.tplSave'],
+    $nodeIds['push.tplDelete'],
+    // 动作调试页 + 两个端点
+    $nodeIds['actions'],
+    $nodeIds['action.invoke'],
+    $nodeIds['action.result'],
+    // P5 运维页（与其三个 API 端点同属运维角色）
+    $nodeIds['opsPage'],
+    // P4 运维动作（**只读角色一个都没有** —— 它们改变别人的连接状态且不可撤销）
+    $nodeIds['ops.kick'],
+    $nodeIds['ops.revoke'],
+    $nodeIds['ops.unbind'],
+    $nodeIds['ops.forceOffline'],
+    $nodeIds['ops.purgeOffline'],
+]);
 
 $viewerId = upsertRole($pdo, '只读', $viewerRules, $now);
 $operatorId = upsertRole($pdo, '运维', $operatorRules, $now);
 printf("  角色「只读」 id=%d  rules=%s%s", $viewerId, implode(',', $viewerRules), PHP_EOL);
 printf("  角色「运维」 id=%d  rules=%s%s", $operatorId, implode(',', $operatorRules), PHP_EOL);
 out('  角色「超级管理员」 id=1  rules=* （install.sql 自带）');
+
+// ---------------------------------------------------------------------------
+// 步骤 6b：可选 viewer 演示账号（.env 给了 ADMIN_VIEWER_USER/PASS 才建，幂等）
+// ---------------------------------------------------------------------------
+// p1/p2/p3 验收脚本的 viewer 动态矩阵都从这里读账号；不配则矩阵 SKIP。
+// 账号按 username upsert：已存在则更新密码并**重绑**到只读角色 —— 防止手工误绑到运维/超管
+// 后验收矩阵静默失去「只读拿不到写权限」的断言对象。
+$viewerUser = (string)(getenv('ADMIN_VIEWER_USER') ?: '');
+$viewerPass = (string)(getenv('ADMIN_VIEWER_PASS') ?: '');
+
+if ($viewerUser !== '' && $viewerPass !== '') {
+    out('');
+    out('步骤 6b     viewer 账号（只读演示账号，验收矩阵用）');
+    $stmt = $pdo->prepare('SELECT id FROM wa_admins WHERE username = ? LIMIT 1');
+    $stmt->execute([$viewerUser]);
+    $existId = $stmt->fetchColumn();
+
+    if ($existId !== false) {
+        $stmt = $pdo->prepare(
+            'UPDATE wa_admins SET password = :password, updated_at = :updated WHERE id = :id'
+        );
+        $stmt->execute([
+            'password' => password_hash($viewerPass, PASSWORD_DEFAULT),
+            'updated' => $now,
+            'id' => (int)$existId,
+        ]);
+        $viewerAdminId = (int)$existId;
+        out("  已更新账号 {$viewerUser}（id={$viewerAdminId}）的密码");
+    } else {
+        $stmt = $pdo->prepare(
+            'INSERT INTO wa_admins (username, password, nickname, created_at, updated_at) '
+            . 'VALUES (:username, :password, :nickname, :created_at, :updated_at)'
+        );
+        $stmt->execute([
+            'username' => $viewerUser,
+            'password' => password_hash($viewerPass, PASSWORD_DEFAULT),
+            'nickname' => '只读（验收）',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        $viewerAdminId = (int)$pdo->lastInsertId();
+        out("  已创建账号 {$viewerUser}（id={$viewerAdminId}）");
+    }
+
+    // 重绑到只读角色：先清掉该账号的旧绑定，再绑 viewerId（幂等且纠偏）
+    $stmt = $pdo->prepare('DELETE FROM wa_admin_roles WHERE admin_id = :admin_id');
+    $stmt->execute(['admin_id' => $viewerAdminId]);
+    $stmt = $pdo->prepare('INSERT INTO wa_admin_roles (role_id, admin_id) VALUES (:role_id, :admin_id)');
+    $stmt->execute(['role_id' => $viewerId, 'admin_id' => $viewerAdminId]);
+    out("  已绑定到角色「只读」（id={$viewerId}）");
+} else {
+    out('');
+    out('步骤 6b     viewer 账号未配置（.env 缺 ADMIN_VIEWER_USER/PASS），跳过 —— 验收 viewer 矩阵将 SKIP');
+}
 
 // ---------------------------------------------------------------------------
 // 报告

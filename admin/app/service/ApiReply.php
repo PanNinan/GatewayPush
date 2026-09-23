@@ -29,6 +29,24 @@ final class ApiReply
     public const CODE_NOT_FOUND = 4004;
 
     /**
+     * 后台自有 MySQL 不可用（读历史 / 模板，或写受理记录 / 审计）。
+     *
+     * 值域说明：主项目的 API 错误码占 `0 / 4000~4008 / 4029 / 5000 / 5030`
+     * （`src/Api/Bootstrap.php:81-95`），故后台自有码一律取 **5010 / 5020** 这类未被占用的值，
+     * 避免与主项目码混淆 —— 两套码在界面上都可见，同值不同义是最难排查的一类问题。
+     */
+    public const CODE_DB_UNAVAILABLE = 5010;
+
+    /**
+     * **上游主项目未受理**（连不上，或返回了非 `code=0`）。
+     *
+     * `data` 里会带完整的三元组（`http` / `code` / `msg` / `state`）供排查。
+     * 用 502 而非透传主项目的状态码：透传会让「后台参数校验通过、主项目仍拒绝」
+     * 看起来像**用户填错了**，而那实际是两侧契约漂移（该由开发处理，不该让用户反复改表单）。
+     */
+    public const CODE_UPSTREAM = 5020;
+
+    /**
      * 成功响应。
      *
      * @param array<string, mixed> $data

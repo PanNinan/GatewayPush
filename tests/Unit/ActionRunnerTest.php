@@ -413,6 +413,91 @@ class ActionRunnerTest extends TestCase
         $this->assertSame(['ttl' => 86400], ActionRunner::declaration('report')['options']);
     }
 
+    /* =====================================================================
+     | 反向通道白名单（channels）—— 运维动作的安全前提
+     |
+     | ★ 这一组是 P4 里**唯一不能靠注释约束**的东西：`http` 字段是单向的
+     |   （只表达「额外开放 HTTP」），WS / UDP 侧「凡注册即可用」。
+     |   运维动作若不声明 channels，任何持自己合法 Token 的终端客户端都能
+     |   经 WS 调 kick 踢掉任意 clientId —— 属终端提权，且不报错、不告警。
+     |   故这里用四条断言把「缺省放行 / 声明即收紧」的语义钉死。
+     ===================================================================== */
+
+    public function testChannelsUnsetMeansAllChannelsAllowed(): void
+    {
+        $this->load(['a' => ['handler' => StubAction::class]]);
+
+        // 缺省必须全放行 —— 既有 7 个动作全部未声明 channels，
+        // 收紧默认值即线上行为变更（会把现有客户端动作全部打断）。
+        $this->assertTrue(ActionRunner::channelExposed('a', ActionContext::CHANNEL_WS));
+        $this->assertTrue(ActionRunner::channelExposed('a', ActionContext::CHANNEL_UDP));
+        $this->assertTrue(ActionRunner::channelExposed('a', ActionContext::CHANNEL_HTTP));
+        $this->assertSame([], ActionRunner::declaredChannels('a'), '未声明时列表为空，语义是「全通道」');
+    }
+
+    public function testDeclaredChannelsRestrictOtherChannels(): void
+    {
+        $this->load([
+            'kick' => [
+                'handler'  => StubAction::class,
+                'http'     => true,
+                'channels' => [ActionContext::CHANNEL_HTTP],
+            ],
+        ]);
+
+        $this->assertTrue(ActionRunner::channelExposed('kick', ActionContext::CHANNEL_HTTP));
+        $this->assertFalse(ActionRunner::channelExposed('kick', ActionContext::CHANNEL_WS), '★ WS 通道不得触达运维动作');
+        $this->assertFalse(ActionRunner::channelExposed('kick', ActionContext::CHANNEL_UDP), '★ UDP 通道不得触达运维动作');
+        $this->assertSame([ActionContext::CHANNEL_HTTP], ActionRunner::declaredChannels('kick'));
+    }
+
+    public function testChannelsMayDeclareSeveralChannels(): void
+    {
+        $this->load([
+            'a' => [
+                'handler'  => StubAction::class,
+                'channels' => [ActionContext::CHANNEL_WS, ActionContext::CHANNEL_HTTP],
+            ],
+        ]);
+
+        $this->assertTrue(ActionRunner::channelExposed('a', ActionContext::CHANNEL_WS));
+        $this->assertTrue(ActionRunner::channelExposed('a', ActionContext::CHANNEL_HTTP));
+        $this->assertFalse(ActionRunner::channelExposed('a', ActionContext::CHANNEL_UDP));
+    }
+
+    public function testChannelExposedIsFalseForUnknownAction(): void
+    {
+        $this->load(['a' => ['handler' => StubAction::class, 'channels' => [ActionContext::CHANNEL_HTTP]]]);
+
+        // 未注册的动作不存在「未注册但可调用」的中间态
+        $this->assertFalse(ActionRunner::channelExposed('nope', ActionContext::CHANNEL_HTTP));
+    }
+
+    public function testNonArrayChannelsDegradeToAllChannels(): void
+    {
+        // 声明形态写错（写成字符串 / 标量）时**必须放行**而不是收紧：
+        // 收紧会让配置笔误变成「线上动作全部不可用」的事故；
+        // 放行只是保留既有（不安全但可用）的行为，由 lint / review 兜住。
+        $this->load(['a' => ['handler' => StubAction::class, 'channels' => 'http']]);
+
+        $this->assertTrue(ActionRunner::channelExposed('a', ActionContext::CHANNEL_WS));
+        $this->assertSame([], ActionRunner::declaredChannels('a'));
+    }
+
+    public function testChannelRestrictionIsIndependentOfHttpFlag(): void
+    {
+        // 两者互为反向，必须能各自独立表达 —— 这是最容易写混的一处：
+        // 'http' => false + channels => [http] 是「HTTP 也没开，其它通道更没开」，
+        // 语义上自相矛盾，但判定必须按各自字段走，不能互相覆盖。
+        $this->load([
+            'a' => ['handler' => StubAction::class, 'http' => false, 'channels' => [ActionContext::CHANNEL_HTTP]],
+        ]);
+
+        $this->assertFalse(ActionRunner::httpExposed('a'), 'http 字段仍为 false');
+        $this->assertTrue(ActionRunner::channelExposed('a', ActionContext::CHANNEL_HTTP), 'channels 独立生效');
+        $this->assertFalse(ActionRunner::channelExposed('a', ActionContext::CHANNEL_WS));
+    }
+
     /**
      * 装载一份动作表
      *

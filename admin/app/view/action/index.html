@@ -1,0 +1,181 @@
+<?php
+/**
+ * GatewayPush 动作调试页（P3）。
+ *
+ * ⚠ 本文件后缀是 .html 但内容是**原生 PHP**：`support\view\Raw::render()` 直接 include 它
+ *   （webman 的 Raw 引擎默认 view_suffix = html）。不要按纯静态页改。
+ *
+ * ⚠ 本页**不含任何数据**，只输出骨架与一份 `#action-config` JSON。
+ *   全部数值由 `/static/action.js` 经 3 个端点按需填充。改动数据结构时要同步改 JS，
+ *   否则界面会静默留白（`tests/Unit/ActionContractTest.php` 会拦住 DOM id / cfg 键的漂移）。
+ *
+ * ## 本页为什么只给运维角色
+ *
+ * 它能在**任意 uid 的在线连接**上执行动作（echo / notify / report / subscribe…），
+ * 属「主动对生产连接施加行为」。故 `scripts/install.php` 不把它放进只读角色 ——
+ * 只读角色连这一页都打不开（点菜单 403）。
+ *
+ * ## 为什么这里**允许** setTimeout，而 `/push` 与 `/sessions` 一个都不许
+ *
+ * 三页的 `setTimeout` 政策不同，是有理由的、不是疏漏：
+ *
+ * | 页面 | 是否等待 | 定时器政策 |
+ * |---|---|---|
+ * | `/dashboard` | 持续观察「此刻的状态」 | 有快 / 慢两条**周期**轮询 |
+ * | `/sessions`、`/push` | 不等待，交互即取数 | **一个都不许** |
+ * | `/actions` | 要**一次性等待**某条动作的回执 | 只许 `setTimeout` **递归**退避，**不许** `setInterval` |
+ *
+ * 补查是「等这一条结果」，取到就停 —— 用 `setInterval` 会变成「无论有没有结果都持续打主项目 API」。
+ * 延迟序列由后端下发（{@see POLL_DELAYS_MS}），前端不得自行编数；
+ * 两条不变量由 `tests/Unit/ActionContractTest.php` 钉住：
+ *   ① 脚本内无 `setInterval` / `setImmediate` / `requestAnimationFrame`；
+ *   ② 退避总时长 < 回执保留窗口（`ActionCatalog::RESULT_TTL_MIRROR`）。
+ *
+ * @var string $title
+ * @var array{
+ *     invoke_url: string,
+ *     result_base: string,
+ *     actions: list<array{name: string, description: string, requires_uid: bool, params_hint: string}>,
+ *     names: list<string>,
+ *     wait_ms: int,
+ *     result_ttl: int,
+ *     request_id_pattern: string,
+ *     id_max_len: int,
+ *     poll_delays_ms: list<int>,
+ *     notes: list<array{key: string, tone: string, text: string}>,
+ *     outcome_notes: array<string, string>,
+ *     perms: array{can_invoke: bool, can_result: bool}
+ * } $config
+ */
+
+$h = static fn (mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
+
+// 注入 JSON：除常规转义外必须加 JSON_HEX_TAG —— 否则配置里若出现 `</script`
+// 会直接闭合 script 标签，把后面的内容当 HTML 解析（XSS 面）。
+$json = json_encode(
+    $config,
+    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+    | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT
+);
+?>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title><?= $h($title) ?></title>
+    <link rel="stylesheet" href="/static/action.css">
+</head>
+<body>
+
+<noscript>
+    <div class="note bad">
+        <strong>本页需要 JavaScript。</strong>
+        动作由浏览器向 <span class="mono"><?= $h($config['invoke_url']) ?></span> 提交；
+        禁用 JS 时只能看到骨架。
+    </div>
+</noscript>
+
+<div class="head">
+    <h1><?= $h($title) ?></h1>
+    <span class="meta">
+        <b>有界退避补查</b>（非周期轮询）
+        · <a href="/push">推送管理</a>
+        · <a href="/sessions">会话查询</a>
+        · <a href="/dashboard">健康总览</a>
+        · <a href="/app/admin" rel="noopener">后台首页</a>
+    </span>
+</div>
+
+<!-- 说明由 JS 从 cfg.notes 渲染（后端下发，前端不得自行编词） -->
+<div id="action-notes"></div>
+<div id="action-readonly" class="note bad" hidden>
+    当前角色<strong>没有动作调试权限</strong>。本页能在任意 uid 的在线连接上执行动作，
+    故默认只授予「运维」角色。请联系管理员在「角色管理」里补授权限节点
+    <span class="mono">app\controller\ActionController</span>（页面）
+    与 <span class="mono">app\controller\api\ActionController@invoke</span>（调用）。
+</div>
+
+<!-- ==================== 一、动作调用 ==================== -->
+<div id="sec-invoke">
+    <h2>动作调用 <span class="hint">
+        只列 HTTP <strong>已开放</strong>的动作；<span class="mono">session</span> 是 <span class="mono">http=false</span>，不在其中
+    </span></h2>
+
+    <div class="form form-grid">
+        <label for="a-action">动作
+            <select id="a-action"></select>
+        </label>
+        <label for="a-uid">uid <span class="hint" id="a-uid-flag">—</span>
+            <input id="a-uid" type="text" autocomplete="off" placeholder="HTTP 下 uid 由调用方填写">
+        </label>
+        <label for="a-device-id">device_id（可选）
+            <input id="a-device-id" type="text" autocomplete="off" placeholder="留空则不传">
+        </label>
+    </div>
+
+    <div id="a-desc" class="note info"></div>
+    <div class="hint">参数提示：<span id="a-hint">—</span></div>
+
+    <h3>params <span class="hint">
+        必须是 JSON 对象；留空表示不传参数。字符上限 <b id="a-id-max">—</b> 字节（uid / device_id）
+    </span></h3>
+    <textarea id="a-params" rows="5" spellcheck="false" placeholder='{"topic":"demo"}'></textarea>
+
+    <div class="form">
+        <button id="btn-invoke" class="btn primary" type="button">调用动作</button>
+        <button id="btn-invoke-reset" class="btn" type="button">清空</button>
+        <span class="hint">
+            服务端最多同步等待 <b id="a-wait-ms">—</b> ms；回执保留 <b id="a-result-ttl">—</b> s；
+            超窗后自动补查总时长 <b id="a-poll-total">—</b> ms
+        </span>
+    </div>
+
+    <div id="invoke-status"></div>
+
+    <div id="invoke-result-wrap" hidden>
+        <h3>回执 <span class="hint">判读成败看 <span class="mono">state</span>，不要只看 HTTP 状态</span></h3>
+        <table>
+            <thead><tr><th>字段</th><th>值</th></tr></thead>
+            <tbody id="tb-invoke-result"></tbody>
+        </table>
+
+        <div class="form">
+            <label for="invoke-request-id">request_id
+                <input id="invoke-request-id" type="text" readonly>
+            </label>
+            <button id="btn-poll" class="btn" type="button">立即补查一次</button>
+            <span class="hint" id="poll-count">—</span>
+        </div>
+        <div id="poll-status"></div>
+    </div>
+</div>
+
+<!-- ==================== 二、按 request_id 补查 ==================== -->
+<div id="sec-lookup">
+    <h2>按 request_id 补查 <span class="hint">
+        纯读操作，不落审计；HTTP <strong>恒 200</strong>，判据是 <span class="mono">state</span>
+        （未命中 = <span class="mono">expired</span>，刻意不用 404，否则前端会打断轮询）
+    </span></h2>
+
+    <div class="form">
+        <label for="q-request-id">request_id
+            <input id="q-request-id" type="text" autocomplete="off" placeholder="服务端口径：1~64 位 [A-Za-z0-9_-]">
+        </label>
+        <button id="btn-lookup" class="btn primary" type="button">补查</button>
+        <button id="btn-lookup-reset" class="btn" type="button">清空</button>
+    </div>
+
+    <div id="lookup-status"></div>
+    <div id="lookup-result-wrap" hidden>
+        <table>
+            <thead><tr><th>字段</th><th>值</th></tr></thead>
+            <tbody id="tb-lookup-result"></tbody>
+        </table>
+    </div>
+</div>
+
+<script type="application/json" id="action-config"><?= $json ?></script>
+<script src="/static/action.js"></script>
+</body>
+</html>

@@ -138,6 +138,7 @@ function createEnv(config, search) {
     svgTags: [],
     innerHTMLWrites: [],
     timerCalls: [],        // 非空即违反「本页无定时器」约束
+    confirmCalls: [],      // window.confirm 的每次弹窗（purge-offline 二次确认）
     // 诊断用：被测代码未能按预期发起请求 / 点击未命中按钮时记账，而不是让校验脚本抛异常
     missingResponses: [],
     missingClicks: [],
@@ -311,6 +312,11 @@ function createEnv(config, search) {
     // 而不是让整个校验静默失效。
     setTimeout(fn, ms) { rec.timerCalls.push(['setTimeout', Number(ms)]); return 0; },
     setInterval(fn, ms) { rec.timerCalls.push(['setInterval', Number(ms)]); return 0; },
+    // confirm 记账：purge-offline 依赖它做二次确认；confirmAnswer 默认 true（点「确定」）
+    confirm(msg) {
+      rec.confirmCalls.push(String(msg));
+      return rec.confirmAnswer !== false;
+    },
     clearTimeout() {},
     clearInterval() {},
     requestAnimationFrame(fn) { rec.timerCalls.push(['requestAnimationFrame', 0]); return 0; },
@@ -319,8 +325,23 @@ function createEnv(config, search) {
   const pending = [];
   const fetchLog = [];
 
-  function fetchStub(url) {
+  /**
+   * ★ 写请求台账（P4 起本页不再是纯只读）。
+   *
+   * 只记「方法非 GET」的请求，并与 `fetchLog` 分开 —— 后者是既有断言依赖的
+   * **URL 字符串**数组，改成对象会一次打散十几条 S1~S16 的断言。
+   * 记录 `body` 是为了断言「明文 Token 只能出现在 POST body 里」这类边界。
+   */
+  const postLog = [];
+
+  function fetchStub(url, options) {
     fetchLog.push(url);
+    const method = String((options && options.method) || 'GET').toUpperCase();
+    if (method !== 'GET') {
+      let body = null;
+      try { body = JSON.parse(String((options && options.body) || 'null')); } catch (e) { body = '__UNPARSEABLE__'; }
+      postLog.push({ url, method, body });
+    }
     return new Promise((resolve, reject) => {
       pending.push({ url, resolve, reject });
     });
@@ -330,8 +351,14 @@ function createEnv(config, search) {
     config,
     rec,
     fetchLog,
+    postLog,
     urlHistory,
     get pendingCount() { return pending.length; },
+    // 破坏性动作的确认弹窗（purge-offline 用 window.confirm 二次确认）：
+    // confirmAnswer = false 可模拟用户点「取消」
+    confirmCalls: rec.confirmCalls,
+    get confirmAnswer() { return rec.confirmAnswer; },
+    set confirmAnswer(v) { rec.confirmAnswer = v; },
 
     text(id) {
       const n = byId[id];
@@ -448,7 +475,38 @@ const CONFIG = {
   offline_page_size: 20,
   revoke_note: '撤销名单以 Token 指纹（sha256 前 32 位）为键，服务端不存 Token 原文。',
   dashboard_url: 'http://127.0.0.1:8291',
+
+  // ---- P4 运维区块（键名与 SessionController 注入的一致）----
+  ops_kick_url: '/api/ops-action/kick',
+  ops_revoke_url: '/api/ops-action/revoke',
+  ops_unbind_url: '/api/ops-action/unbind',
+  ops_force_url: '/api/ops-action/force-offline',
+  ops_purge_url: '/api/ops-action/purge-offline',
+  ops_token_max: 2048,
+  ops_reason_max: 128,
+  // 「不做什么」—— 每条刻意互不相同，便于断言「原样展示」而非混成一句
+  ops_caveats: {
+    kick: 'kick 只断开当前连接，不撤销 Token —— 对方可以立刻重连。',
+    revoke: 'revoke 不断开已有连接 —— 要等下次鉴权才生效。',
+    unbind: 'unbind 只解除设备绑定，不踢线。',
+    purge_offline: 'purge_offline 清空离线队列，未补投的消息被丢弃且不可恢复。',
+  },
+  ops_force_note: '强制下线按 revoke → kick 顺序执行。',
+  ops_no_token_note: '未提供 Token，只执行了断开连接那一半 —— 「禁止重连」没做到。',
+  perms: { ops_kick: true, ops_revoke: true, ops_unbind: true, ops_force: true, ops_purge: true },
 };
+
+/** 运维动作回执信封（与 OpsActionController 的返回同形） */
+function opsPayload(data) {
+  return { code: 0, msg: 'ok', data: data };
+}
+
+/** 单个动作的执行结果（HTTP 恒 200，成败看 state） */
+function outcome(extra) {
+  return Object.assign({
+    state: 'done', http: 200, code: 0, msg: 'ok', request_id: 'req-ops-1',
+  }, extra || {});
+}
 
 function boot(config, search) {
   const cfg = config || CONFIG;
@@ -916,17 +974,187 @@ async function main() {
   checkHas('S17 恶意串原样落在订阅 chips 里', env4.text('drawer-subs'), EVIL);
   check('S17 未产出 SVG（本页无图表）', env4.rec.svgTags, []);
 
+  /* ================= S19~S24 P4 运维操作区 =================
+   * 这一组的共同前提：本页**从只读页变成了带写操作的页**，写操作的失效形态
+   * 与取数完全不同 —— 取数挂了是「留白」，写操作挂了是「以为做了其实没做」。
+   * 因此这里的断言全部围绕「如实呈现」而不是「看起来正常」。
+   * ================================================================== */
+
+  const env5 = boot();
+  await env5.respond(LIST_URL + '?scope=online&page=1&size=20', listPayload({
+    items: [rowOf('ws-abc')], total: 1, pages: 1, online_total: 1,
+  }));
+
+  /* ---------------- S19 五类拒绝路径：前端先拦，不发请求 ---------------- */
+
+  const postsBeforeRefuse = env5.postLog.length;
+
+  env5.click('btn-ops-kick');
+  checkHas('S19 kick 未填目标：给出提示', env5.text('ops-status'), '至少填一个');
+  env5.click('btn-ops-force');
+  checkHas('S19 force 未填目标：给出提示', env5.text('ops-status'), '至少填一个');
+  env5.click('btn-ops-unbind');
+  checkHas('S19 unbind 未填 uid：给出提示', env5.text('ops-status'), 'uid');
+  env5.click('btn-ops-revoke');
+  checkHas('S19 revoke 未填 Token：给出提示', env5.text('ops-status'), 'Token');
+  env5.click('btn-ops-purge');
+  checkHas('S19 purge 未填 uid：给出提示', env5.text('ops-status'), 'uid');
+
+  check('S19 ★ 五类拒绝路径一个请求都没发（省掉五次无意义的后端往返与审计噪音）',
+    env5.postLog.length - postsBeforeRefuse, 0);
+
+  /* ---------------- S20 kick：body 结构与回执摊开 ---------------- */
+
+  env5.setValue('ops-client-id', 'ws-abc');
+  env5.setValue('ops-uid', '1001');
+  env5.setValue('ops-reason', '疑似异常');
+  env5.click('btn-ops-kick');
+
+  const kickPost = env5.postLog[env5.postLog.length - 1];
+  check('S20 kick 打到运维端点', kickPost.url, '/api/ops-action/kick');
+  check('S20 kick 用 POST', kickPost.method, 'POST');
+  check('S20 kick body 结构（三个字段一个不少）',
+    kickPost.body, { client_id: 'ws-abc', uid: '1001', reason: '疑似异常' });
+
+  await env5.respond('/api/ops-action/kick', opsPayload({
+    outcome: outcome({ request_id: 'req-kick-1' }),
+    caveats: 'kick 只断开当前连接，不撤销 Token —— 对方可以立刻重连。',
+    audit_ok: true,
+  }));
+
+  checkHas('S20 ★ 回执摊开 state（不概括成败）', env5.text('tb-ops-result'), 'done');
+  checkHas('S20 回执摊开 request_id（可回主项目追单）', env5.text('tb-ops-result'), 'req-kick-1');
+  checkHas('S20 回执说明审计已落库', env5.text('tb-ops-result'), '已落库');
+  checkHas('S20 ★ 「不做什么」原样展示（不许前端改写措辞）',
+    env5.text('ops-caveats'), 'kick 只断开当前连接，不撤销 Token');
+
+  /* ---------------- S21 revoke：明文 Token 只进 body ---------------- */
+
+  env5.setValue('ops-token', 'plain-token-7f3a');
+  env5.click('btn-ops-revoke');
+
+  const revokePost = env5.postLog[env5.postLog.length - 1];
+  check('S21 revoke body 只有 token', revokePost.body, { token: 'plain-token-7f3a' });
+  check('S21 revoke 用 POST（明文不得进 URL）', revokePost.method, 'POST');
+
+  await env5.respond('/api/ops-action/revoke', opsPayload({
+    outcome: outcome({ request_id: 'req-revoke-1' }),
+    fingerprint: '9f86d081884c7d659a2feaa0c55ad015',
+    caveats: 'revoke 不断开已有连接 —— 要等下次鉴权才生效。',
+    audit_ok: true,
+  }));
+
+  checkHas('S21 回执展示指纹', env5.text('tb-ops-result'), '9f86d081884c7d659a2feaa0c55ad015');
+  check('S21 ★ 回执不含 Token 明文（服务端只回指纹，前端也不得留存）',
+    env5.text('tb-ops-result').indexOf('plain-token-7f3a'), -1);
+
+  /* ---------------- S22 force-offline 只做到一半：必须如实说 ---------------- */
+
+  // 不给 Token：服务端只执行 kick，回 partial=true。
+  // 前端**不许**把它概括成「已下线」—— 那是最危险的一类假成功。
+  env5.setValue('ops-token', '');
+  env5.click('btn-ops-force');
+
+  await env5.respond('/api/ops-action/force-offline', opsPayload({
+    outcome: outcome({ request_id: 'req-force-1' }),
+    steps: [
+      { action: 'revoke', ok: false, skipped: true },
+      { action: 'kick', ok: true },
+    ],
+    all_ok: false,
+    partial: true,
+    caveats: 'kick 只断开当前连接，不撤销 Token —— 对方可以立刻重连。',
+    audit_ok: true,
+  }));
+
+  checkHas('S22 ★ partial 明确说「只做到一半」', env5.text('tb-ops-result'), '只做到一半');
+  checkHas('S22 两步全成标记为否', env5.text('tb-ops-result'), '两步全成');
+  checkHas('S22 ★ 补上「禁止重连那一半没做」的说明',
+    env5.text('ops-caveats'), '「禁止重连」没做到');
+
+  /* ---------------- S23 权限显隐 ---------------- */
+
+  const env6 = boot(Object.assign({}, CONFIG, {
+    perms: { ops_kick: false, ops_revoke: false, ops_unbind: false, ops_force: false, ops_purge: false },
+  }));
+  check('S23 无权限：操作区整体隐藏', env6.el('sec-ops').hidden, true);
+  check('S23 无权限：显示无权限说明（而不是留一片空白）', env6.el('ops-readonly').hidden, false);
+
+  const env7 = boot(Object.assign({}, CONFIG, {
+    perms: { ops_kick: true, ops_revoke: false, ops_unbind: false, ops_force: false, ops_purge: false },
+  }));
+  check('S23 只有 kick 权限：区块可见', env7.el('sec-ops').hidden, false);
+  check('S23 只有 kick 权限：无权限说明隐藏', env7.el('ops-readonly').hidden, true);
+  check('S23 只有 kick 权限：kick 按钮可见', env7.el('btn-ops-kick').hidden, false);
+  check('S23 只有 kick 权限：revoke 按钮隐藏', env7.el('btn-ops-revoke').hidden, true);
+  check('S23 只有 kick 权限：force 按钮隐藏', env7.el('btn-ops-force').hidden, true);
+  check('S23 只有 kick 权限：purge 按钮隐藏', env7.el('btn-ops-purge').hidden, true);
+
+  /* ---------------- S24 运维区的 XSS 纪律 ---------------- */
+
+  // caveats 由服务端下发、直接渲染进页面 —— 与列表/抽屉同一条纪律：只走 textContent。
+  env5.click('btn-ops-kick');
+  await env5.respond('/api/ops-action/kick', opsPayload({
+    outcome: outcome({ state: 'failed', code: 5000 }),
+    caveats: EVIL,
+    audit_ok: false,
+  }));
+  checkHas('S24 恶意 caveats 原样落为文本', env5.text('ops-caveats'), EVIL);
+  check('S24 未被创建任何 img/script/iframe 元素',
+    env5.rec.elementTags.filter((t) => ['img', 'script', 'iframe', 'object', 'embed', 'link', 'style'].indexOf(t) >= 0),
+    []);
+  checkHas('S24 执行失败时说清 state 与业务码', env5.text('ops-status'), 'failed');
+  checkHas('S24 ★ 审计未落库要单独标出来（动作已生效 ≠ 有留痕）',
+    env5.text('tb-ops-result'), '未落库');
+
+  /* ---------------- S25 purge-offline：二次确认 + 不可恢复提示 ---------------- */
+
+  const postsBeforePurge = env5.postLog.length;
+
+  // 路径 ①：用户在 confirm 弹窗点「取消」→ 一个请求都不发
+  env5.setValue('ops-uid', 'p4cancel');
+  env5.confirmAnswer = false;
+  env5.click('btn-ops-purge');
+  checkHas('S25 confirm 弹窗文案含「不可恢复」（cancel 路径）',
+    env5.confirmCalls.join(' | '), '不可恢复');
+  check('S25 confirm 取消：零请求', env5.postLog.length - postsBeforePurge, 0);
+
+  // 路径 ②：确认后只带 uid（client_id 即使填了也忽略）
+  env5.confirmAnswer = true;
+  env5.click('btn-ops-purge');
+  const purgePost = env5.postLog[env5.postLog.length - 1];
+  check('S25 purge 打到运维端点', purgePost.url, '/api/ops-action/purge-offline');
+  check('S25 purge 用 POST', purgePost.method, 'POST');
+  check('S25 ★ purge body 只含 uid（client_id 忽略）', purgePost.body, { uid: 'p4cancel' });
+
+  await env5.respond('/api/ops-action/purge-offline', opsPayload({
+    outcome: Object.assign(outcome({ request_id: 'req-purge-1' }), {
+      result: { action: 'purge_offline', uid: 'p4cancel', purged: 3, at: 1800000000 },
+    }),
+    caveats: 'purge_offline 清空离线队列，未补投的消息被丢弃且不可恢复。',
+    audit_ok: true,
+  }));
+
+  checkHas('S25 回执展示丢弃条数（purged）', env5.text('tb-ops-result'), '丢弃条数');
+  checkHas('S25 回执丢弃条数为 3', env5.text('tb-ops-result'), '3');
+  checkHas('S25 ★ 「不可恢复」语义原样透出（不许前端改写）',
+    env5.text('ops-caveats'), '不可恢复');
+
   /* ---------------- S18 运行期自检 ---------------- */
 
   check('S18 全程未使用任何定时器（不轮询是设计约束）',
-    env.rec.timerCalls.concat(env2.rec.timerCalls, env3.rec.timerCalls, env4.rec.timerCalls), []);
+    env.rec.timerCalls.concat(env2.rec.timerCalls, env3.rec.timerCalls, env4.rec.timerCalls,
+      env5.rec.timerCalls, env6.rec.timerCalls, env7.rec.timerCalls), []);
   // 被测代码若不再按预期发起请求 / 绑定按钮，这里会以普通 FAIL 形式报出，
   // 而不是让脚本中途抛异常掩盖真正的失败点
   check('S18 每处 respond / click 都命中了预期的请求与按钮',
     env.rec.missingResponses.concat(env.rec.missingClicks,
       env2.rec.missingResponses, env2.rec.missingClicks,
       env3.rec.missingResponses, env3.rec.missingClicks,
-      env4.rec.missingResponses, env4.rec.missingClicks), []);
+      env4.rec.missingResponses, env4.rec.missingClicks,
+      env5.rec.missingResponses, env5.rec.missingClicks,
+      env6.rec.missingResponses, env6.rec.missingClicks,
+      env7.rec.missingResponses, env7.rec.missingClicks), []);
   checkRe('S18 URL 历史全部为查询串（未整页跳转）',
     env.urlHistory.join(' '), /^(\?[^\s]* *)*$/);
 }

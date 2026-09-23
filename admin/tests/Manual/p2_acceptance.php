@@ -546,6 +546,16 @@ check('★ 两个 Session 控制器都已 disableDefaultRoute',
 check('★ 会话相关路由全部是 GET（本页一期只读）',
     !preg_match("#Route::(post|put|delete|patch)\(\s*'/sessions?#", $routeSrc));
 
+// 脚手架欢迎页控制器：2026-09-23 发现三个零鉴权默认路径 → 先 disableDefaultRoute 关闭；
+// 2026-09-24 已**彻底删除**控制器文件与 app/view/index/ 视图目录。
+// 全量覆盖（app/controller/** 逐个比对）由 tests/Unit/RouteGuardTest.php 守，此处只做点名确认。
+check('★ 脚手架欢迎页控制器已彻底移除（类文件不存在且 route.php 无代码引用）',
+    !is_file(__DIR__ . '/../../app/controller/IndexController.php')
+    && !preg_match('/^(use\s+app\\\\controller\\\\IndexController;|Route::disableDefaultRoute\(IndexController::class\);)/m', $routeSrc));
+check('★ 未全局禁用默认路由（全禁会让 webman-admin 的 /app/admin/* 整片 404）',
+    !preg_match('/Route::disableDefaultRoute\(\s*\)\s*;/', $routeSrc)
+    && !preg_match("/Route::disableDefaultRoute\(\s*''\s*\)\s*;/", $routeSrc));
+
 // ===========================================================================
 // 3. HTTP 层
 // ===========================================================================
@@ -592,6 +602,11 @@ if ($up['status'] !== 200 || strlen($up['body']) < 1000) {
         '/sessions/index' => '页面控制器的默认路径',
         '/api/sessions/index' => 'API 控制器的默认路径',
         '/api/session/index' => '详情控制器别名（被 /api/session/{clientId} 先匹配）',
+        // 脚手架欢迎页控制器（2026-09-23 追加修复）：三个动作全部只经默认路由暴露，
+        // 其中 `/index/json` 返回 `{"code":0,"msg":"ok"}` —— 与本项目成功信封形状一致。
+        '/index/index' => '脚手架欢迎页（内嵌 workerman.net iframe）',
+        '/index/view' => '脚手架视图渲染',
+        '/index/json' => '脚手架 JSON 探针（未鉴权拿到 code:0 的成功信封）',
     ];
     foreach ($probe as $path => $desc) {
         $res = http('GET', $path, [], ['Accept: application/json'], $jar);
@@ -601,6 +616,13 @@ if ($up['status'] !== 200 || strlen($up['body']) < 1000) {
         check('★ 未登录 ' . $path . ' → 不可达（404/401/200+code404）：' . $desc, $ok,
             'HTTP ' . $res['status'] . ' code=' . ($code !== 0 ? $code : '-'));
     }
+
+    // 根路径必须仍是「302 → /app/admin」而不是 404：
+    // `/` 的默认路由恰好落在脚手架控制器的 index 动作上，禁用之后若没人显式接管就会变 404。
+    $root = http('GET', '/', [], ['Accept: text/html'], $jar);
+    check('★ 未登录 GET / → 302 到 /app/admin（禁用脚手架后根路径不得变 404）',
+        $root['status'] === 302 && str_contains((string)($root['headers']['location'] ?? ''), '/app/admin'),
+        'HTTP ' . $root['status'] . ' Location=' . ($root['headers']['location'] ?? '-'));
 
     // ---- 写方法一律不可用 ----
     // 同上：POST 到只注册了 GET 的路径，admin 的异常处理器同样可能给 `200 + code=404`，

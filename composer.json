@@ -49,6 +49,7 @@
         "lint:self": "php tests/Manual/phpcs_business_rules_check.php",
         "test": "phpunit",
         "test:e2e": "php tests/e2e_check.php",
+        "test:e2e:clean": "php tests/clean_e2e_state.php",
         "test:client-e2e": "php client/tests/E2E/ClientE2E.php",
         "test:sign": "node tests/Api/api_sign_check.js",
         "test:frontend": "node tests/Frontend/dashboard_autorefresh_check.js",

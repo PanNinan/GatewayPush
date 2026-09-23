@@ -214,6 +214,64 @@ $scopeLabels = [
 </table>
 
 <!--
+  P4 运维操作区
+  -------------
+  这是本后台**第一个会改变主项目运行状态**的区块（P0~P3 全是只读）：
+  它会让别人的连接掉线、让别人的 Token 失效、解绑别人的设备，且三者**都不可撤销**。
+
+  两条 UI 纪律：
+  1. **不概括成败**。回执一律摊开 `state` / `http` / `code` / `msg`，
+     并原样显示后端下发的 `caveats`（该动作「不做什么」）——
+     「点了踢线」不等于「用户下线了」：Token 仍有效，客户端可立即重连。
+  2. **没做到就说没做到**。「强制下线」未提供 Token 时只执行了 kick，
+     服务端在响应里给 `partial=true`，这里原样展示，不假装完成了「禁止重连」。
+
+  权限：整块对只读角色隐藏（`#ops-readonly` 显示无权限说明）。
+  注意这里**零定时器** —— 运维动作是一次性点击，不做任何轮询。
+-->
+<h2>运维操作 <span class="hint">改变他人连接状态，<b>不可撤销</b>；仅运维 / 超管可见</span></h2>
+<div id="ops-notes"></div>
+
+<div id="ops-readonly" hidden>
+    <p class="hint">当前角色没有运维动作权限（需要 <span class="mono">ops.kick</span> /
+        <span class="mono">ops.revoke</span> / <span class="mono">ops.unbind</span> /
+        <span class="mono">ops.forceOffline</span> 任一节点）。只读角色刻意拿不到这些节点 ——
+        它们会改变别人的连接状态且不可撤销。</p>
+</div>
+
+<div id="sec-ops" hidden>
+    <div class="form">
+        <label>client_id <input id="ops-client-id" type="text" autocomplete="off"
+                                placeholder="踢线目标；与 uid 二选一"></label>
+        <label>uid <input id="ops-uid" type="text" autocomplete="off"
+                          placeholder="按 uid 踢全部连接 / 解绑设备"></label>
+        <label>Token 明文 <input id="ops-token" type="password" autocomplete="off"
+                                 placeholder="仅撤销 / 强制下线需要；服务端不保存明文"></label>
+        <label>原因 <input id="ops-reason" type="text" autocomplete="off"
+                           placeholder="可选，仅落服务端日志"></label>
+    </div>
+    <div class="form">
+        <button id="btn-ops-kick" class="btn" type="button">踢线（kick）</button>
+        <button id="btn-ops-unbind" class="btn" type="button">解绑设备（unbind）</button>
+        <button id="btn-ops-revoke" class="btn" type="button">撤销 Token（revoke）</button>
+        <button id="btn-ops-force" class="btn primary" type="button">强制下线（revoke → kick）</button>
+        <!-- 清空离线队列：只认 uid（填了 client_id 也会忽略）；不可恢复，caveats 原样透出 -->
+        <button id="btn-ops-purge" class="btn danger" type="button">清空离线队列（不可恢复）</button>
+    </div>
+    <div id="ops-status"></div>
+    <table>
+        <thead>
+        <tr>
+            <th>项</th>
+            <th>值</th>
+        </tr>
+        </thead>
+        <tbody id="tb-ops-result"></tbody>
+    </table>
+    <div id="ops-caveats"></div>
+</div>
+
+<!--
   详情抽屉：**页内展开**，不做整页跳转。
   URL 由 JS 用 history.replaceState 同步（?client=...&scope=...&page=...），
   因此「刷新 / 复制链接 / 后退」都能还原到同一条会话 —— 这也是不整页跳转的前提。

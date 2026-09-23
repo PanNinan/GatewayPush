@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace app\controller;
 
+use app\controller\api\OpsActionController as OpsActionApiController;
+use app\service\OpsAction;
+use app\service\Perm;
 use app\service\SessionInspector;
 use app\service\Settings;
 use support\Request;
@@ -70,6 +73,16 @@ final class SessionController
                 'subs_url' => '/api/sessions/subscriptions',
                 'revoked_url' => '/api/auth/revoked',
 
+                // ---- P4 运维动作（后台迄今唯一「写主项目」的入口） ----
+                //
+                // 五个端点各占一个权限节点，只读角色**一个都没有** ——
+                // 故下面 `perms` 里的五项对只读角色全为 false，UI 整块隐藏。
+                'ops_kick_url' => '/api/ops-action/kick',
+                'ops_revoke_url' => '/api/ops-action/revoke',
+                'ops_unbind_url' => '/api/ops-action/unbind',
+                'ops_force_url' => '/api/ops-action/force-offline',
+                'ops_purge_url' => '/api/ops-action/purge-offline',
+
                 // 枚举与上限：一律从 `SessionInspector` 取常量，**不在前端硬编码** ——
                 // 前端硬编码的下场是「后端收紧上限后前端仍在请求 size=1000」，静默被夹到 100。
                 'scopes' => [
@@ -86,6 +99,27 @@ final class SessionController
 
                 // 「撤销状态不可由会话反推」的固定说明：由后端下发，避免前端各自编词。
                 'revoke_note' => SessionInspector::REVOKE_NOTE,
+
+                // ---- P4 运维动作：三条「不做什么」+ 两条组合说明 ----
+                //
+                // 全部由后端下发（前端一个字都不编）。这三条是本页最容易被误解的地方：
+                // 「点了踢线」不等于「用户下线了」—— Token 仍有效，客户端可立即重连。
+                'ops_caveats' => OpsAction::CAVEATS,
+                'ops_force_note' => OpsAction::FORCE_OFFLINE_NOTE,
+                'ops_no_token_note' => OpsAction::NO_TOKEN_NOTE,
+                'ops_token_max' => 2048,
+                'ops_reason_max' => 128,
+
+                // 渲染期权限：只影响显隐，**不是权限边界**（边界在 AdminAuth + wa_rules）。
+                // 用 `::class` 常量而非字符串字面量 —— 写错命名空间会静默返回 false，
+                // 表现为「功能不见了」而不是报错，极难查。
+                'perms' => Perm::map([
+                    'ops_kick' => [OpsActionApiController::class, 'kick'],
+                    'ops_revoke' => [OpsActionApiController::class, 'revoke'],
+                    'ops_unbind' => [OpsActionApiController::class, 'unbind'],
+                    'ops_force' => [OpsActionApiController::class, 'forceOffline'],
+                    'ops_purge' => [OpsActionApiController::class, 'purgeOffline'],
+                ]),
 
                 'dashboard_url' => $this->cfg('dashboard_url', 'http://127.0.0.1:8291'),
             ],

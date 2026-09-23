@@ -1,0 +1,45 @@
+/* GatewayPush 运维页（P5）—— 复用 session.css 的设计变量与版式约定 */
+:root {
+    --fg: #1c2430;
+    --muted: #68758a;
+    --line: #dbe1ea;
+    --accent: #2b6cb0;
+    --bg-warn: #fff7e6;
+    --fg-bad: #c0392b;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; padding: 20px; font: 14px/1.6 "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--fg); background: #f5f7fa; }
+.wrap { max-width: 1080px; margin: 0 auto; }
+h1 { font-size: 20px; margin: 0 0 16px; }
+h2 { font-size: 16px; margin: 24px 0 8px; }
+
+.note { border: 1px solid var(--line); border-radius: 6px; background: #fff; padding: 8px 12px; margin: 8px 0; }
+.note.bad { border-color: var(--fg-bad); color: var(--fg-bad); }
+.note.warn { border-color: #e6b800; background: var(--bg-warn); }
+.note:empty { display: none; }
+ul.note:empty, #roles-problems:empty { display: none; }
+#roles-problems li { margin: 2px 0; }
+
+.form { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 8px 0; }
+.form label { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+input, select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 5px; font: inherit; width: 160px; }
+select { width: auto; }
+
+.btn { padding: 6px 14px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--fg); font: inherit; font-size: 13px; cursor: pointer; }
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+
+table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--line); border-radius: 6px; }
+th, td { border-bottom: 1px solid var(--line); padding: 7px 10px; text-align: left; font-size: 13px; }
+thead th { background: #eef2f7; }
+.ok { color: #1d7a3a; }
+.bad { color: var(--fg-bad); }
+.muted { color: var(--muted); }
+
+.mono { font-family: Consolas, "Courier New", monospace; font-size: 12px; }
+#log-output { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 10px; max-height: 480px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+#log-output:empty { display: none; }
+
+.hint { color: var(--muted); font-size: 12px; }
+#rotation-steps li { margin: 6px 0; }
+#rotation-steps:empty { display: none; }

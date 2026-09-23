@@ -13,11 +13,17 @@
  */
 
 use app\controller\api\MonitorController;
+use app\controller\api\OpsActionController;
 use app\controller\api\OpsController;
 // 别名：API 控制器与页面控制器同名（分属 app\controller\api 与 app\controller），
 // 二者在 wa_rules.key 里是不同字符串（`...\api\SessionController@x` vs `...\SessionController`），不会互相顶掉。
+use app\controller\api\ActionController as ActionApiController;
+use app\controller\api\PushController as PushApiController;
 use app\controller\api\SessionController as SessionApiController;
+use app\controller\ActionController;
 use app\controller\DashboardController;
+use app\controller\OpsPageController;
+use app\controller\PushController;
 use app\controller\SessionController;
 use app\middleware\AdminAuth;
 use Webman\Route;
@@ -69,6 +75,31 @@ Route::disableDefaultRoute(SessionApiController::class);
 // ⚠ 新增**页面**控制器同样要禁 —— `SessionController::index` 的默认路径是 `/session/index`，
 //   不禁的话它就是一个免鉴权的整页入口（与已修复的 `/dashboard/index` 同一类洞）。
 Route::disableDefaultRoute(SessionController::class);
+// P3 推送管理 / 动作调试（M3）。四个控制器分属「页面」与「api」两套命名空间，
+// **必须逐个禁用**：`PushController::index` 的默认路径是 `/push/index`，
+// `ActionApiController::invoke` 的默认路径是 `/api/action/invoke` —— 均不等于下方显式路由，
+// 不禁就是四个新的免鉴权入口。
+Route::disableDefaultRoute(PushController::class);
+Route::disableDefaultRoute(ActionController::class);
+Route::disableDefaultRoute(PushApiController::class);
+Route::disableDefaultRoute(ActionApiController::class);
+// P4 运维动作转签。**这一组是后台第一个「写主项目」的入口** ——
+// 不禁默认路由的话，`OpsActionController::kick` 会额外暴露一个零鉴权的
+// `/api/ops-action/kick`（踢任意连接），比只读端点漏鉴权严重得多。
+Route::disableDefaultRoute(OpsActionController::class);
+// P5 运维页：显式路由 `/ops` 已挂 AdminAuth，默认路径（/ops-page/index）必须关掉
+Route::disableDefaultRoute(OpsPageController::class);
+// ---------------------------------------------------------------------------
+// webman **脚手架**自带的欢迎页控制器 —— **已彻底移除**（2026-09-24）
+//
+// `app\controller\IndexController` 是 `composer create-project` 的产物，本项目从未注册过它，
+// 三个动作全部只经默认路由暴露、零鉴权（`/index/json` 甚至返回与本项目成功响应**形状一致**
+// 的信封，会误导健康探针与扫描器）。2026-09-23 先以 `disableDefaultRoute` 关闭，
+// 2026-09-24 删除控制器文件与 `app/view/index/` 视图目录。
+//
+// 守门：`RouteGuardTest::testScaffoldWelcomeControllerIsRemoved` 断言**类文件不存在**
+// 且本文件不再出现 `IndexController` 字样 —— 若日后 composer 升级重新生成脚手架文件，测试会红。
+// `/`（根路径）不受影响：下方显式闭包路由优先级高于默认路由，仍 302 → `/app/admin`。
 // ---------------------------------------------------------------------------
 
 // 根路径直接进管理面（骨架默认欢迎页对后台场景无意义）
@@ -79,6 +110,13 @@ Route::get('/dashboard', [DashboardController::class, 'index'])->middleware([Adm
 // P2 会话查询页。权限点 = wa_rules.key `app\controller\SessionController`（菜单节点，
 // 由 scripts/install.php 注册）；漏登记的表现是「登录后点菜单 403」而不是白屏。
 Route::get('/sessions', [SessionController::class, 'index'])->middleware([AdminAuth::class]);
+// P3 推送管理页（发起推送 + 推送历史 + 模板管理）与动作调试页（M3）。
+// 权限点同样是菜单节点（`app\controller\PushController` / `app\controller\ActionController`）。
+// 「只读」角色**只拿到 /push**（仅历史 + 模板查看），/actions 只给运维 —— 见 scripts/install.php。
+Route::get('/push', [PushController::class, 'index'])->middleware([AdminAuth::class]);
+Route::get('/actions', [ActionController::class, 'index'])->middleware([AdminAuth::class]);
+// P5 运维页（角色状态 / 日志尾读 / 密钥轮换引导）—— 只给运维角色（同 /actions）
+Route::get('/ops', [OpsPageController::class, 'index'])->middleware([AdminAuth::class]);
 
 // ---- JSON API（全部只读；写操作永远走主项目 HTTP API，不在此暴露）----
 Route::group('/api', static function (): void {
@@ -92,6 +130,10 @@ Route::group('/api', static function (): void {
     // 运维自检
     Route::get('/ops/redis/scan', [OpsController::class, 'redisScan']);
     Route::get('/ops/api/probe', [OpsController::class, 'apiProbe']);
+    // P5 运维只读三件套：日志尾读 / 角色状态 / 密钥轮换引导（全部 GET + 只读）
+    Route::get('/ops/logs', [OpsController::class, 'logs']);
+    Route::get('/ops/roles', [OpsController::class, 'roles']);
+    Route::get('/ops/rotation', [OpsController::class, 'rotation']);
 
     /* -----------------------------------------------------------------------
      | M2 会话只读（P2）
@@ -110,4 +152,45 @@ Route::group('/api', static function (): void {
     Route::get('/sessions/subscriptions', [SessionApiController::class, 'subscriptions']);
     Route::get('/session/{clientId}', [SessionApiController::class, 'detail']);
     Route::get('/auth/revoked', [SessionApiController::class, 'revoked']);
+
+    /* -----------------------------------------------------------------------
+     | M3 推送管理 / 动作调试（P3）
+     |
+     | 与 M2 的根本差别：**M2 全只读，M3 含写**。故本段的纪律有三条：
+     |
+     | 1. **写操作一律是「转签代理」**，不直连 Redis、不直连业务进程 ——
+     |    后台只做「校验 → 用主项目密钥签名 → 转发 → 归一结果」，
+     |    真实校验 / 限流 / 指标仍全部发生在主项目（见 config/gateway_push.php 的原则）。
+     | 2. **每个写端点单独一个权限节点**，不共用（见 scripts/install.php），
+     |    否则「只读角色能看到历史」与「只读角色能发推送」会被同一节点一并放开。
+     | 3. `DELETE` 的 id 走**路径参数**：DELETE 带请求体在代理链路上兼容性差。
+     |
+     | ⚠ `/push` 的 `target_type` 只有 uid / device / client 三值（`Push::TARGET_*`），
+     |   主项目**没有** HTTP 侧的主题广播入口（主题走 `Push::enqueueTopic()`）——
+     |   故本段刻意不提供 topic 路由，UI 也不得出现「按主题推送」。
+     ----------------------------------------------------------------------- */
+    Route::post('/push', [PushApiController::class, 'create']);
+    Route::get('/push/history', [PushApiController::class, 'history']);
+    Route::get('/push/templates', [PushApiController::class, 'templateList']);
+    Route::post('/push/templates', [PushApiController::class, 'templateSave']);
+    Route::delete('/push/templates/{id}', [PushApiController::class, 'templateDelete']);
+
+    // 动作调试。`invoke` 是**写**（会在客户端执行），`result` 是纯读补查。
+    // ⚠ 两个端点分属两个权限节点：不给运维 `action.result` 会让「超窗转 pending」无补救手段。
+    Route::post('/action', [ActionApiController::class, 'invoke']);
+    Route::get('/action/{requestId}', [ActionApiController::class, 'result']);
+
+    // ---- P4 运维动作转签（后台迄今唯一「写主项目」的入口） ----
+    //
+    // 与 `/api/action` 调试器的分工：那边给什么动作都转发、面向排障；
+    // 这里只暴露 4 个、参数固定、一律落审计。
+    //
+    // ⚠ 四个端点各占一个权限节点，**一个都不给只读角色**。
+    //   `force-offline` 是组合动作（revoke → kick 串行），单独一个节点：
+    //   它比单步更危险，且「没给 token 时只做到一半」这点必须在 UI 上如实呈现。
+    Route::post('/ops-action/kick', [OpsActionController::class, 'kick']);
+    Route::post('/ops-action/revoke', [OpsActionController::class, 'revoke']);
+    Route::post('/ops-action/unbind', [OpsActionController::class, 'unbind']);
+    Route::post('/ops-action/force-offline', [OpsActionController::class, 'forceOffline']);
+    Route::post('/ops-action/purge-offline', [OpsActionController::class, 'purgeOffline']);
 })->middleware([AdminAuth::class]);

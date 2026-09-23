@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace app\controller\api;
 
+use app\service\ApiReply;
 use app\service\GatewayPushClient;
+use app\service\LogTailService;
 use app\service\RedisReader;
+use app\service\RoleProbeService;
+use app\service\RotationGuide;
 use support\Request;
 use support\Response;
 
@@ -51,10 +55,7 @@ final class OpsController
      */
     public function apiProbe(Request $request): Response
     {
-        $client = new GatewayPushClient(
-            (string)config('gateway_push.api_url', 'http://127.0.0.1:8290'),
-            (string)config('gateway_push.api_secret', '')
-        );
+        $client = GatewayPushClient::fromConfig();
         $health = $client->health();
 
         return json([
@@ -70,5 +71,63 @@ final class OpsController
                 'health' => $health['data'],
             ],
         ]);
+    }
+
+    /**
+     * 主项目日志只读尾读（P5）。
+     *
+     * 参数：`role`（白名单）、`date`（Y-m-d）、`lines`（1~TAIL_MAX）、`keyword`（子串过滤）。
+     * 参数非法一律 400；文件不存在返回 `ok=true, not_found=true`（不是错误 —— 「今天还没有日志」）。
+     */
+    public function logs(Request $request): Response
+    {
+        $role = trim((string)$request->get('role', ''));
+        $date = trim((string)$request->get('date', ''));
+        $lines = (int)$request->get('lines', '200');
+        $keyword = (string)$request->get('keyword', '');
+
+        if ($role === '' || $date === '') {
+            return ApiReply::fail(400, ApiReply::CODE_INVALID_ARG, 'role 与 date 必填');
+        }
+        if (!in_array($role, LogTailService::ROLES, true)) {
+            return ApiReply::fail(400, ApiReply::CODE_INVALID_ARG, 'role 不在白名单内');
+        }
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+            return ApiReply::fail(400, ApiReply::CODE_INVALID_ARG, 'date 必须是 Y-m-d 形态');
+        }
+
+        $res = (new LogTailService())->tail($role, $date, $lines, $keyword);
+
+        return json([
+            'code' => 0,
+            'msg' => 'ok',
+            'data' => [
+                'ok' => $res['ok'],
+                'not_found' => $res['ok'] === false && $res['hint'] === '日志文件不存在',
+                'hint' => $res['hint'],
+                'file' => $res['file'],
+                'lines' => $res['lines'],
+                'matched' => $res['matched'],
+                'truncated' => $res['truncated'],
+            ],
+        ]);
+    }
+
+    /**
+     * 角色状态三源合一（P5）：roles JSON + netstat 实测 + /health。
+     */
+    public function roles(Request $request): Response
+    {
+        return json(['code' => 0, 'msg' => 'ok', 'data' => (new RoleProbeService())->probe()]);
+    }
+
+    /**
+     * 密钥轮换 checklist + 密钥现状（P5，只读脱敏）。
+     *
+     * 密钥展示走 SecretMasker（前 4 后 4），**任何情况下不回显原文**。
+     */
+    public function rotation(Request $request): Response
+    {
+        return json(['code' => 0, 'msg' => 'ok', 'data' => RotationGuide::build()]);
     }
 }

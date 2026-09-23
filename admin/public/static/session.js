@@ -908,6 +908,263 @@
     bind('btn-query-subs', function () { loadSubscriptions(); });
     bind('btn-load-revoked', function () { loadRevoked(); });
 
+    /* ==================================================================
+     | P4 运维操作
+     |
+     | 与上面所有区块的三点不同，改动前务必读完：
+     |
+     | 1. **这是写操作**。前四个区块全是 GET，这里四个按钮全是 POST，
+     |    且它们改变的是**别人**的连接状态 —— 不可撤销。
+     | 2. **不概括成败**。HTTP 恒为 200，成败看 `outcome.state`
+     |    （`failed` 时 HTTP 仍是 200，只看状态码会把失败当成功）。
+     |    回执一律摊开，并原样显示后端下发的 `caveats`。
+     | 3. **没做到就说没做到**。「强制下线」没给 Token 时只执行了 kick，
+     |    服务端回 `partial=true` —— 这里原样展示，不假装完成了「禁止重连」。
+     |
+     | ⚠ 零定时器：运维动作是一次性点击，不做任何轮询 / 自动刷新。
+     |   与 /actions 调试页（有界退避补查）不同 —— 这里不存在「稍后再看」的场景。
+     ================================================================== */
+
+    /** 读输入框（去空白）；节点不存在时返回空串 —— 便于假 DOM 场景逐项断言 */
+    function opsVal(id) {
+        var node = $(id);
+        return node && typeof node.value === 'string' ? node.value.trim() : '';
+    }
+
+    /**
+     * 提交一个运维动作并渲染回执。
+     *
+     * ⚠ **HTTP 恒为 200，成败看 `outcome.state`** ——
+     *   与 `/push`、`/action` 同口径：动作执行后的业务失败走 `200 + 业务码`，
+     *   只看 HTTP 状态码会把「执行失败」当成成功。
+     *
+     * @param {string} action 仅用于展示与选说明文案
+     * @param {string} url    端点（来自 cfg）
+     * @param {Object} body   请求体
+     */
+    function runOps(action, url, body) {
+        setNote('ops-status', 'info', '正在执行 ' + action + ' …');
+        setRowEmpty('tb-ops-result', '执行中…');
+
+        postJson(url, body).then(function (data) {
+            renderOpsResult(action, data || {});
+        }).catch(function (err) {
+            setNote('ops-status', 'bad', '调用失败：' + msgOf(err));
+            setRowEmpty('tb-ops-result', '未取得回执 —— 详见上方提示。');
+        });
+    }
+
+    /** POST 并解信封（与 `fetchJson` 同口径，仅方法与 body 不同） */
+    function postJson(url, body) {
+        return fetch(url, {
+            method: 'POST',
+            headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify(body || {})
+        }).then(function (res) {
+            return res.json().then(
+                function (b) { return { status: res.status, ok: res.ok, body: b }; },
+                function () { return { status: res.status, ok: res.ok, body: null }; }
+            );
+        }).then(function (r) {
+            if (r.body === null) {
+                throw new Error('HTTP ' + r.status + '：响应不是 JSON（可能被反代或登录页拦截）');
+            }
+            if (!r.ok) {
+                var e = new Error('HTTP ' + r.status + '，业务码 ' + r.body.code + '：' + (r.body.msg || ''));
+                e.status = r.status;
+                e.code = r.body.code;
+                e.data = r.body.data;
+                throw e;
+            }
+            if (num(r.body.code) !== 0) {
+                throw new Error('业务码 ' + r.body.code + '：' + (r.body.msg || ''));
+            }
+            return r.body.data;
+        });
+    }
+
+    /**
+     * 渲染运维动作回执。
+     *
+     * 三条纪律：
+     *   1. **不概括成败** —— 摊开 `state` / `http` / `code` / `msg`；
+     *   2. **原样显示后端下发的 `caveats`**（该动作「不做什么」），前端一个字都不编；
+     *   3. `partial` 为 true 时**明确说「只做到一半」**。
+     */
+    function renderOpsResult(action, data) {
+        var out = data.outcome || {};
+        var done = out.state === 'done';
+        var failed = out.state === 'failed';
+
+        setNote(
+            'ops-status',
+            done ? 'ok' : (failed ? 'bad' : 'warn'),
+            done
+                ? action + ' 已执行（注意下方「不做什么」）'
+                : action + ' 未成功：state=' + (out.state || '—') + ' / HTTP ' + (out.http || '—')
+                  + ' / 业务码 ' + (out.code || '—')
+        );
+
+        var rows = [
+            ['动作', action],
+            ['state', out.state || '—'],
+            ['HTTP', out.http === undefined || out.http === null ? '—' : String(out.http)],
+            ['业务码', out.code === undefined || out.code === null ? '—' : String(out.code)],
+            ['msg', out.msg || '—'],
+            ['request_id', out.request_id || '—'],
+            ['审计', data.audit_ok === false ? '★ 未落库（动作已生效，仅留痕缺失）' : '已落库']
+        ];
+        if (data.fingerprint) { rows.push(['指纹', data.fingerprint]); }
+        if (data.all_ok !== undefined) { rows.push(['两步全成', data.all_ok ? '是' : '否']); }
+        if (data.partial) { rows.push(['★ 只做到一半', '是']); }
+        // 业务回执里的关键数字（purge_offline 的 result.purged）—— 丢了多少条必须可见，
+        // 否则「清空了什么」只能去翻审计。其余动作的 result 字段维持既有摊开展示口径。
+        if (out.result && typeof out.result === 'object' && out.result.purged !== undefined) {
+            rows.push(['丢弃条数', String(out.result.purged)]);
+        }
+
+        var body = $('tb-ops-result');
+        if (body) {
+            clear(body);
+            for (var i = 0; i < rows.length; i++) {
+                var tr = el('tr');
+                tr.appendChild(el('th', null, rows[i][0]));
+                // ⚠ 第二个参数是 className，不是内容 —— 漏掉它会把「值」当成样式名写掉，
+                //   页面上就只剩标签没有值（push.js 已踩过一次，同口径修正）。
+                tr.appendChild(el('td', null, String(rows[i][1])));
+                body.appendChild(tr);
+            }
+        }
+
+        // 说明区：caveats（该动作不做什么）+ 组合说明 + partial 说明，全部来自 cfg
+        var box = $('ops-caveats');
+        if (box) {
+            clear(box);
+            if (data.caveats) {
+                box.appendChild(el('div', 'note warn', data.caveats));
+            }
+            if (action === 'force-offline' && cfg.ops_force_note) {
+                box.appendChild(el('div', 'note info', cfg.ops_force_note));
+            }
+            if (data.partial && cfg.ops_no_token_note) {
+                box.appendChild(el('div', 'note bad', cfg.ops_no_token_note));
+            }
+        }
+    }
+
+    /** 渲染区块顶部的固定说明（三条「不做什么」+ 组合顺序） */
+    function renderOpsNotes() {
+        var box = $('ops-notes');
+        if (!box) { return; }
+        clear(box);
+
+        var caveats = cfg.ops_caveats || {};
+        var order = ['kick', 'revoke', 'unbind'];
+        for (var i = 0; i < order.length; i++) {
+            if (!caveats[order[i]]) { continue; }
+            var wrap = el('div', 'note warn');
+            wrap.appendChild(el('b', null, order[i] + '：'));
+            wrap.appendChild(el('span', null, ' ' + caveats[order[i]]));
+            box.appendChild(wrap);
+        }
+        if (cfg.ops_force_note) {
+            box.appendChild(el('div', 'note info', cfg.ops_force_note));
+        }
+    }
+
+    /**
+     * 权限显隐（**只是渲染期** —— 真正的边界在 AdminAuth + wa_rules）。
+     *
+     * 五项里**任一**为真就显示操作区（只读角色五项全 false → 显示无权限说明）。
+     */
+    function applyOpsPerms() {
+        var p = cfg.perms || {};
+        var any = p.ops_kick === true || p.ops_revoke === true
+            || p.ops_unbind === true || p.ops_force === true || p.ops_purge === true;
+
+        var sec = $('sec-ops');
+        var ro = $('ops-readonly');
+        if (sec) { sec.hidden = !any; }
+        if (ro) { ro.hidden = any; }
+
+        setBtnHidden('btn-ops-kick', p.ops_kick !== true);
+        setBtnHidden('btn-ops-unbind', p.ops_unbind !== true);
+        setBtnHidden('btn-ops-revoke', p.ops_revoke !== true);
+        setBtnHidden('btn-ops-force', p.ops_force !== true);
+        setBtnHidden('btn-ops-purge', p.ops_purge !== true);
+    }
+
+    function setBtnHidden(id, hidden) {
+        var node = $(id);
+        if (node) { node.hidden = hidden === true; }
+    }
+
+    bind('btn-ops-kick', function () {
+        var cid = opsVal('ops-client-id');
+        var uid = opsVal('ops-uid');
+        if (cid === '' && uid === '') {
+            setNote('ops-status', 'bad', 'client_id 与 uid 至少填一个。');
+            return;
+        }
+        var body = {};
+        if (cid !== '') { body.client_id = cid; }
+        if (uid !== '') { body.uid = uid; }
+        var reason = opsVal('ops-reason');
+        if (reason !== '') { body.reason = reason; }
+        runOps('kick', cfg.ops_kick_url, body);
+    });
+
+    bind('btn-ops-unbind', function () {
+        var uid = opsVal('ops-uid');
+        if (uid === '') {
+            setNote('ops-status', 'bad', '解绑设备需要 uid。');
+            return;
+        }
+        runOps('unbind', cfg.ops_unbind_url, { uid: uid });
+    });
+
+    bind('btn-ops-revoke', function () {
+        var token = opsVal('ops-token');
+        if (token === '') {
+            setNote('ops-status', 'bad', '撤销需要 Token 明文。服务端不保存明文，会话里取不到它 —— 只能人工提供。');
+            return;
+        }
+        runOps('revoke', cfg.ops_revoke_url, { token: token });
+    });
+
+    bind('btn-ops-force', function () {
+        var cid = opsVal('ops-client-id');
+        var uid = opsVal('ops-uid');
+        if (cid === '' && uid === '') {
+            setNote('ops-status', 'bad', 'client_id 与 uid 至少填一个。');
+            return;
+        }
+        var body = {};
+        if (cid !== '') { body.client_id = cid; }
+        if (uid !== '') { body.uid = uid; }
+        var token = opsVal('ops-token');
+        // 没给 token 也允许提交：那时只执行 kick，服务端回 partial=true。
+        // 刻意**不**在这里拦 —— 拦了用户会以为「强制下线做不了」，
+        // 而实际是「禁止重连那一半做不了」，如实呈现由服务端 + 本文件的 partial 展示负责。
+        if (token !== '') { body.token = token; }
+        var reason = opsVal('ops-reason');
+        if (reason !== '') { body.reason = reason; }
+        runOps('force-offline', cfg.ops_force_url, body);
+    });
+
+    bind('btn-ops-purge', function () {
+        var uid = opsVal('ops-uid');
+        if (uid === '') {
+            setNote('ops-status', 'bad', '清空离线队列需要 uid（client_id 会被忽略）。');
+            return;
+        }
+        if (!window.confirm('确认清空 uid=' + uid + ' 的离线队列？未补投的离线消息将被丢弃且不可恢复。')) {
+            return;
+        }
+        runOps('purge-offline', cfg.ops_purge_url, { uid: uid });
+    });
+
     bind('btn-drawer-close', function () { closeDrawer(); });
     bind('drawer-mask', function () { closeDrawer(); });
 
@@ -920,6 +1177,10 @@
         if (state.offlinePages <= 1 || state.offlinePage >= state.offlinePages) { return; }
         loadOffline(state.offlinePage + 1);
     });
+
+    // P4 运维区块：说明 + 权限显隐（**不自动取数**，等用户点击）
+    renderOpsNotes();
+    applyOpsPerms();
 
     // 首屏：先回填静态配置，再按 URL 还原状态并取一次列表（**唯一的一次自动取数**）
     setText('f-idmax', cfg.id_max_len);
