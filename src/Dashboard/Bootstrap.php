@@ -88,7 +88,7 @@ class Bootstrap
      *
      * @return void
      */
-    public static function init(array $appConfig)
+    public static function init(array $appConfig): void
     {
         if (!self::roleEnabled('dashboard')) {
             return;
@@ -141,7 +141,7 @@ class Bootstrap
      *
      * @return void
      */
-    public static function onRequest($connection, $request)
+    public static function onRequest($connection, $request): void
     {
         try {
             if (!$request instanceof Request) {
@@ -186,7 +186,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function handleMetrics($connection)
+    protected static function handleMetrics($connection): void
     {
         Monitor::snapshot(function ($snapshot) use ($connection) {
             $monitor = self::$appConfig['monitor'] ?? [];
@@ -245,7 +245,7 @@ class Bootstrap
      *
      * @return string
      */
-    protected static function pagePath()
+    protected static function pagePath(): string
     {
         $dir = (string)self::$config['view_path'];
 
@@ -262,7 +262,7 @@ class Bootstrap
      *
      * @return bool
      */
-    protected static function roleEnabled($role)
+    protected static function roleEnabled(string $role): bool
     {
         $current = defined('APP_ROLE') ? APP_ROLE : 'all';
 
@@ -280,11 +280,11 @@ class Bootstrap
      *
      * @return Response
      */
-    protected static function json($status, $code, $msg, $data = null, $http = null)
+    protected static function json(int $status, int $code, string $msg, $data = null, $http = null)
     {
         $body = [
-            'code' => (int)$code,
-            'msg'  => (string)$msg,
+            'code' => $code,
+            'msg'  => $msg,
             'ts'   => time(),
         ];
         if ($data !== null) {

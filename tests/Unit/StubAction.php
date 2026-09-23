@@ -16,7 +16,7 @@ use GatewayPush\Business\ActionInterface;
 
 class StubAction implements ActionInterface
 {
-    public function handle(ActionContext $ctx)
+    public function handle(ActionContext $ctx): void
     {
         // 接口声明为 void：不得 return null（PHPStan: return.void）
     }

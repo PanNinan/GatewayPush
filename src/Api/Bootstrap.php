@@ -165,7 +165,7 @@ class Bootstrap
      *
      * @return void
      */
-    public static function init(array $appConfig, array $businessConfig, array $actionConfig = [])
+    public static function init(array $appConfig, array $businessConfig, array $actionConfig = []): void
     {
         if (!self::roleEnabled('api')) {
             return;
@@ -260,7 +260,7 @@ class Bootstrap
      *
      * @return void
      */
-    public static function onRequest($connection, $request)
+    public static function onRequest($connection, $request): void
     {
         try {
             if (!$request instanceof Request) {
@@ -342,9 +342,9 @@ class Bootstrap
      *
      * @return bool
      */
-    public static function isLoopbackHost($listen)
+    public static function isLoopbackHost(string $listen): bool
     {
-        $rest = trim((string)$listen);
+        $rest = trim($listen);
         if ($rest === '') {
             // 判定不了就按「非回环」处理，即保留验签 —— 出错时偏向安全侧
             return false;
@@ -388,7 +388,7 @@ class Bootstrap
      *
      * @throws \JsonException 请求体不是合法 JSON 时抛出
      */
-    protected static function handlePush($connection, Request $request)
+    protected static function handlePush($connection, Request $request): void
     {
         $body = $request->rawBody();
 
@@ -456,7 +456,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function handleStats($connection)
+    protected static function handleStats($connection): void
     {
         Monitor::snapshot(function ($snapshot) use ($connection) {
             $connection->send(self::json(200, self::CODE_OK, 'ok', $snapshot));
@@ -483,7 +483,7 @@ class Bootstrap
      *                    （8.2+ 抛 Random\RandomException，其为 \Exception 子类；
      *                    此处标注基类，以兼容项目 PHP 8.1 下限）
      */
-    protected static function handleAction($connection, Request $request)
+    protected static function handleAction($connection, Request $request): void
     {
         $body = $request->rawBody();
 
@@ -586,9 +586,9 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function handleActionResult($connection, $requestId)
+    protected static function handleActionResult($connection, string $requestId): void
     {
-        $requestId = trim((string)$requestId);
+        $requestId = trim($requestId);
 
         if (!ActionReply::validRequestId($requestId)) {
             $connection->send(self::json(400, self::CODE_BAD_PARAM, 'request_id 格式非法', null, 400));
@@ -623,7 +623,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function admitAction($requestId, array $packet, callable $cb)
+    protected static function admitAction(string $requestId, array $packet, callable $cb): void
     {
         $conf = self::$businessConfig['action_queue'] ?? [];
 
@@ -703,7 +703,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function waitForActionResult($connection, $requestId, $action)
+    protected static function waitForActionResult($connection, string $requestId, string $action): void
     {
         $waitMs   = max(0, (int)self::$config['action_wait']);
         $deadline = microtime(true) + $waitMs / 1000;
@@ -784,7 +784,7 @@ class Bootstrap
      *
      * @return Response
      */
-    protected static function actionResponse($requestId, array $packet)
+    protected static function actionResponse(string $requestId, array $packet)
     {
         $cmd  = isset($packet['cmd']) ? (string)$packet['cmd'] : '';
         $data = isset($packet['data']) && is_array($packet['data']) ? $packet['data'] : [];
@@ -813,7 +813,7 @@ class Bootstrap
      *
      * @return int
      */
-    protected static function longestActionTimeout()
+    protected static function longestActionTimeout(): int
     {
         $max = 0;
         foreach (ActionRunner::httpActions() as $name) {
@@ -933,7 +933,7 @@ class Bootstrap
      *
      * @return bool
      */
-    protected static function signEnabled()
+    protected static function signEnabled(): bool
     {
         // 必须显式判键是否存在：empty() 区分不了「键缺失」与「显式 false」，
         // 而键缺失（早期 .env 未含该项、或调用方传入精简配置）的语义是「开启」。
@@ -953,7 +953,7 @@ class Bootstrap
      *
      * @return string
      */
-    protected static function apiSecret()
+    protected static function apiSecret(): string
     {
         $secret = (string)self::$config['secret'];
         if ($secret === '') {
@@ -970,7 +970,7 @@ class Bootstrap
      *
      * @return bool 是否放行
      */
-    protected static function rateLimit(Request $request)
+    protected static function rateLimit(Request $request): bool
     {
         $limit = (int)self::$config['rate'];
         if ($limit <= 0) {
@@ -1020,7 +1020,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function accessLog(Request $request, $stage = '', array $extra = [])
+    protected static function accessLog(Request $request, string $stage = '', array $extra = []): void
     {
         $context = array_merge(self::requestLogContext($request), $extra);
         Logger::debug($stage === '' ? 'HTTP 请求' : 'HTTP ' . $stage, $context);
@@ -1038,7 +1038,7 @@ class Bootstrap
      *
      * @return array<string, mixed>
      */
-    protected static function requestLogContext(Request $request)
+    protected static function requestLogContext(Request $request): array
     {
         $body = $request->rawBody();
         $len  = strlen($body);
@@ -1068,7 +1068,7 @@ class Bootstrap
      *
      * @return array<string, string>
      */
-    protected static function redactHeaders($headers)
+    protected static function redactHeaders($headers): array
     {
         if (!is_array($headers)) {
             return [];
@@ -1105,9 +1105,9 @@ class Bootstrap
      *
      * @return string
      */
-    protected static function redactSecret($value)
+    protected static function redactSecret(string $value): string
     {
-        $value = (string)$value;
+        $value = $value;
         $len   = strlen($value);
         if ($len <= 8) {
             return '***len=' . $len;
@@ -1124,14 +1124,14 @@ class Bootstrap
      *
      * @return string
      */
-    protected static function header(Request $request, $name)
+    protected static function header(Request $request, string $name): string
     {
         $headers = $request->header();
         if (!is_array($headers)) {
             return '';
         }
         foreach ($headers as $key => $value) {
-            if (strcasecmp((string)$key, (string)$name) === 0) {
+            if (strcasecmp($key, $name) === 0) {
                 return is_array($value) ? (string)reset($value) : (string)$value;
             }
         }
@@ -1146,7 +1146,7 @@ class Bootstrap
      *
      * @return string
      */
-    protected static function clientIp(Request $request)
+    protected static function clientIp(Request $request): string
     {
         $forwarded = self::header($request, 'x-forwarded-for');
         if ($forwarded !== '') {
@@ -1174,11 +1174,11 @@ class Bootstrap
      *
      * @return Response
      */
-    protected static function json($status, $code, $msg, $data = null, $http = null)
+    protected static function json(int $status, int $code, string $msg, $data = null, $http = null)
     {
         $body = [
-            'code' => (int)$code,
-            'msg'  => (string)$msg,
+            'code' => $code,
+            'msg'  => $msg,
             'ts'   => time(),
         ];
         if ($data !== null) {
@@ -1205,7 +1205,7 @@ class Bootstrap
      *
      * @return bool
      */
-    protected static function roleEnabled($role)
+    protected static function roleEnabled(string $role): bool
     {
         $current = defined('APP_ROLE') ? APP_ROLE : 'all';
 

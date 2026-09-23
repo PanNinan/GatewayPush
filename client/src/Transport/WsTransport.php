@@ -71,9 +71,9 @@ final class WsTransport implements TransportInterface
      *
      * @throws ClientException URL 非法
      */
-    public function __construct($url, ?callable $connFactory = null)
+    public function __construct(string $url, ?callable $connFactory = null)
     {
-        $url    = (string)$url;
+        $url    = $url;
         $scheme = parse_url($url, PHP_URL_SCHEME);
 
         if (!in_array($scheme, ['ws', 'wss'], true)) {
@@ -87,7 +87,7 @@ final class WsTransport implements TransportInterface
     /**
      * {@inheritDoc}
      */
-    public function connect()
+    public function connect(): void
     {
         if ($this->conn !== null) {
             return; // 幂等：已在建连/已连接，重复调用无副作用
@@ -141,19 +141,19 @@ final class WsTransport implements TransportInterface
      *
      * @throws ClientException 连接未建立时抛出
      */
-    public function send($frame)
+    public function send(string $frame): void
     {
         if ($this->conn === null || !$this->connected) {
             throw ClientException::state('WebSocket 连接未建立，无法发送报文');
         }
 
-        $this->conn->send((string)$frame);
+        $this->conn->send($frame);
     }
 
     /**
      * {@inheritDoc}
      */
-    public function close()
+    public function close(): void
     {
         if ($this->conn !== null) {
             $this->conn->close(); // onClose 回调里统一置位与清理
@@ -163,7 +163,7 @@ final class WsTransport implements TransportInterface
     /**
      * {@inheritDoc}
      */
-    public function isConnected()
+    public function isConnected(): bool
     {
         return $this->connected;
     }
@@ -171,7 +171,7 @@ final class WsTransport implements TransportInterface
     /**
      * {@inheritDoc}
      */
-    public function onOpen(callable $cb)
+    public function onOpen(callable $cb): void
     {
         $this->onOpenCb = $cb;
     }
@@ -179,7 +179,7 @@ final class WsTransport implements TransportInterface
     /**
      * {@inheritDoc}
      */
-    public function onMessage(callable $cb)
+    public function onMessage(callable $cb): void
     {
         $this->onMessageCb = $cb;
     }
@@ -187,7 +187,7 @@ final class WsTransport implements TransportInterface
     /**
      * {@inheritDoc}
      */
-    public function onClose(callable $cb)
+    public function onClose(callable $cb): void
     {
         $this->onCloseCb = $cb;
     }
@@ -195,7 +195,7 @@ final class WsTransport implements TransportInterface
     /**
      * {@inheritDoc}
      */
-    public function onError(callable $cb)
+    public function onError(callable $cb): void
     {
         $this->onErrorCb = $cb;
     }

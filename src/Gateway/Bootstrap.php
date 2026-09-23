@@ -57,7 +57,7 @@ class Bootstrap
      *
      * @return void
      */
-    public static function init(array $gatewayConfig, array $appConfig)
+    public static function init(array $gatewayConfig, array $appConfig): void
     {
         self::$config    = $gatewayConfig;
         self::$appConfig = $appConfig;
@@ -86,7 +86,7 @@ class Bootstrap
      *
      * @return void
      */
-    public static function onUdpMessage(ConnectionInterface $connection, $packet)
+    public static function onUdpMessage(ConnectionInterface $connection, $packet): void
     {
         try {
             if (!is_array($packet)) {
@@ -147,7 +147,7 @@ class Bootstrap
      *
      * @return string
      */
-    public static function udpClientId(ConnectionInterface $connection)
+    public static function udpClientId(ConnectionInterface $connection): string
     {
         return 'udp:' . $connection->getRemoteIp() . ':' . $connection->getRemotePort();
     }
@@ -169,7 +169,7 @@ class Bootstrap
      *
      * @return void
      */
-    public static function consumeUdpOutQueue($worker, array $conf)
+    public static function consumeUdpOutQueue($worker, array $conf): void
     {
         try {
             $key   = $conf['key'];
@@ -201,7 +201,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function initRegister()
+    protected static function initRegister(): void
     {
         $conf = self::$config['register'];
         if (empty($conf['enable'])) {
@@ -239,7 +239,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function initWebSocketGateway()
+    protected static function initWebSocketGateway(): void
     {
         $conf = self::$config['websocket'];
         if (empty($conf['enable'])) {
@@ -315,7 +315,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function initUdpGateway()
+    protected static function initUdpGateway(): void
     {
         $conf = self::$config['udp'];
         if (empty($conf['enable'])) {
@@ -385,7 +385,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function pushToBusinessQueue(ConnectionInterface $connection, array $packet, array $queueConf)
+    protected static function pushToBusinessQueue(ConnectionInterface $connection, array $packet, array $queueConf): void
     {
         $job = json_encode([
             'client_id'   => self::udpClientId($connection),
@@ -433,7 +433,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function sendUdp($worker, $clientId, $frame, array $task = [])
+    protected static function sendUdp($worker, string $clientId, string $frame, array $task = []): void
     {
         $address = self::parseUdpAddress($clientId);
         if ($address === '') {
@@ -493,12 +493,12 @@ class Bootstrap
      *
      * @return string 解析失败返回空串
      */
-    protected static function parseUdpAddress($clientId)
+    protected static function parseUdpAddress(string $clientId): string
     {
-        if (!str_starts_with((string)$clientId, 'udp:')) {
+        if (!str_starts_with($clientId, 'udp:')) {
             return '';
         }
-        $rest = substr((string)$clientId, 4);
+        $rest = substr($clientId, 4);
         if ($rest === '') {
             return '';
         }
@@ -540,7 +540,7 @@ class Bootstrap
      *
      * @return bool
      */
-    protected static function roleEnabled($role)
+    protected static function roleEnabled(string $role): bool
     {
         $current = defined('APP_ROLE') ? APP_ROLE : 'all';
 
@@ -557,7 +557,7 @@ class Bootstrap
      *
      * @return int
      */
-    protected static function resolveCount($configured)
+    protected static function resolveCount($configured): int
     {
         if (DIRECTORY_SEPARATOR !== '/') {
             return 1;
@@ -574,7 +574,7 @@ class Bootstrap
      *
      * @return string
      */
-    protected static function buildSecretKey()
+    protected static function buildSecretKey(): string
     {
         $secret = isset(self::$appConfig['internal']['secret']) ? (string)self::$appConfig['internal']['secret'] : '';
         if ($secret === '') {

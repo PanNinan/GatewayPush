@@ -63,19 +63,19 @@ final class TokenIssuer
      *
      * @throws ClientException 密钥为空，或有效期 / 偏差为负时抛出
      */
-    public function __construct($secret, $defaultTtl = 0, $clockSkew = self::DEFAULT_CLOCK_SKEW)
+    public function __construct(string $secret, int $defaultTtl = 0, int $clockSkew = self::DEFAULT_CLOCK_SKEW)
     {
-        $secret = (string)$secret;
+        $secret = $secret;
         if ($secret === '') {
             throw ClientException::config('Token 密钥不能为空（对应服务端 app.auth.secret）');
         }
-        if ((int)$defaultTtl < 0) {
+        if ($defaultTtl < 0) {
             throw ClientException::config('Token 默认有效期不能为负数');
         }
 
         $this->secret     = $secret;
-        $this->defaultTtl = (int)$defaultTtl > 0 ? (int)$defaultTtl : self::DEFAULT_TTL;
-        $this->clockSkew  = (int)$clockSkew >= 0 ? (int)$clockSkew : self::DEFAULT_CLOCK_SKEW;
+        $this->defaultTtl = $defaultTtl > 0 ? $defaultTtl : self::DEFAULT_TTL;
+        $this->clockSkew  = $clockSkew >= 0 ? $clockSkew : self::DEFAULT_CLOCK_SKEW;
     }
 
     /**
@@ -83,7 +83,7 @@ final class TokenIssuer
      *
      * @return int
      */
-    public function defaultTtl()
+    public function defaultTtl(): int
     {
         return $this->defaultTtl;
     }
@@ -102,19 +102,19 @@ final class TokenIssuer
      *
      * @throws ClientException uid 缺失或底层熵源不可用
      */
-    public function issue(array $claims, $ttl = 0)
+    public function issue(array $claims, int $ttl = 0): string
     {
         if (!isset($claims['uid']) || (string)$claims['uid'] === '') {
             throw ClientException::config('签发 Token 必须提供非空 uid');
         }
-        if ((int)$ttl < 0) {
+        if ($ttl < 0) {
             throw ClientException::config('Token 有效期不能为负数');
         }
 
         $this->apply();
 
         try {
-            return Auth::issue($claims, (int)$ttl > 0 ? (int)$ttl : $this->defaultTtl);
+            return Auth::issue($claims, $ttl > 0 ? $ttl : $this->defaultTtl);
         } catch (\Exception $e) {
             // random_bytes 失败在 8.1 抛 Exception、8.2+ 抛 Random\RandomException，
             // 此处统一兜住并转为客户端异常，避免把 SPL 细节泄漏给调用方。
@@ -133,11 +133,11 @@ final class TokenIssuer
      *
      * @return array<string, mixed> ['ok'=>bool,'code'=>int,'msg'=>string,'claims'=>array]
      */
-    public function inspect($token)
+    public function inspect(string $token): array
     {
         $this->apply();
 
-        return Auth::verifyLocal((string)$token);
+        return Auth::verifyLocal($token);
     }
 
     /**
@@ -147,7 +147,7 @@ final class TokenIssuer
      *
      * @return bool
      */
-    public function verify($token)
+    public function verify(string $token): bool
     {
         $result = $this->inspect($token);
 
@@ -161,7 +161,7 @@ final class TokenIssuer
      *
      * @return array<string, mixed>
      */
-    public function claims($token)
+    public function claims(string $token): array
     {
         $result = $this->inspect($token);
 
@@ -180,9 +180,9 @@ final class TokenIssuer
      *
      * @return array<string, mixed> 结构非法时返回空数组
      */
-    public function peek($token)
+    public function peek(string $token): array
     {
-        $parts = explode('.', (string)$token);
+        $parts = explode('.', $token);
         if (count($parts) !== 2) {
             return [];
         }
@@ -205,7 +205,7 @@ final class TokenIssuer
      *
      * @return void
      */
-    private function apply()
+    private function apply(): void
     {
         Auth::init([
             'secret'     => $this->secret,
@@ -221,9 +221,9 @@ final class TokenIssuer
      *
      * @return string
      */
-    private static function base64UrlDecode($data)
+    private static function base64UrlDecode(string $data): string
     {
-        $data = strtr((string)$data, '-_', '+/');
+        $data = strtr($data, '-_', '+/');
         $pad  = strlen($data) % 4;
         if ($pad > 0) {
             $data .= str_repeat('=', 4 - $pad);

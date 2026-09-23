@@ -213,7 +213,7 @@ final class RedisKeys
      *
      * @return string
      */
-    public static function session($clientId)
+    public static function session(string $clientId): string
     {
         return self::SESSION . $clientId;
     }
@@ -225,7 +225,7 @@ final class RedisKeys
      *
      * @return string
      */
-    public static function heartbeat($clientId)
+    public static function heartbeat(string $clientId): string
     {
         return self::HEARTBEAT . $clientId;
     }
@@ -237,7 +237,7 @@ final class RedisKeys
      *
      * @return string
      */
-    public static function uidClients($uid)
+    public static function uidClients(string $uid): string
     {
         return self::UID_CLIENTS . $uid;
     }
@@ -249,7 +249,7 @@ final class RedisKeys
      *
      * @return string
      */
-    public static function deviceClient($deviceId)
+    public static function deviceClient(string $deviceId): string
     {
         return self::DEVICE_CLIENT . $deviceId;
     }
@@ -264,9 +264,9 @@ final class RedisKeys
      *
      * @return string
      */
-    public static function online($protocol = '')
+    public static function online(string $protocol = ''): string
     {
-        $protocol = (string)$protocol;
+        $protocol = $protocol;
 
         return $protocol === '' ? self::ONLINE_CLIENTS : self::ONLINE_PREFIX . $protocol;
     }
@@ -281,7 +281,7 @@ final class RedisKeys
      *
      * @return string
      */
-    public static function authRevoked($fingerprint)
+    public static function authRevoked(string $fingerprint): string
     {
         return self::AUTH_REVOKED . $fingerprint;
     }
@@ -293,7 +293,7 @@ final class RedisKeys
      *
      * @return string
      */
-    public static function authBind($uid)
+    public static function authBind(string $uid): string
     {
         return self::AUTH_BIND . $uid;
     }
@@ -305,7 +305,7 @@ final class RedisKeys
      *
      * @return string
      */
-    public static function pushOffline($uid)
+    public static function pushOffline(string $uid): string
     {
         return self::PUSH_OFFLINE . $uid;
     }
@@ -317,9 +317,9 @@ final class RedisKeys
      *
      * @return string
      */
-    public static function pushDedup($msgId)
+    public static function pushDedup(string $msgId): string
     {
-        return self::PUSH_DEDUP . md5((string)$msgId);
+        return self::PUSH_DEDUP . md5($msgId);
     }
 
     /**
@@ -329,7 +329,7 @@ final class RedisKeys
      *
      * @return string
      */
-    public static function subscribeUid($uid)
+    public static function subscribeUid(string $uid): string
     {
         return self::SUBSCRIBE_UID . $uid;
     }
@@ -341,7 +341,7 @@ final class RedisKeys
      *
      * @return string
      */
-    public static function subscribeTopic($topic)
+    public static function subscribeTopic(string $topic): string
     {
         return self::SUBSCRIBE_TOPIC . $topic;
     }
@@ -353,7 +353,7 @@ final class RedisKeys
      *
      * @return string
      */
-    public static function actionResult($requestId)
+    public static function actionResult(string $requestId): string
     {
         return self::ACTION_RESULT . $requestId;
     }
@@ -365,7 +365,7 @@ final class RedisKeys
      *
      * @return string
      */
-    public static function actionReport($topic)
+    public static function actionReport(string $topic): string
     {
         return self::ACTION_REPORT . $topic;
     }
@@ -377,7 +377,7 @@ final class RedisKeys
      *
      * @return string
      */
-    public static function metricsCounter($date = null)
+    public static function metricsCounter($date = null): string
     {
         $date = ($date === null || $date === '') ? date('Ymd') : (string)$date;
 
@@ -394,9 +394,9 @@ final class RedisKeys
      *
      * @return string
      */
-    public static function rateBucket($dim, $id)
+    public static function rateBucket(string $dim, string $id): string
     {
-        return self::RATE_LIMIT_BUCKET . $dim . ':' . md5((string)$id);
+        return self::RATE_LIMIT_BUCKET . $dim . ':' . md5($id);
     }
 
     /**
@@ -407,10 +407,10 @@ final class RedisKeys
      *
      * @return string
      */
-    public static function rateApi($ip, $minute = null)
+    public static function rateApi(string $ip, $minute = null): string
     {
         $slot = ($minute === null) ? (int)floor(time() / 60) : (int)$minute;
 
-        return self::RATE_LIMIT_API . md5((string)$ip) . ':' . $slot;
+        return self::RATE_LIMIT_API . md5($ip) . ':' . $slot;
     }
 }

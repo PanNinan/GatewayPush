@@ -23,7 +23,7 @@ interface TransportInterface
      *
      * @return void
      */
-    public function connect();
+    public function connect(): void;
 
     /**
      * 发送一帧文本
@@ -34,21 +34,21 @@ interface TransportInterface
      *
      * @throws \GatewayPush\Client\Error\ClientException 连接未建立时
      */
-    public function send($frame);
+    public function send(string $frame): void;
 
     /**
      * 主动关闭
      *
      * @return void
      */
-    public function close();
+    public function close(): void;
 
     /**
      * 是否处于可用连接状态
      *
      * @return bool
      */
-    public function isConnected();
+    public function isConnected(): bool;
 
     /**
      * 注册握手完成回调
@@ -57,7 +57,7 @@ interface TransportInterface
      *
      * @return void
      */
-    public function onOpen(callable $cb);
+    public function onOpen(callable $cb): void;
 
     /**
      * 注册收帧回调
@@ -66,7 +66,7 @@ interface TransportInterface
      *
      * @return void
      */
-    public function onMessage(callable $cb);
+    public function onMessage(callable $cb): void;
 
     /**
      * 注册断开回调
@@ -75,7 +75,7 @@ interface TransportInterface
      *
      * @return void
      */
-    public function onClose(callable $cb);
+    public function onClose(callable $cb): void;
 
     /**
      * 注册底层错误回调
@@ -84,5 +84,5 @@ interface TransportInterface
      *
      * @return void
      */
-    public function onError(callable $cb);
+    public function onError(callable $cb): void;
 }

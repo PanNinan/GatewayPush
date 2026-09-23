@@ -47,7 +47,7 @@ abstract class AbstractApi
      *
      * @return string 本请求 seq
      */
-    protected function call($action, array $params, $cb = null, $timeout = null)
+    protected function call(string $action, array $params, $cb = null, $timeout = null): string
     {
         return $this->session->request($action, $params, function ($ok, $packet) use ($cb) {
             if ($cb === null) {

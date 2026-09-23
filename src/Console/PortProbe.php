@@ -37,10 +37,10 @@ final class PortProbe
      *
      * @return bool true 表示已被占用
      */
-    public static function isUsed($listen)
+    public static function isUsed(string $listen): bool
     {
-        $isUdp  = stripos((string)$listen, 'udp://') === 0;
-        $target = (string)preg_replace('#^[a-z]+://#i', '', (string)$listen);
+        $isUdp  = stripos($listen, 'udp://') === 0;
+        $target = preg_replace('#^[a-z]+://#i', '', $listen);
 
         // Windows 的 socket 默认允许重复 bind（PHP 未暴露 SO_EXCLUSIVEADDRUSE，
         // stream_socket_server 也不会设置它），端口已被监听时本地 bind 依然成功 ——
@@ -83,7 +83,7 @@ final class PortProbe
      *
      * @return array<int|string, mixed> 端口号 => true
      */
-    private static function usedPortsByNetstat($protocol)
+    private static function usedPortsByNetstat(string $protocol): array
     {
         if (isset(self::$netstatCache[$protocol])) {
             return self::$netstatCache[$protocol];

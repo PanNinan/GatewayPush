@@ -110,11 +110,11 @@ final class HttpTransport
      *
      * @return void
      */
-    public function request($method, $path, $body, array $headers, $cb)
+    public function request(string $method, string $path, string $body, array $headers, $cb): void
     {
-        $method = strtoupper((string)$method);
-        $path   = '/' . ltrim((string)$path, '/');
-        $body   = (string)$body;
+        $method = strtoupper($method);
+        $path   = '/' . ltrim($path, '/');
+        $body   = $body;
 
         $head = "{$method} {$path} HTTP/1.1\r\n";
         $head .= "Host: {$this->host}:{$this->port}\r\n";

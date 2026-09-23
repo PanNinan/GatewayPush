@@ -58,7 +58,7 @@ class Session
      *
      * @return void
      */
-    public static function init(array $config)
+    public static function init(array $config): void
     {
         self::$config = array_merge(self::$config, $config);
     }
@@ -78,7 +78,7 @@ class Session
      *
      * @return void
      */
-    public static function bind($clientId, array $identity, $protocol, array $connInfo = [], ?callable $cb = null)
+    public static function bind(string $clientId, array $identity, string $protocol, array $connInfo = [], ?callable $cb = null): void
     {
         $ttl      = (int)self::$config['ttl'];
         $now      = time();
@@ -86,10 +86,10 @@ class Session
         $deviceId = isset($identity['device_id']) ? (string)$identity['device_id'] : '';
 
         $fields = [
-            'client_id'   => (string)$clientId,
+            'client_id'   => $clientId,
             'uid'         => $uid,
             'device_id'   => $deviceId,
-            'protocol'    => (string)$protocol,
+            'protocol'    => $protocol,
             'client_ip'   => isset($connInfo['client_ip']) ? (string)$connInfo['client_ip'] : '',
             'client_port' => isset($connInfo['client_port']) ? (string)$connInfo['client_port'] : '',
             'gateway'     => isset($connInfo['gateway']) ? (string)$connInfo['gateway'] : '',
@@ -137,7 +137,7 @@ class Session
      *
      * @return void
      */
-    public static function touch($clientId, ?callable $cb = null)
+    public static function touch(string $clientId, ?callable $cb = null): void
     {
         RedisClient::set(
             RedisKeys::heartbeat($clientId),
@@ -158,7 +158,7 @@ class Session
      *
      * @return void
      */
-    public static function markOffline($clientId, ?callable $cb = null)
+    public static function markOffline(string $clientId, ?callable $cb = null): void
     {
         RedisClient::hGetAll(RedisKeys::session($clientId), function ($session) use ($clientId, $cb) {
             $protocol = is_array($session) && isset($session['protocol']) ? (string)$session['protocol'] : '';
@@ -193,7 +193,7 @@ class Session
      *
      * @return void
      */
-    public static function unbind($clientId, ?callable $cb = null)
+    public static function unbind(string $clientId, ?callable $cb = null): void
     {
         RedisClient::hGetAll(RedisKeys::session($clientId), function ($session) use ($clientId, $cb) {
             $uid      = is_array($session) && isset($session['uid']) ? (string)$session['uid'] : '';
@@ -215,7 +215,7 @@ class Session
             // 设备映射仅在指向当前连接时才移除，避免误删新连接的映射
             if ($deviceId !== '') {
                 RedisClient::get(RedisKeys::deviceClient($deviceId), function ($current) use ($clientId, $deviceId) {
-                    if (is_string($current) && $current !== '' && $current === (string)$clientId) {
+                    if (is_string($current) && $current !== '' && $current === $clientId) {
                         RedisClient::del(RedisKeys::deviceClient($deviceId));
                     }
                 });
@@ -245,7 +245,7 @@ class Session
      *
      * @return void
      */
-    public static function get($clientId, callable $cb)
+    public static function get(string $clientId, callable $cb): void
     {
         RedisClient::hGetAll(RedisKeys::session($clientId), function ($session) use ($cb) {
             $cb(is_array($session) ? $session : []);
@@ -263,7 +263,7 @@ class Session
      *
      * @return void
      */
-    public static function exists($clientId, callable $cb)
+    public static function exists(string $clientId, callable $cb): void
     {
         RedisClient::exists(RedisKeys::session($clientId), function ($result) use ($cb) {
             $cb(!empty($result));
@@ -278,7 +278,7 @@ class Session
      *
      * @return void
      */
-    public static function findByDevice($deviceId, callable $cb)
+    public static function findByDevice(string $deviceId, callable $cb): void
     {
         RedisClient::get(RedisKeys::deviceClient($deviceId), function ($clientId) use ($cb) {
             $cb(is_string($clientId) ? $clientId : '');
@@ -293,7 +293,7 @@ class Session
      *
      * @return void
      */
-    public static function findByUid($uid, callable $cb)
+    public static function findByUid(string $uid, callable $cb): void
     {
         RedisClient::sMembers(RedisKeys::uidClients($uid), function ($members) use ($cb) {
             $cb(is_array($members) ? $members : []);
@@ -308,7 +308,7 @@ class Session
      *
      * @return void
      */
-    public static function restore($deviceId, callable $cb)
+    public static function restore(string $deviceId, callable $cb): void
     {
         if (empty(self::$config['restore'])) {
             $cb([]);
@@ -336,7 +336,7 @@ class Session
      *
      * @return void
      */
-    public static function countOnline($protocol = '', ?callable $cb = null)
+    public static function countOnline(string $protocol = '', ?callable $cb = null): void
     {
         if ($cb === null) {
             $cb = function () {};
@@ -356,7 +356,7 @@ class Session
      *
      * @return void
      */
-    public static function checkHeartbeatTimeout()
+    public static function checkHeartbeatTimeout(): void
     {
         $threshold = (int)self::$config['heartbeat_ttl'];
         if ($threshold <= 0) {
@@ -409,7 +409,7 @@ class Session
      *
      * @return void
      */
-    public static function cleanExpired()
+    public static function cleanExpired(): void
     {
         RedisClient::sMembers(RedisKeys::online(''), function ($members) {
             if (!is_array($members) || !$members) {
@@ -458,9 +458,9 @@ class Session
      *
      * @return void
      */
-    protected static function forceClose($clientId)
+    protected static function forceClose(string $clientId): void
     {
-        $isUdp = str_starts_with((string)$clientId, 'udp:');
+        $isUdp = str_starts_with($clientId, 'udp:');
 
         if (!$isUdp) {
             try {

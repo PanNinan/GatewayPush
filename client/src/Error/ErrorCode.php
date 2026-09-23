@@ -79,7 +79,7 @@ final class ErrorCode
      *
      * @return string
      */
-    public static function message($code)
+    public static function message(int $code): string
     {
         return Message::codeMessage($code);
     }
@@ -91,9 +91,9 @@ final class ErrorCode
      *
      * @return bool
      */
-    public static function isLocal($code)
+    public static function isLocal(int $code): bool
     {
-        return (int)$code >= 10000;
+        return $code >= 10000;
     }
 
     /**
@@ -103,7 +103,7 @@ final class ErrorCode
      *
      * @return string
      */
-    public static function localMessage($code)
+    public static function localMessage(int $code): string
     {
         $map = [
             self::CLIENT_TIMEOUT   => '请求超时',
@@ -113,6 +113,6 @@ final class ErrorCode
             self::CLIENT_INTERNAL  => '客户端内部错误',
         ];
 
-        return $map[(int)$code] ?? '未知客户端错误';
+        return $map[$code] ?? '未知客户端错误';
     }
 }

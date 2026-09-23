@@ -20,7 +20,7 @@ final class SessionApi extends AbstractApi
      *
      * @return string 本请求 seq
      */
-    public function get($cb = null)
+    public function get($cb = null): string
     {
         return $this->call('session', [], $cb);
     }

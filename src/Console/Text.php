@@ -26,7 +26,7 @@ final class Text
      *
      * @return int
      */
-    public static function displayWidth($text)
+    public static function displayWidth(string $text): int
     {
         $width  = 0;
         $length = strlen($text);
@@ -56,7 +56,7 @@ final class Text
      *
      * @return string
      */
-    public static function pad($text, $width)
+    public static function pad(string $text, int $width): string
     {
         $pad = $width - self::displayWidth($text);
 

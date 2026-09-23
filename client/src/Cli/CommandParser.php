@@ -27,7 +27,7 @@ class CommandParser
      *
      * @return array{command:string, args:array<int,string>, options:array<string,mixed>}
      */
-    public static function parse(array $args)
+    public static function parse(array $args): array
     {
         $command = '';
         $posArgs = [];
@@ -114,7 +114,7 @@ class CommandParser
      *
      * @return string
      */
-    public static function str(array $options, $name, $default = '')
+    public static function str(array $options, string $name, string $default = ''): string
     {
         if (!isset($options[$name]) || is_bool($options[$name])) {
             return $default;
@@ -132,7 +132,7 @@ class CommandParser
      *
      * @return float
      */
-    public static function float(array $options, $name, $default = 0.0)
+    public static function float(array $options, string $name, float $default = 0.0): float
     {
         if (!isset($options[$name]) || is_bool($options[$name]) || !is_numeric((string)$options[$name])) {
             return $default;
@@ -149,7 +149,7 @@ class CommandParser
      *
      * @return bool
      */
-    public static function flag(array $options, $name)
+    public static function flag(array $options, string $name): bool
     {
         return isset($options[$name]) && $options[$name] !== false;
     }

@@ -82,7 +82,7 @@ class Monitor
      *
      * @return void
      */
-    public static function init(array $config)
+    public static function init(array $config): void
     {
         self::$config = array_merge(self::$config, $config);
     }
@@ -95,7 +95,7 @@ class Monitor
      *
      * @return void
      */
-    public static function incr($metric, $step = 1)
+    public static function incr(string $metric, int $step = 1): void
     {
         if (empty(self::$config['enable'])) {
             return;
@@ -103,7 +103,7 @@ class Monitor
         if (!isset(self::$counters[$metric])) {
             self::$counters[$metric] = 0;
         }
-        self::$counters[$metric] += (int)$step;
+        self::$counters[$metric] += $step;
     }
 
     /**
@@ -114,7 +114,7 @@ class Monitor
      *
      * @return void
      */
-    public static function gauge($metric, $value)
+    public static function gauge(string $metric, $value): void
     {
         if (empty(self::$config['enable'])) {
             return;
@@ -131,7 +131,7 @@ class Monitor
      *
      * @return void
      */
-    public static function report($withOnline = true)
+    public static function report(bool $withOnline = true): void
     {
         if (empty(self::$config['enable'])) {
             return;
@@ -191,7 +191,7 @@ class Monitor
      *
      * @return void
      */
-    public static function snapshot(callable $cb)
+    public static function snapshot(callable $cb): void
     {
         RedisClient::hGetAll(RedisKeys::METRICS_GAUGE, function ($gauge) use ($cb) {
             RedisClient::hGetAll(RedisKeys::metricsCounter(), function ($counter) use ($gauge, $cb) {
@@ -209,7 +209,7 @@ class Monitor
      *
      * @return array<string, mixed>
      */
-    public static function pending()
+    public static function pending(): array
     {
         return [
             'counters' => self::$counters,
@@ -233,7 +233,7 @@ class Monitor
      *
      * @return array<int|string, mixed> 待删除的 field 列表；无需清理时为空数组
      */
-    public static function staleFields(array $gauge, $ttl, $now)
+    public static function staleFields(array $gauge, int $ttl, int $now): array
     {
         if ($ttl <= 0 || !$gauge) {
             return [];
@@ -276,7 +276,7 @@ class Monitor
      *
      * @return void
      */
-    protected static function flushCounters()
+    protected static function flushCounters(): void
     {
         $counters = self::$counters;
         self::$counters = [];
@@ -309,7 +309,7 @@ class Monitor
      *
      * @return array<string, mixed>
      */
-    protected static function processMetaFields($pid, $now)
+    protected static function processMetaFields(int $pid, int $now): array
     {
         $workerId = Task::workerId();
         $role     = defined('APP_ROLE') ? APP_ROLE : 'all';
@@ -367,7 +367,7 @@ class Monitor
      *
      * @return void
      */
-    protected static function purgeExitedProcesses($gaugeKey, $ttl, $now)
+    protected static function purgeExitedProcesses(string $gaugeKey, int $ttl, int $now): void
     {
         if ($ttl <= 0) {
             return;

@@ -107,7 +107,7 @@ class RateLimiter
      *
      * @return void
      */
-    public static function init(array $config = [])
+    public static function init(array $config = []): void
     {
         self::$config = array_merge(self::$config, $config);
     }
@@ -117,7 +117,7 @@ class RateLimiter
      *
      * @return bool
      */
-    public static function enabled()
+    public static function enabled(): bool
     {
         return !empty(self::$config['enable']);
     }
@@ -127,7 +127,7 @@ class RateLimiter
      *
      * @return bool
      */
-    public static function shouldClose()
+    public static function shouldClose(): bool
     {
         return !empty(self::$config['close_on_exceed']);
     }
@@ -139,7 +139,7 @@ class RateLimiter
      *
      * @return bool
      */
-    public static function shouldNotify()
+    public static function shouldNotify(): bool
     {
         return !empty(self::$config['notify']);
     }
@@ -151,7 +151,7 @@ class RateLimiter
      *
      * @return array<string, mixed> ['rate' => int, 'burst' => int]，rate <= 0 表示该维度不限流
      */
-    public static function spec($dim)
+    public static function spec(string $dim): array
     {
         $spec = isset(self::$config[$dim]) && is_array(self::$config[$dim])
             ? self::$config[$dim]
@@ -184,7 +184,7 @@ class RateLimiter
      *
      * @return bool 是否放行
      */
-    public static function checkMemory($dim, $id, $cost = 1)
+    public static function checkMemory(string $dim, string $id, int $cost = 1): bool
     {
         if (!self::enabled()) {
             return true;
@@ -195,7 +195,7 @@ class RateLimiter
             return true;
         }
 
-        $cost = max(1, (int)$cost);
+        $cost = max(1, $cost);
         $now  = microtime(true) * 1000;   // 毫秒，浮点
         $key  = self::MEM_PREFIX . $dim . '|' . $id;
 
@@ -237,10 +237,10 @@ class RateLimiter
      *
      * @return array<string, mixed> 空数组表示该维度未启用限流
      */
-    public static function bucket($dim, $id)
+    public static function bucket(string $dim, string $id): array
     {
         $spec = self::spec($dim);
-        if ($spec['rate'] <= 0 || (string)$id === '') {
+        if ($spec['rate'] <= 0 || $id === '') {
             return [];
         }
 
@@ -260,7 +260,7 @@ class RateLimiter
      *
      * @return void
      */
-    public static function acquire(array $buckets, $cost, callable $cb)
+    public static function acquire(array $buckets, int $cost, callable $cb): void
     {
         $valid = [];
         foreach ($buckets as $bucket) {
@@ -302,7 +302,7 @@ class RateLimiter
      *
      * @return void
      */
-    public static function logReject($dim, $id, array $extra = [])
+    public static function logReject(string $dim, string $id, array $extra = []): void
     {
         $now = microtime(true);
         if (isset(self::$logAt[$dim]) && $now - self::$logAt[$dim] < self::LOG_INTERVAL) {
@@ -314,7 +314,7 @@ class RateLimiter
             'dim'   => $dim,
             'rate'  => self::spec($dim)['rate'],
             'burst' => self::spec($dim)['burst'],
-            'from'  => substr((string)$id, 0, 64),
+            'from'  => substr($id, 0, 64),
         ], $extra));
     }
 
@@ -323,7 +323,7 @@ class RateLimiter
      *
      * @return void
      */
-    public static function reset()
+    public static function reset(): void
     {
         self::$buckets = [];
         self::$logAt   = [];
@@ -334,7 +334,7 @@ class RateLimiter
      *
      * @return int
      */
-    public static function bucketCount()
+    public static function bucketCount(): int
     {
         return count(self::$buckets);
     }
@@ -347,7 +347,7 @@ class RateLimiter
      *
      * @return void
      */
-    protected static function evictIfNeeded()
+    protected static function evictIfNeeded(): void
     {
         $max = max(100, (int)self::$config['mem_max_buckets']);
         if (count(self::$buckets) < $max) {

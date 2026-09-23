@@ -93,7 +93,7 @@ class Message
      *
      * @return string
      */
-    public static function encode($packet)
+    public static function encode($packet): string
     {
         if (!is_array($packet)) {
             $packet = self::error(self::CODE_BAD_PACKET, '待编码数据不是数组');
@@ -113,7 +113,7 @@ class Message
      *
      * @return null|array<string, mixed> 校验失败返回 null
      */
-    public static function decode($raw, &$error = null)
+    public static function decode($raw, ?string &$error = null)
     {
         $error = '';
 
@@ -178,10 +178,10 @@ class Message
      *
      * @return array<string, mixed>
      */
-    public static function packet($cmd, $data = [], array $extra = [])
+    public static function packet(string $cmd, $data = [], array $extra = []): array
     {
         $packet = [
-            'cmd'  => (string)$cmd,
+            'cmd'  => $cmd,
             'seq'  => '',
             'ts'   => time(),
             'data' => $data,
@@ -201,7 +201,7 @@ class Message
      *
      * @return array<string, mixed>
      */
-    public static function ack($seq = '', $data = [])
+    public static function ack($seq = '', $data = []): array
     {
         return self::packet(self::CMD_ACK, $data, ['seq' => (string)$seq]);
     }
@@ -216,14 +216,14 @@ class Message
      *
      * @return array<string, mixed>
      */
-    public static function error($code, $msg = '', $seq = '', $ref = '')
+    public static function error(int $code, string $msg = '', string $seq = '', string $ref = ''): array
     {
         return self::packet(self::CMD_ERROR, [
-            'code' => (int)$code,
+            'code' => $code,
             'msg'  => $msg !== '' ? $msg : self::codeMessage($code),
         ], [
-            'seq' => (string)$seq,
-            'ref' => (string)$ref,
+            'seq' => $seq,
+            'ref' => $ref,
         ]);
     }
 
@@ -234,7 +234,7 @@ class Message
      *
      * @return string
      */
-    public static function codeMessage($code)
+    public static function codeMessage(int $code): string
     {
         return self::$codeMessages[$code] ?? '未知错误';
     }
@@ -252,7 +252,7 @@ class Message
      *
      * @throws JsonException 含无法编码的值（如资源类型）时抛出
      */
-    public static function canonicalize($data)
+    public static function canonicalize($data): string
     {
         if (!is_array($data)) {
             return (string)$data;
@@ -271,7 +271,7 @@ class Message
      *
      * @return string
      */
-    public static function sign(array $packet, $secret)
+    public static function sign(array $packet, string $secret): string
     {
         $base = implode('|', [
             isset($packet['cmd']) ? (string)$packet['cmd'] : '',
@@ -282,7 +282,7 @@ class Message
             self::canonicalize($packet['data'] ?? []),
         ]);
 
-        return hash_hmac('sha256', $base, (string)$secret);
+        return hash_hmac('sha256', $base, $secret);
     }
 
     /**
@@ -295,7 +295,7 @@ class Message
      *
      * @return array<string, mixed> ['ok' => bool, 'code' => int, 'msg' => string]
      */
-    public static function verify(array $packet, array $authConfig)
+    public static function verify(array $packet, array $authConfig): array
     {
         if (empty($authConfig['sign_enable'])) {
             return ['ok' => true, 'code' => self::CODE_OK, 'msg' => 'ok'];
@@ -332,7 +332,7 @@ class Message
      *
      * @return void
      */
-    protected static function recursiveKsort(array &$data)
+    protected static function recursiveKsort(array &$data): void
     {
         ksort($data);
         foreach ($data as &$value) {

@@ -66,7 +66,7 @@ final class PushReceiver
      *
      * @return void
      */
-    public function onPush($cb)
+    public function onPush($cb): void
     {
         $this->onPushCb = $cb;
     }
@@ -78,7 +78,7 @@ final class PushReceiver
      *
      * @return void
      */
-    public function handle(array $packet)
+    public function handle(array $packet): void
     {
         $msgId = isset($packet['msg_id']) && (string)$packet['msg_id'] !== ''
             ? (string)$packet['msg_id']
@@ -110,7 +110,7 @@ final class PushReceiver
      *
      * @return int
      */
-    public function ackedCount()
+    public function ackedCount(): int
     {
         return $this->acked;
     }

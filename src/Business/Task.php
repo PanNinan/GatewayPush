@@ -77,10 +77,10 @@ class Task
      *
      * @return void
      */
-    public static function init(array $jobConfigs, $workerId = 0, $workerName = '')
+    public static function init(array $jobConfigs, int $workerId = 0, string $workerName = ''): void
     {
-        self::$workerId   = (int)$workerId;
-        self::$workerName = (string)$workerName;
+        self::$workerId   = $workerId;
+        self::$workerName = $workerName;
 
         $started = 0;
         foreach ($jobConfigs as $job) {
@@ -107,7 +107,7 @@ class Task
      *
      * @return bool
      */
-    public static function start(array $job)
+    public static function start(array $job): bool
     {
         $name = isset($job['name']) ? (string)$job['name'] : '';
         if ($name === '') {
@@ -195,7 +195,7 @@ class Task
      *
      * @return bool
      */
-    public static function stop($name)
+    public static function stop(string $name): bool
     {
         if (!isset(self::$jobs[$name])) {
             return false;
@@ -214,7 +214,7 @@ class Task
      *
      * @return array<string, mixed>
      */
-    public static function stats()
+    public static function stats(): array
     {
         $stats = [];
         foreach (self::$jobs as $name => $job) {
@@ -236,7 +236,7 @@ class Task
      *
      * @return int
      */
-    public static function workerId()
+    public static function workerId(): int
     {
         return self::$workerId;
     }
@@ -252,7 +252,7 @@ class Task
      *
      * @return void
      */
-    protected static function execute($name)
+    protected static function execute(string $name): void
     {
         if (!isset(self::$jobs[$name])) {
             return;
@@ -299,7 +299,7 @@ class Task
      *
      * @return bool
      */
-    protected static function matchScope(array $job)
+    protected static function matchScope(array $job): bool
     {
         $scope = isset($job['scope']) ? (string)$job['scope'] : 'first';
         if ($scope === 'all') {

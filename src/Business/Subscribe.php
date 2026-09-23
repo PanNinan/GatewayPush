@@ -54,7 +54,7 @@ class Subscribe
      *
      * @return void
      */
-    public static function init(array $config)
+    public static function init(array $config): void
     {
         self::$config = array_merge(self::$config, $config);
     }
@@ -64,7 +64,7 @@ class Subscribe
      *
      * @return bool
      */
-    public static function enabled()
+    public static function enabled(): bool
     {
         return !empty(self::$config['enable']);
     }
@@ -85,10 +85,10 @@ class Subscribe
      *
      * @return void
      */
-    public static function add($uid, $topic, ?callable $cb = null)
+    public static function add(string $uid, string $topic, ?callable $cb = null): void
     {
-        $uid   = (string)$uid;
-        $topic = (string)$topic;
+        $uid   = $uid;
+        $topic = $topic;
 
         if (!self::enabled() || $uid === '' || $topic === '') {
             if ($cb) {
@@ -166,10 +166,10 @@ class Subscribe
      *
      * @return void
      */
-    public static function remove($uid, $topic, ?callable $cb = null)
+    public static function remove(string $uid, string $topic, ?callable $cb = null): void
     {
-        $uid   = (string)$uid;
-        $topic = (string)$topic;
+        $uid   = $uid;
+        $topic = $topic;
 
         if ($uid === '' || $topic === '') {
             if ($cb) {
@@ -202,7 +202,7 @@ class Subscribe
      *
      * @return void
      */
-    public static function topicsOf($uid, callable $cb)
+    public static function topicsOf(string $uid, callable $cb): void
     {
         RedisClient::sMembers(RedisKeys::subscribeUid($uid), function ($topics) use ($cb) {
             $cb(is_array($topics) ? array_values($topics) : []);
@@ -217,9 +217,9 @@ class Subscribe
      *
      * @return void
      */
-    public static function subscribers($topic, callable $cb)
+    public static function subscribers(string $topic, callable $cb): void
     {
-        RedisClient::sMembers(RedisKeys::subscribeTopic((string)$topic), function ($uids) use ($cb) {
+        RedisClient::sMembers(RedisKeys::subscribeTopic($topic), function ($uids) use ($cb) {
             $cb(is_array($uids) ? array_values($uids) : []);
         });
     }
@@ -232,9 +232,9 @@ class Subscribe
      *
      * @return void
      */
-    public static function count($topic, callable $cb)
+    public static function count(string $topic, callable $cb): void
     {
-        RedisClient::sCard(RedisKeys::subscribeTopic((string)$topic), function ($count) use ($cb) {
+        RedisClient::sCard(RedisKeys::subscribeTopic($topic), function ($count) use ($cb) {
             $cb(is_int($count) ? $count : 0);
         });
     }
@@ -252,7 +252,7 @@ class Subscribe
      *
      * @return void
      */
-    protected static function applyTtl(array $keys)
+    protected static function applyTtl(array $keys): void
     {
         $ttl = (int)self::$config['ttl'];
         if ($ttl <= 0) {

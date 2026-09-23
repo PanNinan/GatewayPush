@@ -102,7 +102,7 @@ class ActionRunner
      *
      * @return list<string> 已装载的动作名列表
      */
-    public static function load(array $config)
+    public static function load(array $config): array
     {
         self::$declarations = [];
         self::$instances    = [];
@@ -180,7 +180,7 @@ class ActionRunner
      *
      * @return bool
      */
-    public static function loaded()
+    public static function loaded(): bool
     {
         return self::$loaded;
     }
@@ -190,7 +190,7 @@ class ActionRunner
      *
      * @return list<string>
      */
-    public static function registered()
+    public static function registered(): array
     {
         return array_keys(self::$declarations);
     }
@@ -200,7 +200,7 @@ class ActionRunner
      *
      * @return array<string, mixed>
      */
-    public static function declarations()
+    public static function declarations(): array
     {
         $out = [];
         foreach (self::$declarations as $name => $decl) {
@@ -227,9 +227,9 @@ class ActionRunner
      *
      * @return bool
      */
-    public static function has($action)
+    public static function has(string $action): bool
     {
-        return isset(self::$declarations[(string)$action]);
+        return isset(self::$declarations[$action]);
     }
 
     /**
@@ -241,9 +241,9 @@ class ActionRunner
      *
      * @return bool
      */
-    public static function httpExposed($action)
+    public static function httpExposed(string $action): bool
     {
-        $action = (string)$action;
+        $action = $action;
 
         return isset(self::$declarations[$action]) && !empty(self::$declarations[$action]['http']);
     }
@@ -253,7 +253,7 @@ class ActionRunner
      *
      * @return list<string>
      */
-    public static function httpActions()
+    public static function httpActions(): array
     {
         $names = [];
         foreach (self::$declarations as $name => $decl) {
@@ -272,9 +272,9 @@ class ActionRunner
      *
      * @return null|array<string, mixed>
      */
-    public static function declaration($action)
+    public static function declaration(string $action)
     {
-        $action = (string)$action;
+        $action = $action;
 
         return self::$declarations[$action] ?? null;
     }
@@ -297,7 +297,7 @@ class ActionRunner
      *
      * @return void
      */
-    public static function run($clientId, array $packet, $uid = '', $deviceId = '', $protocol = '')
+    public static function run(string $clientId, array $packet, string $uid = '', string $deviceId = '', string $protocol = ''): void
     {
         $channel = self::channelOf($clientId);
 
@@ -334,7 +334,7 @@ class ActionRunner
         // 动作级鉴权要求。
         // UDP 通道没有「连接」概念，也就没有连接级鉴权闸门，其身份完全依赖
         // 报文内 uid + 签名校验 —— 因此这道检查对 UDP 是唯一的业务侧鉴权防线。
-        if (!empty($decl['auth']) && (string)$uid === '' && Auth::enabled()) {
+        if (!empty($decl['auth']) && $uid === '' && Auth::enabled()) {
             Monitor::incr('action_fail');
             self::incrChannel($channel, 'fail');
             Logger::warn('动作要求鉴权但身份缺失，已拒绝', [
@@ -371,10 +371,10 @@ class ActionRunner
             $packet,
             $params,
             [
-                'client_id' => (string)$clientId,
-                'uid'       => (string)$uid,
-                'device_id' => (string)$deviceId,
-                'protocol'  => (string)$protocol,
+                'client_id' => $clientId,
+                'uid'       => $uid,
+                'device_id' => $deviceId,
+                'protocol'  => $protocol,
             ],
             $channel,
             $replyMode,
@@ -449,9 +449,9 @@ class ActionRunner
      *
      * @return string
      */
-    protected static function channelOf($clientId)
+    protected static function channelOf(string $clientId): string
     {
-        $clientId = (string)$clientId;
+        $clientId = $clientId;
 
         if (str_starts_with($clientId, Push::UDP_PREFIX)) {
             return ActionContext::CHANNEL_UDP;
@@ -475,7 +475,7 @@ class ActionRunner
      *
      * @return void
      */
-    protected static function incrChannel($channel, $suffix)
+    protected static function incrChannel(string $channel, string $suffix): void
     {
         if ($channel === ActionContext::CHANNEL_HTTP) {
             Monitor::incr('action_http_' . $suffix);
@@ -490,7 +490,7 @@ class ActionRunner
      *
      * @return callable function (array $packet): void
      */
-    protected static function sender($channel, $clientId)
+    protected static function sender(string $channel, string $clientId)
     {
         if ($channel === ActionContext::CHANNEL_UDP) {
             return function (array $packet) use ($clientId) {
@@ -517,7 +517,7 @@ class ActionRunner
      *
      * @return ActionInterface
      */
-    protected static function instance($action, array $decl)
+    protected static function instance(string $action, array $decl)
     {
         if (isset(self::$instances[$action])) {
             return self::$instances[$action];
@@ -543,7 +543,7 @@ class ActionRunner
      *
      * @return array<string, mixed> ['ws' => .., 'udp' => .., 'http' => ..]
      */
-    protected static function normalizeReply($reply)
+    protected static function normalizeReply($reply): array
     {
         if (is_array($reply)) {
             return [
@@ -583,7 +583,7 @@ class ActionRunner
      *
      * @return string
      */
-    protected static function pickReply($value)
+    protected static function pickReply($value): string
     {
         return (string)$value === ActionContext::REPLY_NONE
             ? ActionContext::REPLY_NONE
@@ -602,7 +602,7 @@ class ActionRunner
      *
      * @return void
      */
-    protected static function fail($clientId, array $packet, $channel, $code, $msg = '', $action = '')
+    protected static function fail(string $clientId, array $packet, string $channel, int $code, string $msg = '', string $action = ''): void
     {
         Monitor::incr('action_fail');
         self::incrChannel($channel, 'fail');
@@ -637,7 +637,7 @@ class ActionRunner
      *
      * @return void
      */
-    protected static function emitError($clientId, array $packet, $channel, $code, $msg = '')
+    protected static function emitError(string $clientId, array $packet, string $channel, int $code, string $msg = ''): void
     {
         if ($channel === ActionContext::CHANNEL_UDP) {
             return;

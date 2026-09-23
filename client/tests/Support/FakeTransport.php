@@ -25,18 +25,18 @@ final class FakeTransport implements TransportInterface
     private $closeCb;
     private $errCb;
 
-    public function connect()
+    public function connect(): void
     {
         $this->connectCalls++;
     }
 
-    public function send($frame)
+    public function send(string $frame): void
     {
-        $packet = json_decode((string)$frame, true);
+        $packet = json_decode($frame, true);
         $this->sentPackets[] = is_array($packet) ? $packet : [];
     }
 
-    public function close()
+    public function close(): void
     {
         $this->connected = false;
         if ($this->closeCb !== null) {
@@ -44,27 +44,27 @@ final class FakeTransport implements TransportInterface
         }
     }
 
-    public function isConnected()
+    public function isConnected(): bool
     {
         return $this->connected;
     }
 
-    public function onOpen(callable $cb)
+    public function onOpen(callable $cb): void
     {
         $this->openCb = $cb;
     }
 
-    public function onMessage(callable $cb)
+    public function onMessage(callable $cb): void
     {
         $this->msgCb = $cb;
     }
 
-    public function onClose(callable $cb)
+    public function onClose(callable $cb): void
     {
         $this->closeCb = $cb;
     }
 
-    public function onError(callable $cb)
+    public function onError(callable $cb): void
     {
         $this->errCb = $cb;
     }

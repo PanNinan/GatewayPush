@@ -52,7 +52,7 @@ class ParamValidator
      *
      * @return null|array<string, mixed> 失败返回 null
      */
-    public static function validate(array $rules, array $input, &$error = null)
+    public static function validate(array $rules, array $input, ?string &$error = null)
     {
         $error = '';
         $out   = [];
@@ -85,6 +85,7 @@ class ParamValidator
             }
 
             $value = $input[$name];
+            $reason = '';
 
             // 字符串类型的常规诉求是「去掉首尾空白」，在类型转换前完成
             if ($type === 'string' && is_string($value) && !empty($rule['trim'])) {
@@ -121,7 +122,7 @@ class ParamValidator
      *
      * @return null|mixed 失败返回 null
      */
-    protected static function cast($value, $type, $name, &$reason)
+    protected static function cast($value, string $type, string $name, string &$reason)
     {
         $reason = '';
 
@@ -219,7 +220,7 @@ class ParamValidator
      *
      * @return null|mixed 失败返回 null
      */
-    protected static function checkRange($value, $type, array $rule, $name, &$reason)
+    protected static function checkRange($value, string $type, array $rule, string $name, string &$reason)
     {
         $reason = '';
 

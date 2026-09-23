@@ -26,9 +26,9 @@ final class SubscribeApi extends AbstractApi
      *
      * @return string 本请求 seq
      */
-    public function subscribe($topic, $cb = null)
+    public function subscribe(string $topic, $cb = null): string
     {
-        return $this->call('subscribe', ['topic' => (string)$topic], $cb);
+        return $this->call('subscribe', ['topic' => $topic], $cb);
     }
 
     /**
@@ -39,9 +39,9 @@ final class SubscribeApi extends AbstractApi
      *
      * @return string 本请求 seq
      */
-    public function unsubscribe($topic, $cb = null)
+    public function unsubscribe(string $topic, $cb = null): string
     {
-        return $this->call('unsubscribe', ['topic' => (string)$topic], $cb);
+        return $this->call('unsubscribe', ['topic' => $topic], $cb);
     }
 
     /**
@@ -51,7 +51,7 @@ final class SubscribeApi extends AbstractApi
      *
      * @return string 本请求 seq
      */
-    public function topics($cb = null)
+    public function topics($cb = null): string
     {
         return $this->call('topics', [], $cb);
     }

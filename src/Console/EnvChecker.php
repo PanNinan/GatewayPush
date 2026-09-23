@@ -43,7 +43,7 @@ final class EnvChecker
      *
      * @throws RuntimeException 运行时目录无法创建时抛出
      */
-    public static function check(array $appConfig, array $gatewayConfig, array $businessConfig, array $actionConfig = [])
+    public static function check(array $appConfig, array $gatewayConfig, array $businessConfig, array $actionConfig = []): array
     {
         $runtime = $appConfig['runtime'];
         $lines   = [];

@@ -182,7 +182,7 @@ final class UdpTransport implements TransportInterface
     /**
      * {@inheritDoc}
      */
-    public function connect()
+    public function connect(): void
     {
         if ($this->conn !== null) {
             return; // 幂等：已在建连/已连接，重复调用无副作用
@@ -228,13 +228,13 @@ final class UdpTransport implements TransportInterface
      *
      * @throws ClientException 连接未建立时抛出
      */
-    public function send($frame)
+    public function send(string $frame): void
     {
         if ($this->conn === null || !$this->connected) {
             throw ClientException::state('UDP 连接未建立，无法发送报文');
         }
 
-        $frame = (string)$frame;
+        $frame = $frame;
 
         if ($this->warmup) {
             $this->queue[] = $frame;
@@ -248,7 +248,7 @@ final class UdpTransport implements TransportInterface
     /**
      * {@inheritDoc}
      */
-    public function close()
+    public function close(): void
     {
         $this->stopTimers();
 
@@ -260,7 +260,7 @@ final class UdpTransport implements TransportInterface
     /**
      * {@inheritDoc}
      */
-    public function isConnected()
+    public function isConnected(): bool
     {
         return $this->connected;
     }
@@ -268,7 +268,7 @@ final class UdpTransport implements TransportInterface
     /**
      * {@inheritDoc}
      */
-    public function onOpen(callable $cb)
+    public function onOpen(callable $cb): void
     {
         $this->onOpenCb = $cb;
     }
@@ -276,7 +276,7 @@ final class UdpTransport implements TransportInterface
     /**
      * {@inheritDoc}
      */
-    public function onMessage(callable $cb)
+    public function onMessage(callable $cb): void
     {
         $this->onMessageCb = $cb;
     }
@@ -284,7 +284,7 @@ final class UdpTransport implements TransportInterface
     /**
      * {@inheritDoc}
      */
-    public function onClose(callable $cb)
+    public function onClose(callable $cb): void
     {
         $this->onCloseCb = $cb;
     }
@@ -292,7 +292,7 @@ final class UdpTransport implements TransportInterface
     /**
      * {@inheritDoc}
      */
-    public function onError(callable $cb)
+    public function onError(callable $cb): void
     {
         $this->onErrorCb = $cb;
     }
@@ -306,7 +306,7 @@ final class UdpTransport implements TransportInterface
      *
      * @return int
      */
-    public function inflightCount()
+    public function inflightCount(): int
     {
         return count($this->inflight);
     }
@@ -316,7 +316,7 @@ final class UdpTransport implements TransportInterface
      *
      * @return int
      */
-    public function queuedCount()
+    public function queuedCount(): int
     {
         return count($this->queue);
     }
@@ -326,7 +326,7 @@ final class UdpTransport implements TransportInterface
      *
      * @return int
      */
-    public function droppedCount()
+    public function droppedCount(): int
     {
         return $this->dropped;
     }
@@ -346,7 +346,7 @@ final class UdpTransport implements TransportInterface
      *
      * @return void
      */
-    private function handleInbound($raw)
+    private function handleInbound(string $raw): void
     {
         if (count($this->inflight) > 0) {
             array_shift($this->inflight);
@@ -367,7 +367,7 @@ final class UdpTransport implements TransportInterface
      *
      * @return void
      */
-    private function doSend($frame)
+    private function doSend(string $frame): void
     {
         if ($this->conn === null || !$this->connected) {
             return; // 发送窗口期连接被关闭，帧随连接一起作废
@@ -384,7 +384,7 @@ final class UdpTransport implements TransportInterface
      *
      * @return void
      */
-    private function flushWarmup()
+    private function flushWarmup(): void
     {
         $this->warmup        = false;
         $this->warmupTimerId = null;
@@ -401,7 +401,7 @@ final class UdpTransport implements TransportInterface
      *
      * @return void
      */
-    private function scheduleWarmup()
+    private function scheduleWarmup(): void
     {
         if ($this->warmupTimerId !== null) {
             return;
@@ -416,7 +416,7 @@ final class UdpTransport implements TransportInterface
      *
      * @return void
      */
-    private function ensureRetransmit()
+    private function ensureRetransmit(): void
     {
         if (count($this->inflight) === 0 || $this->retransmitTimerId !== null) {
             return;
@@ -431,7 +431,7 @@ final class UdpTransport implements TransportInterface
      *
      * @return void
      */
-    private function handleRetransmit()
+    private function handleRetransmit(): void
     {
         $this->retransmitTimerId = null;
 
@@ -468,7 +468,7 @@ final class UdpTransport implements TransportInterface
      *
      * @return void
      */
-    private function stopRetransmit()
+    private function stopRetransmit(): void
     {
         if ($this->retransmitTimerId !== null) {
             $this->delTimer($this->retransmitTimerId);
@@ -481,7 +481,7 @@ final class UdpTransport implements TransportInterface
      *
      * @return void
      */
-    private function stopTimers()
+    private function stopTimers(): void
     {
         $this->stopRetransmit();
         if ($this->warmupTimerId !== null) {
@@ -499,9 +499,9 @@ final class UdpTransport implements TransportInterface
      *
      * @return int 计时器 ID
      */
-    private function addTimer($interval, $persistent, $fn)
+    private function addTimer(float $interval, bool $persistent, $fn): int
     {
-        return (int)($this->timerAdd)((float)$interval, $persistent, $fn);
+        return (int)($this->timerAdd)($interval, $persistent, $fn);
     }
 
     /**
@@ -511,7 +511,7 @@ final class UdpTransport implements TransportInterface
      *
      * @return void
      */
-    private function delTimer($timerId)
+    private function delTimer($timerId): void
     {
         if ($timerId) {
             ($this->timerDel)((int)$timerId);

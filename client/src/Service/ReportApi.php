@@ -27,11 +27,11 @@ final class ReportApi extends AbstractApi
      *
      * @return string 本请求 seq
      */
-    public function report($topic, $count = 1, $value = null, $cb = null)
+    public function report(string $topic, int $count = 1, $value = null, $cb = null): string
     {
         return $this->call('report', [
-            'topic' => (string)$topic,
-            'count' => (int)$count,
+            'topic' => $topic,
+            'count' => $count,
             'value' => $value,
         ], $cb);
     }

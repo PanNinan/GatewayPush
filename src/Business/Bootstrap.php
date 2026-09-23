@@ -99,7 +99,7 @@ class Bootstrap
      *
      * @return void
      */
-    public static function init(array $businessConfig, array $appConfig, array $gatewayConfig = [], array $actionConfig = [])
+    public static function init(array $businessConfig, array $appConfig, array $gatewayConfig = [], array $actionConfig = []): void
     {
         if (!self::roleEnabled('business')) {
             return;
@@ -182,7 +182,7 @@ class Bootstrap
      *
      * @return void
      */
-    public static function onConnect($clientId)
+    public static function onConnect(string $clientId): void
     {
         Monitor::incr('conn_open');
 
@@ -230,7 +230,7 @@ class Bootstrap
      *
      * @return void
      */
-    public static function onMessage($clientId, $rawMessage)
+    public static function onMessage(string $clientId, $rawMessage): void
     {
         Monitor::incr('msg_in');
 
@@ -264,7 +264,7 @@ class Bootstrap
      *
      * @return void
      */
-    public static function onWebSocketConnect($clientId, $data)
+    public static function onWebSocketConnect(string $clientId, $data): void
     {
         Logger::debug('WebSocket 握手完成', [
             'client_id' => $clientId,
@@ -282,7 +282,7 @@ class Bootstrap
      *
      * @return void
      */
-    public static function onClose($clientId)
+    public static function onClose(string $clientId): void
     {
         Monitor::incr('conn_close');
 
@@ -312,7 +312,7 @@ class Bootstrap
      *
      * @return void
      */
-    public static function onWorkerStop($worker)
+    public static function onWorkerStop($worker): void
     {
         Logger::info('BusinessWorker 已退出', [
             'id'       => $worker->id ?? 0,
@@ -338,7 +338,7 @@ class Bootstrap
      *
      * @return void
      */
-    public static function consumeUdpQueue()
+    public static function consumeUdpQueue(): void
     {
         $conf = self::$config['udp_queue'];
         if (empty($conf['enable'])) {
@@ -367,7 +367,7 @@ class Bootstrap
      *
      * @return void
      */
-    public static function consumeActionQueue()
+    public static function consumeActionQueue(): void
     {
         $conf = self::$config['action_queue'];
         if (empty($conf['enable'])) {
@@ -396,7 +396,7 @@ class Bootstrap
      *
      * @return void
      */
-    public static function consumePushQueue()
+    public static function consumePushQueue(): void
     {
         try {
             Push::consumeQueue();
@@ -420,7 +420,7 @@ class Bootstrap
      *
      * @return void
      */
-    public static function respond($clientId, array $packet)
+    public static function respond(string $clientId, array $packet): void
     {
         self::send($clientId, $packet);
     }
@@ -436,7 +436,7 @@ class Bootstrap
      *
      * @return void
      */
-    public static function respondError($clientId, $code, $msg = '', $seq = '', $ref = '')
+    public static function respondError(string $clientId, int $code, string $msg = '', string $seq = '', string $ref = ''): void
     {
         self::send($clientId, Message::error($code, $msg, $seq, $ref));
     }
@@ -449,7 +449,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function dispatch($clientId, array $packet)
+    protected static function dispatch(string $clientId, array $packet): void
     {
         // 鉴权拦截：未鉴权连接仅允许白名单指令
         if (Auth::enabled() && !self::isAuthed($clientId) && !Auth::isAllowedBeforeAuth($packet['cmd'])) {
@@ -520,7 +520,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function guardRate($clientId, array $packet, callable $next)
+    protected static function guardRate(string $clientId, array $packet, callable $next): void
     {
         if (!RateLimiter::enabled()) {
             $next();
@@ -570,7 +570,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function rejectRateLimited($clientId, array $packet)
+    protected static function rejectRateLimited(string $clientId, array $packet): void
     {
         if (!RateLimiter::shouldNotify()) {
             return;
@@ -610,7 +610,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function handleAuth($clientId, array $packet)
+    protected static function handleAuth(string $clientId, array $packet): void
     {
         if (!Auth::enabled()) {
             self::markAuthed($clientId);
@@ -690,7 +690,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function bindSession($clientId, $uid, $deviceId, array $packet)
+    protected static function bindSession(string $clientId, string $uid, string $deviceId, array $packet): void
     {
         $protocol = self::protocolOf($clientId);
 
@@ -699,8 +699,8 @@ class Bootstrap
             $reconnected = !empty($history);
 
             // 单对一定向推送要求设备唯一在线：同设备新连接上线时踢掉旧连接
-            if ($reconnected && isset($history['client_id']) && (string)$history['client_id'] !== (string)$clientId) {
-                $oldClientId = (string)$history['client_id'];
+            if ($reconnected && isset($history['client_id']) && $history['client_id'] !== $clientId) {
+                $oldClientId = $history['client_id'];
                 Logger::info('同设备重复登录，断开旧连接', [
                     'device_id' => $deviceId,
                     'old'       => $oldClientId,
@@ -769,7 +769,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function handlePing($clientId, array $packet)
+    protected static function handlePing(string $clientId, array $packet): void
     {
         if (self::isAuthed($clientId)) {
             Session::touch($clientId);
@@ -788,7 +788,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function handleClientAck($clientId, array $packet)
+    protected static function handleClientAck(string $clientId, array $packet): void
     {
         $data  = $packet['data'];
         $msgId = isset($data['msg_id']) ? (string)$data['msg_id'] : (string)$packet['seq'];
@@ -817,7 +817,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function handleData($clientId, array $packet)
+    protected static function handleData(string $clientId, array $packet): void
     {
         ActionRunner::run(
             $clientId,
@@ -849,7 +849,7 @@ class Bootstrap
      *
      * @return string 解析失败返回空串
      */
-    protected static function resolveUid($clientId, array $packet)
+    protected static function resolveUid(string $clientId, array $packet): string
     {
         if (self::protocolOf($clientId) !== Session::PROTOCOL_UDP) {
             return self::authedUid($clientId);
@@ -892,7 +892,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function registerDefaultRoutes()
+    protected static function registerDefaultRoutes(): void
     {
         if (self::$routesRegistered) {
             return;
@@ -939,7 +939,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function handleActionJob($raw)
+    protected static function handleActionJob(string $raw): void
     {
         $job = json_decode($raw, true);
         if (!is_array($job) || empty($job['packet']) || !is_array($job['packet'])) {
@@ -985,7 +985,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function handleUdpJob($raw)
+    protected static function handleUdpJob(string $raw): void
     {
         $job = json_decode($raw, true);
         if (!is_array($job) || empty($job['packet']) || !is_array($job['packet'])) {
@@ -1024,7 +1024,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function guardUdpRate($clientId, $uid, array $packet, callable $next)
+    protected static function guardUdpRate(string $clientId, string $uid, array $packet, callable $next): void
     {
         if (!RateLimiter::enabled()) {
             $next();
@@ -1071,7 +1071,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function processUdpJob(array $job, $clientId, $uid, $deviceId)
+    protected static function processUdpJob(array $job, string $clientId, string $uid, string $deviceId): void
     {
         // 应用层会话识别：UDP 以来源地址 + 报文身份建立会话。
         // 先用 EXISTS 探测会话是否已存在 —— UDP 无连接实体，只有在报文到达时
@@ -1156,7 +1156,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function send($clientId, array $packet)
+    protected static function send(string $clientId, array $packet): void
     {
         Monitor::incr('msg_out');
 
@@ -1204,7 +1204,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function closeClient($clientId, $code = 0, $msg = '', $seq = '', $ref = '')
+    protected static function closeClient(string $clientId, int $code = 0, string $msg = '', string $seq = '', string $ref = ''): void
     {
         // UDP 无连接实体，不存在「断开」动作，也不会进入 Gateway 连接表。
         // 其会话回收依赖心跳超时巡检（Session::checkHeartbeatTimeout），
@@ -1259,7 +1259,7 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function reject($clientId, $code, $msg, $seq = '', $ref = '')
+    protected static function reject(string $clientId, int $code, string $msg, string $seq = '', string $ref = ''): void
     {
         if (Auth::shouldCloseOnFail()) {
             self::closeClient($clientId, $code, $msg, $seq, $ref);
@@ -1277,9 +1277,9 @@ class Bootstrap
      *
      * @return void
      */
-    protected static function markAuthed($clientId, $uid = '')
+    protected static function markAuthed(string $clientId, string $uid = ''): void
     {
-        self::$authed[$clientId] = (string)$uid;
+        self::$authed[$clientId] = $uid;
         if (isset(self::$authTimers[$clientId])) {
             Timer::del((int)self::$authTimers[$clientId]);
             unset(self::$authTimers[$clientId]);
@@ -1293,7 +1293,7 @@ class Bootstrap
      *
      * @return bool
      */
-    protected static function isAuthed($clientId)
+    protected static function isAuthed(string $clientId): bool
     {
         return isset(self::$authed[$clientId]);
     }
@@ -1305,7 +1305,7 @@ class Bootstrap
      *
      * @return string
      */
-    protected static function authedUid($clientId)
+    protected static function authedUid(string $clientId): string
     {
         return isset(self::$authed[$clientId]) ? (string)self::$authed[$clientId] : '';
     }
@@ -1317,9 +1317,9 @@ class Bootstrap
      *
      * @return string
      */
-    protected static function protocolOf($clientId)
+    protected static function protocolOf(string $clientId): string
     {
-        return str_starts_with((string)$clientId, 'udp:') ? Session::PROTOCOL_UDP : Session::PROTOCOL_WS;
+        return str_starts_with($clientId, 'udp:') ? Session::PROTOCOL_UDP : Session::PROTOCOL_WS;
     }
 
     /**
@@ -1329,7 +1329,7 @@ class Bootstrap
      *
      * @return string
      */
-    protected static function internalSecret()
+    protected static function internalSecret(): string
     {
         $secret = isset(self::$appConfig['internal']['secret']) ? (string)self::$appConfig['internal']['secret'] : '';
         if ($secret === '') {
@@ -1346,7 +1346,7 @@ class Bootstrap
      *
      * @return bool
      */
-    protected static function roleEnabled($role)
+    protected static function roleEnabled(string $role): bool
     {
         $current = defined('APP_ROLE') ? APP_ROLE : 'all';
 
@@ -1360,7 +1360,7 @@ class Bootstrap
      *
      * @return int
      */
-    protected static function resolveCount($configured)
+    protected static function resolveCount($configured): int
     {
         if (DIRECTORY_SEPARATOR !== '/') {
             return 1;
