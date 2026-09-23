@@ -51,6 +51,7 @@ tests/
   Manual/                 手工验收脚本（P3/P4/P5 里程碑，需服务在线）
 docs/ postman/ resources/ 文档 / 接口集合 / 面板静态资源
 .github/workflows/ci.yml  CI：static(单一 PHP) / test(8.2~8.5 矩阵) / e2e(Redis+全角色)
+.gitattributes            行尾规范化（*.bat/*.cmd/*.ps1 → CRLF；*.sh/*.php → LF），见 §6
 runtime/                  运行时产物：logs/ pid/ phpstan/（已 gitignore，勿放人工资产）
 ```
 
@@ -124,7 +125,8 @@ php  tests/Manual/phpcs_business_rules_check.php     # phpcs 自定义嗅探器�
 - **`composer cs` 之后必须把 PHP 文件统一回 LF，再跑 `composer lint`**：`line_ending => false`
   之下 fixer 会写出**混合行尾**（它改写的行落成 LF、未触碰的行保留 CRLF），phpcs 会因此
   吐出上百条指向注释的假阳性（2026-09-22 实测 **155 errors**）。
-  ⚠ **不得触碰** `bin/start.bat` / `bin/start.ps1` 的 CRLF（项目硬约束）。
+  ⚠ **不得触碰** `bin/start.bat` / `bin/start.ps1` 的 CRLF（项目硬约束）——
+  该约束已由根目录 `.gitattributes` 的 `eol=crlf` 跨机器保证，见 §6。
 - ⚠ **别把「`cs:check` 报的一堆文件」直接归因成行尾**：必须**先统一行尾、再跑 `cs:check`**，
   剩下的才是真排版问题。2026-09-22 的 41 个里，**33 个是补标注引发 `phpdoc_align` 列对齐失配的真问题**、
   1 个是 `escape_implicit_backslashes` 真违规、只有 7 个是行尾假象 —— 整批归因行尾会让 CI 首跑就红。
@@ -225,8 +227,25 @@ php  tests/Manual/phpcs_business_rules_check.php     # phpcs 自定义嗅探器�
 | 文件 | 行尾 | 编码 |
 |---|---|---|
 | `*.sh`（含 `bin/start.sh`、`bin/dev/boot_all.sh`） | LF | 无 BOM |
+| `*.php` | LF | 无 BOM（`composer cs` 落地后须统一回 LF） |
 | `bin/start.ps1` | CRLF | UTF-8 **带 BOM** |
 | `bin/start.bat` | CRLF | **纯 ASCII**（不得含中文） |
+
+**行尾由根目录 `.gitattributes` 强制，不依赖 `core.autocrlf`**（2026-09-23 落地）：
+
+```
+* text=auto
+*.sh text eol=lf     *.php text eol=lf
+*.bat text eol=crlf  *.cmd text eol=crlf  *.ps1 text eol=crlf
+```
+
+- 不能简写成 `* text=auto eol=lf` —— 那会让两个 Windows 脚本在 Linux 检出下变成 LF，而
+  「`.bat` 必须 CRLF」是硬约束。必须显式开 `eol=crlf` 例外。
+- **`.gitattributes` 的 `eol` 只管 checkout，索引恒为 LF**（`text` 属性下 git 从不把 CRLF 存进索引）。
+  故此前 `bin/start.bat` 显示 `i/lf w/crlf` **不是缺陷** —— 缺陷是「CRLF 只靠本机 `autocrlf=true` 凑出来」，
+  Linux 检出 / `autocrlf=input` 的克隆会拿到 LF 脚本。加属性后这条依赖被切断。
+- 验证方式（与 `core.autocrlf` 无关）：`git config core.autocrlf false` → 删除文件 →
+  `git checkout -- 文件` → 复核仍为 CRLF 且 `start.ps1` BOM 仍在。
 
 复核行尾**不要用 `grep -c $'\r'`** —— 在 Git Bash 下 `$'\r'` 会展开成空串，恒等于总行数，
 会把 LF 文件误报成「全文 CRLF」。可靠方法：

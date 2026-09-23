@@ -18,7 +18,9 @@
 namespace GatewayPush\Console;
 
 use GatewayPush\Api\Bootstrap;
+use GatewayPush\Business\ActionInterface;
 use GatewayPush\Common\Env;
+use RuntimeException;
 
 /**
  * 运行环境自检（任何 workerman 命令之前强制执行）
@@ -39,7 +41,7 @@ final class EnvChecker
      *
      * @return array<int|string, mixed> ['ok' => bool, 'text' => string]
      *
-     * @throws \RuntimeException 运行时目录无法创建时抛出
+     * @throws RuntimeException 运行时目录无法创建时抛出
      */
     public static function check(array $appConfig, array $gatewayConfig, array $businessConfig, array $actionConfig = [])
     {
@@ -96,10 +98,8 @@ final class EnvChecker
         // 运行时目录
         foreach (['runtime_path', 'log_path', 'pid_path'] as $key) {
             $dir = $runtime[$key];
-            if (!is_dir($dir)) {
-                if (!mkdir($dir, 0o755, true) && !is_dir($dir)) {
-                    throw new \RuntimeException(sprintf('Directory "%s" was not created', $dir));
-                }
+            if (!is_dir($dir) && !mkdir($dir, 0o755, true) && !is_dir($dir)) {
+                throw new RuntimeException(sprintf('Directory "%s" was not created', $dir));
             }
             $writable = is_dir($dir) && is_writable($dir);
             $lines[]  = sprintf('[%-4s] 目录可写 %s', $writable ? 'OK' : 'FAIL', $dir);
@@ -312,7 +312,7 @@ final class EnvChecker
             foreach ($actionList as $name => $decl) {
                 $handler = is_array($decl) && isset($decl['handler']) ? (string)$decl['handler'] : '';
                 if ($handler === '' || !class_exists($handler)
-                    || !in_array('GatewayPush\Business\ActionInterface', (array)class_implements($handler), true)) {
+                    || !in_array(ActionInterface::class, (array)class_implements($handler), true)) {
                     $invalid[] = $name;
 
                     continue;

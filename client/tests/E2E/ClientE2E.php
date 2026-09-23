@@ -10,11 +10,14 @@
  * 与服务端 e2e 的差异（客户端视角的必要调整）：
  *   - [B] 越权探测：服务端可裸连发报文，客户端 SDK 走「关闭 auto_auth 后直接 request」等价路径；
  *   - [D] 篡改签名：以错误 secret 签发 Token + 签名（等价服务端篡改 sign 字段）；
+ *   - [H] 验签拒绝：服务端处于**免签模式**（API_SIGN_ENABLE=false 且监听回环地址）时，
+ *         「错误签名必被拒」这条断言不成立，先探测再标 SKIP（与 tests/Api/api_sign_check.js、
+ *         tests/Api/http_demo.php 口径一致），否则本地调试环境会一直误报失败；
  *   - [K] UDP 离线补投：UDP 无断连事件，改为「首次鉴权前先入队离线消息」再建会话补投；
  *   - [O] 订阅闭环：HTTP /push 仅支持 uid|device|client 三类目标，主题广播属服务端内部能力，
  *         客户端侧以「订阅关系 + 定向可达 + 退订」闭环对齐。
  *
- * 退出码：0 = 全部通过
+ * 退出码：0 = 全部通过（SKIP 不算失败）
  */
 
 define('BASE_PATH', dirname(__DIR__, 3));
@@ -41,7 +44,7 @@ $apiUrl = 'http://' . $apiUrl;
 $wsUrl  = 'ws://' . str_replace('0.0.0.0', '127.0.0.1', preg_replace('#^[a-z]+://#i', '', (string)$gatewayConfig['websocket']['listen']));
 $udpUrl = 'udp://' . str_replace('0.0.0.0', '127.0.0.1', preg_replace('#^[a-z]+://#i', '', (string)$gatewayConfig['udp']['listen']));
 
-$prefix = isset($argv[1]) ? (string)$argv[1] : ('ce2e-' . substr(md5((string)microtime(true)), 0, 6));
+$prefix = $argv[1] ?? ('ce2e-' . substr(md5((string)microtime(true)), 0, 6));
 
 echo "客户端 SDK 端到端对齐（uid 前缀 {$prefix}）\n";
 echo "ws={$wsUrl} udp={$udpUrl} api={$apiUrl}\n";
@@ -136,13 +139,13 @@ $waitState = function (SessionManager $session, $target, callable $ok, ?callable
     $timerId = Timer::add(0.1, function () use (&$timerId, &$waited, $session, $target, $ok, $fail) {
         $waited += 0.1;
         if ($session->state() === $target) {
-            Timer::del((int)$timerId);
+            Timer::del($timerId);
             $ok();
 
             return;
         }
         if ($waited > 12.0) {
-            Timer::del((int)$timerId);
+            Timer::del($timerId);
             if ($fail !== null) {
                 $fail();
             }
@@ -165,13 +168,13 @@ $waitUntil = function (callable $cond, $limit, callable $done) {
     $timerId = Timer::add(0.1, function () use (&$timerId, &$waited, $cond, $limit, $done) {
         $waited += 0.1;
         if ($cond()) {
-            Timer::del((int)$timerId);
+            Timer::del($timerId);
             $done(true);
 
             return;
         }
         if ($waited > $limit) {
-            Timer::del((int)$timerId);
+            Timer::del($timerId);
             $done(false);
         }
     });
@@ -184,12 +187,14 @@ $waitUntil = function (callable $cond, $limit, callable $done) {
  * @param string $label
  * @param bool   $ok
  * @param string $detail
+ * @param bool   $skip   免签模式下不适用的断言：既不算通过也不算失败，显式标记
  *
  * @return void
  */
-$record = function ($id, $label, $ok, $detail = '') use (&$results) {
-    $results[$id] = ['label' => $label, 'ok' => $ok, 'detail' => $detail];
-    echo sprintf("[%s] %s %s\n", $ok ? 'PASS' : 'FAIL', $id, $label) . ($detail !== '' ? "      {$detail}\n" : '');
+$record = function ($id, $label, $ok, $detail = '', $skip = false) use (&$results) {
+    $results[$id] = ['label' => $label, 'ok' => $ok, 'detail' => $detail, 'skip' => $skip];
+    $status       = $skip ? 'SKIP' : ($ok ? 'PASS' : 'FAIL');
+    echo sprintf("[%s] %s %s\n", $status, $id, $label) . ($detail !== '' ? "      {$detail}\n" : '');
 };
 
 $admin = null;
@@ -223,15 +228,23 @@ $worker->onWorkerStart = function () use (
         $step = array_shift($queue);
         if ($step === null) {
             echo "\n" . str_repeat('=', 62) . "\n";
-            $fail = 0;
+            $fail    = 0;
+            $skipped = 0;
             foreach ($results as $id => $r) {
-                if (!$r['ok']) {
+                if (!empty($r['skip'])) {
+                    $skipped++;
+                } elseif (!$r['ok']) {
                     $fail++;
                 }
-                echo sprintf("  %-3s %-28s %s\n", $id, $r['label'], $r['ok'] ? 'PASS' : 'FAIL');
+                echo sprintf("  %-3s %-28s %s\n", $id, $r['label'], !empty($r['skip']) ? 'SKIP' : ($r['ok'] ? 'PASS' : 'FAIL'));
             }
             echo str_repeat('=', 62) . "\n";
-            echo sprintf("客户端 E2E 结论：%d 用例，失败 %d\n", count($results), $fail);
+            echo sprintf(
+                "客户端 E2E 结论：%d 用例，失败 %d%s\n",
+                count($results),
+                $fail,
+                $skipped > 0 ? sprintf('（另 SKIP %d 项，免签模式）', $skipped) : ''
+            );
 
             exit($fail === 0 ? 0 : 1);
         }
@@ -467,13 +480,35 @@ $worker->onWorkerStart = function () use (
         $api = new AdminApi($apiUrl, $secret, 5.0);
         $api->health(function ($ok) use ($api, $apiUrl, $record, $next) {
             $api->stats(function ($ok2) use ($apiUrl, $record, $next, $ok) {
-                $bad = new AdminApi($apiUrl, 'bad-secret-for-negative-test', 5.0);
-                $bad->push('uid', 'nobody', ['case' => 'H'], [], function ($ok3, $data, $error) use ($record, $next, $ok, $ok2) {
-                    $status = is_array($error) && isset($error['status']) ? (int)$error['status'] : 0;
-                    $pass   = $ok && $ok2 && !$ok3 && $status === 401;
-                    $record('H', 'HTTP health/stats + 验签拒绝 401', $pass, 'health=' . var_export($ok, true)
-                        . ' stats=' . var_export($ok2, true) . ' badStatus=' . $status);
-                    $next();
+                // 免签模式探测：以**空密钥**请求 /stats（AdminApi::sign() 在空密钥时返回空串）。
+                // 服务端 API_SIGN_ENABLE=false 且监听回环地址时不验签 → 直接 200；
+                // 验签模式下空签名必被拒（401）→ 探测为 false。
+                // 探测只决定「错误签名被拒」这条断言是否适用，不改变其余断言。
+                $probe = new AdminApi($apiUrl, '', 5.0);
+                $probe->stats(function ($okProbe) use ($apiUrl, $record, $next, $ok, $ok2) {
+                    if ($okProbe) {
+                        // 免签模式：仅「错误签名被拒」不适用；health/stats 本身的失败仍须暴露，
+                        // 故 pass 与 skip 都取 $ok && $ok2 —— 二者不成立时按 FAIL 记录。
+                        $record(
+                            'H',
+                            'HTTP health/stats + 验签拒绝 401',
+                            $ok && $ok2,
+                            'health=' . var_export($ok, true) . ' stats=' . var_export($ok2, true)
+                                . '（免签模式 API_SIGN_ENABLE=false，验签拒绝断言不适用）',
+                            $ok && $ok2
+                        );
+                        $next();
+
+                        return;
+                    }
+                    $bad = new AdminApi($apiUrl, 'bad-secret-for-negative-test', 5.0);
+                    $bad->push('uid', 'nobody', ['case' => 'H'], [], function ($ok3, $data, $error) use ($record, $next, $ok, $ok2) {
+                        $status = is_array($error) && isset($error['status']) ? (int)$error['status'] : 0;
+                        $pass   = $ok && $ok2 && !$ok3 && $status === 401;
+                        $record('H', 'HTTP health/stats + 验签拒绝 401', $pass, 'health=' . var_export($ok, true)
+                            . ' stats=' . var_export($ok2, true) . ' badStatus=' . $status);
+                        $next();
+                    });
                 });
             });
         });

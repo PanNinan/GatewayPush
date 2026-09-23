@@ -1,6 +1,5 @@
 parameters:
 	ignoreErrors:
-
 		-
 			message: '#^Parameter \#2 \$value of static method GatewayPush\\Common\\RedisClient\:\:setNxEx\(\) expects string, int given\.$#'
 			identifier: argument.type
@@ -44,8 +43,6 @@ parameters:
 			path: src/Common/RedisClient.php
 
 		-
-			# 自检报告里首次 $ok = $ok && $verOk：$ok 初值为字面量 true，
-			# PHPStan 只在首次赋值时报此告警（后续 $ok 已退化为 bool）
 			message: '#^Left side of && is always true\.$#'
 			identifier: booleanAnd.leftAlwaysTrue
 			count: 1

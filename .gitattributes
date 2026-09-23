@@ -1,0 +1,26 @@
+# 行尾规范化 —— 根治跨机器的行尾漂移
+#
+# 背景：本仓工作区因 core.autocrlf=true 呈现 CRLF，但 bin/start.bat 与 bin/start.ps1
+# 在 **索引里存的是 LF**，只靠本机 autocrlf 在检出时凑成 CRLF。后果是：任何 Linux 检出、
+# 或 core.autocrlf=input / false 的克隆，拿到的都是 LF 脚本 —— 而这两个文件的 CRLF 是
+# 硬约束，跨机器目前并不成立：
+#   bin/start.bat 必须 CRLF + 纯 ASCII（CMD 按当前代码页解码、按字节推进文件指针，
+#                 多字节字符会错位并把残片当命令执行）
+#   bin/start.ps1 必须 CRLF + UTF-8 BOM
+#
+# 注意：不要简写成 `* text=auto eol=lf` —— 那会让两个脚本在 Linux 检出下变成 LF，
+# 硬约束依旧不成立。必须给 Windows 脚本显式开 eol=crlf 例外。
+
+* text=auto
+
+# Unix shell 脚本：必须 LF 无 BOM（shebang 带 \r 会导致 bad interpreter）
+*.sh text eol=lf
+
+# PHP 源码：项目约定工作区一律 LF（composer cs 落地后需统一回 LF，
+# 混合行尾会让 phpcs 产出指向注释的假阳性）
+*.php text eol=lf
+
+# Windows 脚本例外：见文件头说明，CRLF 为硬约束
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
