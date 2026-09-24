@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 服务层 —— TemplateRepository。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -31,7 +36,7 @@ final class TemplateRepository
      *
      * @return list<array<string, mixed>>
      *
-     * @throws Throwable
+     * @throws Throwable 数据库异常
      */
     public static function all(): array
     {
@@ -40,7 +45,8 @@ final class TemplateRepository
             ->orderBy('id', 'asc')
             ->limit(self::LIST_MAX)
             ->get()
-            ->all();
+            ->all()
+        ;
 
         $out = [];
         foreach ($rows as $row) {
@@ -55,7 +61,7 @@ final class TemplateRepository
      *
      * @return null|array<string, mixed>
      *
-     * @throws Throwable
+     * @throws Throwable 数据库异常
      */
     public static function find(int $id): ?array
     {
@@ -77,7 +83,7 @@ final class TemplateRepository
      *
      * @param int $excludeId 编辑时排除自身
      *
-     * @throws Throwable
+     * @throws Throwable 数据库异常
      */
     public static function nameTaken(string $name, int $excludeId = 0): bool
     {
@@ -92,13 +98,13 @@ final class TemplateRepository
     /**
      * 新建或更新一条模板。
      *
-     * @param null|int             $id   `null`/`<=0` 表示新建
-     * @param array<string, mixed> $row  {@see Pusher::validateTemplate()} 的 `row`
+     * @param null|int             $id      `null`/`<=0` 表示新建
+     * @param array<string, mixed> $row     {@see Pusher::validateTemplate()} 的 `row`
      * @param int                  $adminId
      *
      * @return int 模板 id（新建时是自增主键）
      *
-     * @throws Throwable
+     * @throws Throwable 数据库异常
      */
     public static function save(?int $id, array $row, int $adminId): int
     {
@@ -139,7 +145,7 @@ final class TemplateRepository
      *
      * @return bool 是否真的删掉了一行（`false` = 该 id 不存在）
      *
-     * @throws Throwable
+     * @throws Throwable 数据库异常
      */
     public static function delete(int $id): bool
     {

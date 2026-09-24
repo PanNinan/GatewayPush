@@ -1,5 +1,4 @@
 <?php
-
 /**
  * P4 验收脚本（手工执行，**不在** PHPUnit 套件内：它依赖后台、MySQL 与主项目 API 在线）。
  *
@@ -32,7 +31,6 @@
  * 退出码：0 = 全绿（SKIP 不算失败）；1 = 有 FAIL；2 = 安全闸拒绝执行。
  */
 
-use app\service\ActionOutcome;
 use app\service\Auditor;
 use app\service\GatewayPushClient;
 use app\service\OpsAction;
@@ -40,6 +38,7 @@ use app\service\RedisReader;
 use support\Db;
 
 require __DIR__ . '/../../vendor/autoload.php';
+
 require __DIR__ . '/../../support/bootstrap.php';
 
 const ADMIN_HOST = '127.0.0.1';
@@ -58,11 +57,11 @@ const FIX_UID = FIX . '-uid';
 
 /** 五个运维节点（键名与 `scripts/install.php` 一致） */
 const P4_NODES = [
-    'ops.kick' => 'app\\controller\\api\\OpsActionController@kick',
-    'ops.revoke' => 'app\\controller\\api\\OpsActionController@revoke',
-    'ops.unbind' => 'app\\controller\\api\\OpsActionController@unbind',
-    'ops.forceOffline' => 'app\\controller\\api\\OpsActionController@forceOffline',
-    'ops.purgeOffline' => 'app\\controller\\api\\OpsActionController@purgeOffline',
+    'ops.kick' => 'app\controller\api\OpsActionController@kick',
+    'ops.revoke' => 'app\controller\api\OpsActionController@revoke',
+    'ops.unbind' => 'app\controller\api\OpsActionController@unbind',
+    'ops.forceOffline' => 'app\controller\api\OpsActionController@forceOffline',
+    'ops.purgeOffline' => 'app\controller\api\OpsActionController@purgeOffline',
 ];
 
 /** 五个端点路径 */
@@ -268,9 +267,11 @@ function cleanAudit(): void
             ->where('target', 'like', FIX . '%')
             ->orWhere(function ($q) {
                 $q->whereIn('action', ['ops.kick', 'ops.revoke', 'ops.unbind', 'ops.force_offline'])
-                    ->where('created_at', '>=', RUN_START);
+                    ->where('created_at', '>=', RUN_START)
+                ;
             })
-            ->delete();
+            ->delete()
+        ;
         echo '  审计夹具已清理（删除 ' . $n . ' 行）' . PHP_EOL;
     } catch (Throwable $e) {
         echo '  [WARN] 审计夹具清理失败：' . $e->getMessage() . PHP_EOL;
@@ -302,6 +303,7 @@ if ($live && $redisOk) {
     if ($reader->sessionExists(FIX_CLIENT)) {
         echo PHP_EOL . '[ABORT] 夹具 client_id ' . FIX_CLIENT . ' 是**真实存在**的会话；'
             . '本脚本会断开它，拒绝执行。' . PHP_EOL;
+
         exit(2);
     }
 }
@@ -313,6 +315,7 @@ section('[1] 权限节点：DB 真值对拍（静态检查发现不了「install
 
 $dbRules = null;
 $dbRoles = null;
+
 try {
     $dbRules = Db::table('wa_rules')->pluck('id', 'key')->toArray();
     $dbRoles = Db::table('wa_roles')->get();
@@ -329,11 +332,13 @@ if (is_array($dbRules)) {
             $missing[] = $alias . ' → ' . $key;
         }
     }
-    check('★ 5 个 P4 运维节点都已写进 wa_rules（install.php 跑过才生效）',
+    check(
+        '★ 5 个 P4 运维节点都已写进 wa_rules（install.php 跑过才生效）',
         $missing === [],
         $missing === []
             ? 'wa_rules 共 ' . count($dbRules) . ' 条'
-            : '缺 ' . implode('、', $missing) . ' —— 运行 php scripts/install.php');
+            : '缺 ' . implode('、', $missing) . ' —— 运行 php scripts/install.php'
+    );
 
     // ⚠ `support\Db::table()->get()` 返回 Collection，必须先 `->all()`；
     //   元素一律 `(array)$r` + 键访问（`$r->rules` 会 "Attempt to read property on array"）。
@@ -355,9 +360,7 @@ if (is_array($dbRules)) {
         }
     }
 
-    $idOf = static function (string $key) use ($dbRules): int {
-        return (int)($dbRules[$key] ?? 0);
-    };
+    $idOf = static fn (string $key): int => (int)($dbRules[$key] ?? 0);
 
     if (is_array($viewerIds)) {
         $leak = [];
@@ -366,9 +369,12 @@ if (is_array($dbRules)) {
                 $leak[] = $alias;
             }
         }
-        check('★ DB 里只读角色拿不到**任何** P4 运维节点', $leak === [],
+        check(
+            '★ DB 里只读角色拿不到**任何** P4 运维节点',
+            $leak === [],
             $leak === [] ? '只读 ' . count($viewerIds) . ' 个节点，均无运维动作'
-                : '越权拿到 ' . implode('、', $leak));
+                : '越权拿到 ' . implode('、', $leak)
+        );
     } else {
         note('DB 只读角色', 'wa_roles 里找不到「只读」角色');
     }
@@ -380,10 +386,16 @@ if (is_array($dbRules)) {
                 $lack[] = $alias;
             }
         }
-        check('★ DB 里运维角色五个运维节点全有', $lack === [],
-            $lack === [] ? '运维共 ' . count($operatorIds) . ' 个节点' : '缺 ' . implode('、', $lack));
-        check('  运维角色节点数 = 41（行为日志 + 访问日志各页 + API；新增阶段须同步更新本断言）', count($operatorIds) === 41,
-            '实际 ' . count($operatorIds) . ' 个');
+        check(
+            '★ DB 里运维角色五个运维节点全有',
+            $lack === [],
+            $lack === [] ? '运维共 ' . count($operatorIds) . ' 个节点' : '缺 ' . implode('、', $lack)
+        );
+        check(
+            '  运维角色节点数 = 41（行为日志 + 访问日志各页 + API；新增阶段须同步更新本断言）',
+            count($operatorIds) === 41,
+            '实际 ' . count($operatorIds) . ' 个'
+        );
     } else {
         note('DB 运维角色', 'wa_roles 里找不到「运维」角色');
     }
@@ -396,6 +408,7 @@ section('[2] 主项目 API 可达性（后台的运维动作全部转签给它�
 
 $client = GatewayPushClient::fromConfig();
 $health = ['ok' => false];
+
 try {
     $health = $client->health();
 } catch (Throwable $e) {
@@ -427,8 +440,11 @@ if ($apiOk) {
     if ($signEnable) {
         check('★ 主项目开启验签 ⇒ 后台必须配置 API_SECRET（否则转签全 401）', $client->hasSecret());
     } else {
-        check('  主项目未开启验签（API_SIGN_ENABLE 未置真）⇒ 转签免签可用',
-            true, 'ADMIN_API_SECRET ' . ($client->hasSecret() ? '已配置' : '未配置，不影响本机回环调用'));
+        check(
+            '  主项目未开启验签（API_SIGN_ENABLE 未置真）⇒ 转签免签可用',
+            true,
+            'ADMIN_API_SECRET ' . ($client->hasSecret() ? '已配置' : '未配置，不影响本机回环调用')
+        );
     }
 } else {
     note('主项目 API', '不可达：' . $client->apiUrl()
@@ -453,13 +469,19 @@ if ($probe['status'] === 0) {
 if ($adminOnline) {
     foreach (P4_ENDPOINTS as $path) {
         $res = http('POST', $path, ['x' => '1'], ['Accept: application/json'], $jar);
-        check('★ 未登录 POST ' . $path . ' → 401/403/302',
-            in_array($res['status'], [401, 403, 302], true), 'HTTP ' . $res['status']);
+        check(
+            '★ 未登录 POST ' . $path . ' → 401/403/302',
+            in_array($res['status'], [401, 403, 302], true),
+            'HTTP ' . $res['status']
+        );
     }
     // 默认路由必须关闭：否则 `/api/ops-action/index` 这类路径会绕过显式路由上的 AdminAuth
     $def = http('POST', '/api/ops-action/kick', ['client_id' => FIX_CLIENT], ['Accept: application/json'], $jar);
-    check('  /api/ops-action/kick 未登录不带任何业务语义（不是 200）',
-        $def['status'] !== 200, 'HTTP ' . $def['status']);
+    check(
+        '  /api/ops-action/kick 未登录不带任何业务语义（不是 200）',
+        $def['status'] !== 200,
+        'HTTP ' . $def['status']
+    );
 }
 
 // ===========================================================================
@@ -495,19 +517,25 @@ if (!$adminOnline) {
     foreach ($badCases as [$path, $body, $label]) {
         $res = http('POST', $path, $body, ['Accept: application/json'], $jar);
         $b = jsonBody($res['body']);
-        check('  ' . $label . ' → HTTP 400 且 code≠0（校验层拒绝，不转签）',
+        check(
+            '  ' . $label . ' → HTTP 400 且 code≠0（校验层拒绝，不转签）',
             $res['status'] === 400 && (int)($b['code'] ?? 0) !== 0,
-            'HTTP ' . $res['status'] . ' code=' . ($b['code'] ?? '?'));
+            'HTTP ' . $res['status'] . ' code=' . ($b['code'] ?? '?')
+        );
     }
 
     $beforeAudit = 0;
+
     try {
         $beforeAudit = (int)Db::table('admin_audit_log')->where('target', 'like', FIX . '%')->count();
     } catch (Throwable $e) {
         echo '  [WARN] admin_audit_log 计数失败：' . $e->getMessage() . PHP_EOL;
     }
-    check('  ★ 校验失败的请求不落审计（否则审计表会被无效点击刷满）', $beforeAudit === 0,
-        'p4test-* 审计行 ' . $beforeAudit . ' 条');
+    check(
+        '  ★ 校验失败的请求不落审计（否则审计表会被无效点击刷满）',
+        $beforeAudit === 0,
+        'p4test-* 审计行 ' . $beforeAudit . ' 条'
+    );
 
     // ---- 4.2 真实调用（--live）----
     if (!$live) {
@@ -523,63 +551,97 @@ if (!$adminOnline) {
         $d = dataOf($b);
         $out = is_array($d['outcome'] ?? null) ? (array)$d['outcome'] : [];
 
-        check('★ kick → HTTP 200（成败看 outcome.state，不是看状态码）', $res['status'] === 200,
-            'HTTP ' . $res['status']);
-        check('  kick 回执 state=done（目标不存在不算失败：动作确实执行了）',
-            ($out['state'] ?? '') === 'done', 'state=' . ($out['state'] ?? '?'));
-        check('  kick 回执带 caveats（「不撤销 Token」必须原样说明）',
+        check(
+            '★ kick → HTTP 200（成败看 outcome.state，不是看状态码）',
+            $res['status'] === 200,
+            'HTTP ' . $res['status']
+        );
+        check(
+            '  kick 回执 state=done（目标不存在不算失败：动作确实执行了）',
+            ($out['state'] ?? '') === 'done',
+            'state=' . ($out['state'] ?? '?')
+        );
+        check(
+            '  kick 回执带 caveats（「不撤销 Token」必须原样说明）',
             str_contains((string)($d['caveats'] ?? ''), 'Token'),
-            (string)($d['caveats'] ?? ''));
+            (string)($d['caveats'] ?? '')
+        );
         check('  kick 审计已落库', ($d['audit_ok'] ?? null) === true);
 
         $rows = auditRows('ops.kick');
         check('  ★ admin_audit_log 真的多了一行 ops.kick', count($rows) >= 1, count($rows) . ' 行');
         if ($rows !== []) {
             $row = $rows[0];
-            check('  审计 target 为本次目标', (string)($row['target'] ?? '') === FIX_CLIENT,
-                (string)($row['target'] ?? ''));
-            check('  审计 params 里没有 token 键（ActionOutcome 只带业务参数）',
+            check(
+                '  审计 target 为本次目标',
+                (string)($row['target'] ?? '') === FIX_CLIENT,
+                (string)($row['target'] ?? '')
+            );
+            check(
+                '  审计 params 里没有 token 键（ActionOutcome 只带业务参数）',
                 !str_contains((string)($row['params'] ?? ''), 'token'),
-                (string)($row['params'] ?? ''));
+                (string)($row['params'] ?? '')
+            );
         }
 
         // ---- revoke：明文 token 只在这一次调用里出现 ----
         $token = 'p4.fake.' . bin2hex(random_bytes(6));
-        $res = http('POST', '/api/ops-action/revoke', ['token' => $token],
-            ['Accept: application/json'], $jar);
+        $res = http(
+            'POST',
+            '/api/ops-action/revoke',
+            ['token' => $token],
+            ['Accept: application/json'],
+            $jar
+        );
         $b = jsonBody($res['body']);
         $d = dataOf($b);
 
         check('★ revoke → HTTP 200', $res['status'] === 200, 'HTTP ' . $res['status']);
-        check('  revoke 回执只回指纹（32 位 hex，不回明文）',
+        check(
+            '  revoke 回执只回指纹（32 位 hex，不回明文）',
             preg_match('/^[0-9a-f]{32}$/', (string)($d['fingerprint'] ?? '')) === 1,
-            (string)($d['fingerprint'] ?? ''));
-        check('  指纹与主项目口径一致（sha256 前 32 位）',
+            (string)($d['fingerprint'] ?? '')
+        );
+        check(
+            '  指纹与主项目口径一致（sha256 前 32 位）',
             (string)($d['fingerprint'] ?? '') === OpsAction::fingerprint($token),
-            (string)($d['fingerprint'] ?? ''));
+            (string)($d['fingerprint'] ?? '')
+        );
         check('  ★ 响应体里不出现 Token 明文', !str_contains($res['body'], $token));
 
         $rows = auditRows('ops.revoke', true);
         check('  ★ admin_audit_log 真的多了一行 ops.revoke', count($rows) >= 1, count($rows) . ' 行');
         if ($rows !== []) {
             $params = (string)($rows[0]['params'] ?? '');
-            check('  ★★ 审计 params 里不含 Token 明文（唯一会流经后台的长期凭证）',
-                !str_contains($params, $token), $params);
+            check(
+                '  ★★ 审计 params 里不含 Token 明文（唯一会流经后台的长期凭证）',
+                !str_contains($params, $token),
+                $params
+            );
             check('  审计 params 含 fingerprint', str_contains($params, 'fingerprint'));
-            check('  ★ 审计 target 是指纹（revoke 没有别的标识，检索时按指纹找）',
+            check(
+                '  ★ 审计 target 是指纹（revoke 没有别的标识，检索时按指纹找）',
                 (string)($rows[0]['target'] ?? '') === (string)($d['fingerprint'] ?? ''),
-                (string)($rows[0]['target'] ?? ''));
+                (string)($rows[0]['target'] ?? '')
+            );
         }
 
         // ---- unbind：目标不存在时幂等 ----
-        $res = http('POST', '/api/ops-action/unbind', ['uid' => FIX_UID],
-            ['Accept: application/json'], $jar);
+        $res = http(
+            'POST',
+            '/api/ops-action/unbind',
+            ['uid' => FIX_UID],
+            ['Accept: application/json'],
+            $jar
+        );
         $b = jsonBody($res['body']);
         $d = dataOf($b);
         check('★ unbind → HTTP 200', $res['status'] === 200, 'HTTP ' . $res['status']);
-        check('  unbind 回执带 caveats（「不踢线」必须说明）',
+        check(
+            '  unbind 回执带 caveats（「不踢线」必须说明）',
             str_contains((string)($d['caveats'] ?? ''), '踢') || str_contains((string)($d['caveats'] ?? ''), '线'),
-            (string)($d['caveats'] ?? ''));
+            (string)($d['caveats'] ?? '')
+        );
 
         // ---- force-offline：不给 token → 只做一半，必须 partial=true ----
         $res = http('POST', '/api/ops-action/force-offline', [
@@ -589,11 +651,16 @@ if (!$adminOnline) {
         $d = dataOf($b);
 
         check('★ force-offline → HTTP 200', $res['status'] === 200, 'HTTP ' . $res['status']);
-        check('★ 未提供 token 时 partial=true（不假装完成了「禁止重连」）',
-            ($d['partial'] ?? null) === true, 'partial=' . var_export($d['partial'] ?? null, true));
+        check(
+            '★ 未提供 token 时 partial=true（不假装完成了「禁止重连」）',
+            ($d['partial'] ?? null) === true,
+            'partial=' . var_export($d['partial'] ?? null, true)
+        );
         check('  partial_note 非空', (string)($d['partial_note'] ?? '') !== '');
-        check('  两步里第一步被标记为 skipped',
-            (bool)(($d['steps'][0]['skipped'] ?? false)) === true);
+        check(
+            '  两步里第一步被标记为 skipped',
+            (bool)($d['steps'][0]['skipped'] ?? false) === true
+        );
 
         $rows = auditRows('ops.force_offline');
         check('  ★ admin_audit_log 真的多了一行 ops.force_offline', count($rows) >= 1, count($rows) . ' 行');
@@ -601,8 +668,11 @@ if (!$adminOnline) {
             $params = (string)($rows[0]['params'] ?? '');
             // ★ 键名必须叫 revoke_applied：叫 has_token 会被 Auditor::REDACT_PATTERN
             //   的子串匹配打成 ***，「禁止重连那一半做没做」在审计里就查不出来了。
-            check('  ★ 审计以 revoke_applied 键记「有没有做撤销」（且未被脱敏打码）',
-                str_contains($params, '"revoke_applied"') && !str_contains($params, '***'), $params);
+            check(
+                '  ★ 审计以 revoke_applied 键记「有没有做撤销」（且未被脱敏打码）',
+                str_contains($params, '"revoke_applied"') && !str_contains($params, '***'),
+                $params
+            );
             check('  审计 params 里不含 token 本身', !str_contains($params, 'p4.fake.'), $params);
         }
     }
@@ -617,16 +687,30 @@ if (!$adminOnline) {
         @unlink($vjar);
         if (login($vjar, $viewerUser, $viewerPass)) {
             foreach (P4_ENDPOINTS as $path) {
-                $res = http('POST', $path, ['client_id' => FIX_CLIENT, 'uid' => FIX_UID, 'token' => 'x'],
-                    ['Accept: application/json'], $vjar);
-                check('★ viewer POST ' . $path . ' → 403（只读角色不得有运维动作）',
-                    $res['status'] === 403, 'HTTP ' . $res['status']);
+                $res = http(
+                    'POST',
+                    $path,
+                    ['client_id' => FIX_CLIENT, 'uid' => FIX_UID, 'token' => 'x'],
+                    ['Accept: application/json'],
+                    $vjar
+                );
+                check(
+                    '★ viewer POST ' . $path . ' → 403（只读角色不得有运维动作）',
+                    $res['status'] === 403,
+                    'HTTP ' . $res['status']
+                );
             }
             $page = http('GET', '/sessions', [], ['Accept: text/html'], $vjar);
-            check('  viewer GET /sessions → 200（会话页对只读角色开放）',
-                $page['status'] === 200, 'HTTP ' . $page['status']);
-            check('  ★ viewer 的 /sessions 里运维区块是隐藏态（前端也不给按钮）',
-                str_contains($page['body'], 'id="sec-ops"'), '含节点（显隐由 perms 决定）');
+            check(
+                '  viewer GET /sessions → 200（会话页对只读角色开放）',
+                $page['status'] === 200,
+                'HTTP ' . $page['status']
+            );
+            check(
+                '  ★ viewer 的 /sessions 里运维区块是隐藏态（前端也不给按钮）',
+                str_contains($page['body'], 'id="sec-ops"'),
+                '含节点（显隐由 perms 决定）'
+            );
         } else {
             check('viewer 登录', false, $viewerUser . ' 登录失败');
         }
@@ -648,4 +732,5 @@ if ($live) {
 @unlink($jar);
 
 echo PHP_EOL . sprintf('PASS %d / FAIL %d / SKIP %d', $pass, $fail, $skip) . PHP_EOL;
+
 exit($fail > 0 ? 1 : 0);

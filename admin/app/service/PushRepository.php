@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 服务层 —— PushRepository。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -78,7 +83,7 @@ final class PushRepository
      *
      * @return int 自增主键
      *
-     * @throws Throwable 落库失败时上抛（**不得吞** —— 见类注释）
+     * @throws Throwable 数据库异常 落库失败时上抛（**不得吞** —— 见类注释）
      */
     public static function insert(array $row): int
     {
@@ -120,7 +125,7 @@ final class PushRepository
      *     filters: array<string, string>
      * }
      *
-     * @throws Throwable 见类注释（读空会撒谎，故不吞）
+     * @throws Throwable 数据库异常 见类注释（读空会撒谎，故不吞）
      */
     public static function page(array $filters, mixed $page, mixed $size, int $defaultSize): array
     {
@@ -141,7 +146,8 @@ final class PushRepository
             ->offset(($p - 1) * $s)
             ->limit($s)
             ->get()
-            ->all();
+            ->all()
+        ;
 
         $items = [];
         foreach ($rows as $row) {
@@ -163,7 +169,7 @@ final class PushRepository
      *
      * @return array{total: int, accepted: int, rejected: int, today: int}
      *
-     * @throws Throwable
+     * @throws Throwable 数据库异常
      */
     public static function summary(): array
     {
@@ -171,7 +177,8 @@ final class PushRepository
         $accepted = (int)Db::table('push_task')->where('status', self::STATUS_ACCEPTED)->count();
         $today = (int)Db::table('push_task')
             ->where('created_at', '>=', date('Y-m-d') . ' 00:00:00')
-            ->count();
+            ->count()
+        ;
 
         return [
             'total' => $total,

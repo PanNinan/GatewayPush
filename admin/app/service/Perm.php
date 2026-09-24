@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 服务层 —— Perm。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -37,7 +42,7 @@ final class Perm
      * 本项目不改它、也不保证它在所有上下文（如 PHPUnit CLI）下都被加载。
      * 用字符串 + 守卫可以避免「类不存在」直接致命错误，且让依赖关系在代码里显式可见。
      */
-    private const AUTH_CLASS = 'plugin\\admin\\api\\Auth';
+    private const AUTH_CLASS = 'plugin\admin\api\Auth';
 
     /**
      * 批量求值。

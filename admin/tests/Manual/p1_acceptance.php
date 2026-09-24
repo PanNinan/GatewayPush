@@ -1,5 +1,4 @@
 <?php
-
 /**
  * P1 验收脚本（手工执行，**不在** PHPUnit 套件内：它依赖后台服务与主项目在线）。
  *
@@ -27,6 +26,7 @@ use app\service\RedisReader;
 use app\service\Settings;
 
 require __DIR__ . '/../../vendor/autoload.php';
+
 require __DIR__ . '/../../support/bootstrap.php';
 
 const ADMIN_HOST = '127.0.0.1';
@@ -230,11 +230,16 @@ if (!$ping['ok']) {
         $now
     );
 
-    check('derived 三段齐全（ratios/processes/alerts）',
-        isset($derived['ratios'], $derived['processes'], $derived['alerts']));
+    check(
+        'derived 三段齐全（ratios/processes/alerts）',
+        isset($derived['ratios'], $derived['processes'], $derived['alerts'])
+    );
 
-    check('派生率条数 = 9（规格表全量）', count($derived['ratios']) === 9,
-        '实际 ' . count($derived['ratios']));
+    check(
+        '派生率条数 = 9（规格表全量）',
+        count($derived['ratios']) === 9,
+        '实际 ' . count($derived['ratios'])
+    );
 
     // 真实数据下「分母为 0 → null」的语义必须成立（本项目今日可能就没流量）
     $nullish = 0;
@@ -247,12 +252,15 @@ if (!$ping['ok']) {
             $nullish++;
         }
     }
-    check('分母为 0 的项一律 value=null（无样本 ≠ 0%）', $fail === 0,
-        $nullish . '/' . count($derived['ratios']) . ' 项当前无样本');
+    check(
+        '分母为 0 的项一律 value=null（无样本 ≠ 0%）',
+        $fail === 0,
+        $nullish . '/' . count($derived['ratios']) . ' 项当前无样本'
+    );
 
     foreach ($derived['ratios'] as $r) {
         printf(
-            "      %-14s %8s  %-4s  den=%-8s %s%s",
+            '      %-14s %8s  %-4s  den=%-8s %s%s',
             $r['key'],
             $r['value'] === null ? '—' : number_format($r['value'], 2) . '%',
             $r['level'],
@@ -266,14 +274,20 @@ if (!$ping['ok']) {
     $procs = $derived['processes'];
     $alive = array_values(array_filter($procs, static fn (array $p): bool => $p['alive'] === true));
 
-    check('进程表解析出 ≥ 1 个进程', count($procs) > 0,
-        '共 ' . count($procs) . ' 个 PID，其中存活 ' . count($alive));
-    check('至少 1 个进程存活', count($alive) > 0,
-        count($alive) > 0 ? '' : '主项目 MONITOR_ENABLE=false？或 6 角色未启动？');
+    check(
+        '进程表解析出 ≥ 1 个进程',
+        count($procs) > 0,
+        '共 ' . count($procs) . ' 个 PID，其中存活 ' . count($alive)
+    );
+    check(
+        '至少 1 个进程存活',
+        count($alive) > 0,
+        count($alive) > 0 ? '' : '主项目 MONITOR_ENABLE=false？或 6 角色未启动？'
+    );
 
     foreach ($procs as $p) {
         printf(
-            "      pid=%-6d role=%-10s worker=%-4s mem=%-10s age=%-5s %s%s",
+            '      pid=%-6d role=%-10s worker=%-4s mem=%-10s age=%-5s %s%s',
             $p['pid'],
             $p['role'],
             (string)$p['worker_id'],
@@ -289,8 +303,10 @@ if (!$ping['ok']) {
         }
     }
 
-    check('所有进程都能解析出角色（proc: 字段前缀未脱钩）',
-        array_filter($procs, static fn (array $p): bool => $p['role'] === '?') === []);
+    check(
+        '所有进程都能解析出角色（proc: 字段前缀未脱钩）',
+        array_filter($procs, static fn (array $p): bool => $p['role'] === '?') === []
+    );
 
     // ---- live() 结构 ----
     $agg = new MonitorAggregator();
@@ -313,22 +329,32 @@ if (!$ping['ok']) {
         }
     }
     check('live().redis 字段齐全（8 项）', true);
-    check('live().redis.report_at 已解析', $live['redis']['report_at'] > 0,
-        'report_at=' . $live['redis']['report_at'] . '（0 表示 gauge 里没有 report_at）');
+    check(
+        'live().redis.report_at 已解析',
+        $live['redis']['report_at'] > 0,
+        'report_at=' . $live['redis']['report_at'] . '（0 表示 gauge 里没有 report_at）'
+    );
 
     // ---- collect() 含 derived 与 report_at ----
     $full = (new MonitorAggregator())->collect();
     check('collect() 含 derived', isset($full['derived']['ratios'], $full['derived']['processes']));
-    check('collect().redis 也带 report_at（避免慢 tick 把面板字段擦成 —）',
-        isset($full['redis']['report_at']));
+    check(
+        'collect().redis 也带 report_at（避免慢 tick 把面板字段擦成 —）',
+        isset($full['redis']['report_at'])
+    );
 
     // ---- 阈值设置可解析 ----
     $thresholds = Settings::json('monitor.ratio_thresholds');
-    check('monitor.ratio_thresholds 可解析（{} → 空数组，全部走类常量默认）',
-        is_array($thresholds), '共 ' . count($thresholds) . ' 项覆盖');
-    check('monitor.slow_interval 已入库',
+    check(
+        'monitor.ratio_thresholds 可解析（{} → 空数组，全部走类常量默认）',
+        is_array($thresholds),
+        '共 ' . count($thresholds) . ' 项覆盖'
+    );
+    check(
+        'monitor.slow_interval 已入库',
         Settings::int('monitor.slow_interval', 0) > 0,
-        (string)Settings::int('monitor.slow_interval', 0) . 's');
+        (string)Settings::int('monitor.slow_interval', 0) . 's'
+    );
 }
 
 // ===========================================================================
@@ -343,22 +369,37 @@ $jar = sys_get_temp_dir() . '/gw_p1_' . getmypid() . '.txt';
 $js = http('GET', '/static/dashboard.js');
 $css = http('GET', '/static/dashboard.css');
 
-check('GET /static/dashboard.js → 200', $js['status'] === 200 && strlen($js['body']) > 1000,
-    'HTTP ' . $js['status'] . ' ' . strlen($js['body']) . ' bytes');
-check('GET /static/dashboard.css → 200', $css['status'] === 200 && strlen($css['body']) > 500,
-    'HTTP ' . $css['status'] . ' ' . strlen($css['body']) . ' bytes');
-check('JS 里没有 innerHTML（XSS 纪律：一律走 textContent）',
-    !preg_match('/\.innerHTML\s*=/', $js['body']), '若失败说明引入了 HTML 拼接面');
+check(
+    'GET /static/dashboard.js → 200',
+    $js['status'] === 200 && strlen($js['body']) > 1000,
+    'HTTP ' . $js['status'] . ' ' . strlen($js['body']) . ' bytes'
+);
+check(
+    'GET /static/dashboard.css → 200',
+    $css['status'] === 200 && strlen($css['body']) > 500,
+    'HTTP ' . $css['status'] . ' ' . strlen($css['body']) . ' bytes'
+);
+check(
+    'JS 里没有 innerHTML（XSS 纪律：一律走 textContent）',
+    !preg_match('/\.innerHTML\s*=/', $js['body']),
+    '若失败说明引入了 HTML 拼接面'
+);
 
 // ---- 未登录 ----
 $live = http('GET', '/api/monitor/live', [], ['Accept: application/json'], $jar);
-check('未登录 GET /api/monitor/live → HTTP 401',
-    $live['status'] === 401, 'HTTP ' . $live['status']);
+check(
+    '未登录 GET /api/monitor/live → HTTP 401',
+    $live['status'] === 401,
+    'HTTP ' . $live['status']
+);
 check('未登录响应体 code=401', (int)(jsonBody($live['body'])['code'] ?? 0) === 401);
 
 $page = http('GET', '/dashboard', [], ['Accept: text/html'], $jar);
-check('未登录 GET /dashboard → 302 到登录页', $page['status'] === 302,
-    'HTTP ' . $page['status'] . ' Location=' . ($page['headers']['location'] ?? '-'));
+check(
+    '未登录 GET /dashboard → 302 到登录页',
+    $page['status'] === 302,
+    'HTTP ' . $page['status'] . ' Location=' . ($page['headers']['location'] ?? '-')
+);
 
 // ---- 登录 ----
 if ($adminUser === '' || $adminPass === '') {
@@ -377,48 +418,62 @@ if ($adminUser === '' || $adminPass === '') {
     check('页面引用 /static/dashboard.js', str_contains($html, '/static/dashboard.js'));
     check('页面引用 /static/dashboard.css', str_contains($html, '/static/dashboard.css'));
     // P1 的核心变化：整页重载已移除，改由 JS 轮询
-    check('★ 页面已移除 <meta http-equiv="refresh">（P1 不再整页重载）',
-        !str_contains($html, 'http-equiv="refresh"'));
+    check(
+        '★ 页面已移除 <meta http-equiv="refresh">（P1 不再整页重载）',
+        !str_contains($html, 'http-equiv="refresh"')
+    );
 
     // ---- 快 tick ----
     $live = http('GET', '/api/monitor/live', [], ['Accept: application/json'], $jar);
     $liveBody = jsonBody($live['body']);
 
-    check('GET /api/monitor/live → 200 + code=0',
+    check(
+        'GET /api/monitor/live → 200 + code=0',
         $live['status'] === 200 && (int)($liveBody['code'] ?? -1) === 0,
-        'HTTP ' . $live['status'] . ' code=' . ($liveBody['code'] ?? '?'));
+        'HTTP ' . $live['status'] . ' code=' . ($liveBody['code'] ?? '?')
+    );
 
     $liveData = is_array($liveBody['data'] ?? null) ? $liveBody['data'] : [];
     check('live.data.derived.ratios 非空', !empty($liveData['derived']['ratios']));
     check('live.data.derived.processes 非空', !empty($liveData['derived']['processes']));
     check('live.data.redis.report_at 有值', (int)($liveData['redis']['report_at'] ?? 0) > 0);
-    check('★ live.data 内无 api 段（快 tick 未打主项目 HTTP）',
-        !array_key_exists('api', $liveData));
+    check(
+        '★ live.data 内无 api 段（快 tick 未打主项目 HTTP）',
+        !array_key_exists('api', $liveData)
+    );
 
     // ---- 慢 tick ----
     $sum = http('GET', '/api/monitor/summary', [], ['Accept: application/json'], $jar);
     $sumBody = jsonBody($sum['body']);
     $sumData = is_array($sumBody['data'] ?? null) ? $sumBody['data'] : [];
 
-    check('GET /api/monitor/summary → 200 + code=0',
+    check(
+        'GET /api/monitor/summary → 200 + code=0',
         $sum['status'] === 200 && (int)($sumBody['code'] ?? -1) === 0,
-        'HTTP ' . $sum['status'] . ' code=' . ($sumBody['code'] ?? '?'));
-    check('summary 含 self_check 与 db_size',
-        isset($sumData['redis']['self_check']['checks'], $sumData['redis']['db_size']));
+        'HTTP ' . $sum['status'] . ' code=' . ($sumBody['code'] ?? '?')
+    );
+    check(
+        'summary 含 self_check 与 db_size',
+        isset($sumData['redis']['self_check']['checks'], $sumData['redis']['db_size'])
+    );
     check('summary 含主项目 api 段（慢 tick 才打）', array_key_exists('api', $sumData));
-    check('summary 快慢字段同源：redis.report_at 与 live 一致',
+    check(
+        'summary 快慢字段同源：redis.report_at 与 live 一致',
         (int)($liveData['redis']['report_at'] ?? -2) === (int)($sumData['redis']['report_at'] ?? -1),
-        'live=' . ($liveData['redis']['report_at'] ?? '?') . ' summary=' . ($sumData['redis']['report_at'] ?? '?'));
+        'live=' . ($liveData['redis']['report_at'] ?? '?') . ' summary=' . ($sumData['redis']['report_at'] ?? '?')
+    );
 
     // ---- 与主项目的三方交叉比对 ----
     if ($ping['ok'] && !empty($sumData['api']['stats'])) {
         $apiGauge = $sumData['api']['stats']['gauge'] ?? [];
-        check('gauge field 数三方一致（Redis 直读 = live = 主项目 /stats）',
+        check(
+            'gauge field 数三方一致（Redis 直读 = live = 主项目 /stats）',
             count($apiGauge) === count($reader->gauge())
             && count($liveData['redis']['gauge'] ?? []) === count($reader->gauge()),
             '主项目=' . count($apiGauge)
             . ' 后台直读=' . count($reader->gauge())
-            . ' live=' . count($liveData['redis']['gauge'] ?? []));
+            . ' live=' . count($liveData['redis']['gauge'] ?? [])
+        );
     } else {
         note('三方交叉比对', '依赖 Redis 与主项目 /stats 同时可用');
     }
@@ -426,9 +481,11 @@ if ($adminUser === '' || $adminPass === '') {
     // ---- 未注册路由（HTTP 200 + code=404：webman-admin 插件异常处理器的口径）----
     $nope = http('GET', '/api/monitor/definitely-not-a-route', [], ['Accept: application/json'], $jar);
     $nopeBody = jsonBody($nope['body']);
-    check('未注册路由返回业务码 404（注意：HTTP 仍为 200，属插件异常处理器口径）',
+    check(
+        '未注册路由返回业务码 404（注意：HTTP 仍为 200，属插件异常处理器口径）',
         (int)($nopeBody['code'] ?? 0) === 404,
-        'HTTP ' . $nope['status'] . ' code=' . ($nopeBody['code'] ?? '?'));
+        'HTTP ' . $nope['status'] . ' code=' . ($nopeBody['code'] ?? '?')
+    );
 }
 
 @unlink($jar);

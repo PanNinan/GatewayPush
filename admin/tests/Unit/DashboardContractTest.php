@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin 单测 —— DashboardContractTest。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -230,14 +235,12 @@ final class DashboardContractTest extends TestCase
         $found = array_merge($found, $m2[1]);
 
         // 只保留看着像 DOM id 的字面量：排除 URL / 选择器 / 类名之类
-        $found = array_filter($found, static function (string $id): bool {
-            return $id !== ''
+        $found = array_filter($found, static fn (string $id): bool => $id !== ''
                 && !str_contains($id, '/')
                 && !str_contains($id, '#')
                 && !str_contains($id, '.')
                 && !str_contains($id, ':')
-                && preg_match('/^[A-Za-z][A-Za-z0-9_-]*$/', $id) === 1;
-        });
+                && preg_match('/^[A-Za-z][A-Za-z0-9_-]*$/', $id) === 1);
 
         return array_values(array_unique($found));
     }

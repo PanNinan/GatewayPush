@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 页面 / API 控制器 —— TracePageController。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -24,6 +29,9 @@ use support\Response;
  */
 final class TracePageController
 {
+    /**
+     * 渲染追踪页骨架。
+     */
     public function index(Request $request): Response
     {
         return view('trace/index', [

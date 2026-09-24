@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 服务层 —— RedisReader。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -54,7 +59,6 @@ final class RedisReader
         return is_scalar($value) ? (string)$value : '';
     }
 
-
     /**
      * 连通性与延迟探测。
      *
@@ -63,6 +67,7 @@ final class RedisReader
     public function ping(): array
     {
         $start = microtime(true);
+
         try {
             // 走 `Redis::connection()->command()` 而非门面的 `Redis::command()`：
             // 前者是 support\Redis 的**真实类型化方法**，返回 Illuminate\Redis\Connections\Connection
@@ -97,7 +102,7 @@ final class RedisReader
     /**
      * 指标 counter 快照（`metrics:counter:{Ymd}` Hash）。
      *
-     * @param string|null $date `Ymd`（如 20260923）；null = 今天。**不是** `Y-m-d`。
+     * @param null|string $date `Ymd`（如 20260923）；null = 今天。**不是** `Y-m-d`。
      *
      * @return array<string, string>
      */
@@ -460,12 +465,12 @@ final class RedisReader
      * `MATCH=gwpush:*` 能命中 `gwpush:metrics:gauge`（若被二次加前缀则必然空）。
      *
      * @param string $logicalPattern 逻辑键模式，如 `auth:revoked:*`（**不含**前缀）
-     * @param int    $count           每轮 COUNT 提示值
-     * @param int    $maxRounds       轮次上限（防御游标不收敛）
-     * @param int    $maxKeys         累计键数上限
+     * @param int    $count          每轮 COUNT 提示值
+     * @param int    $maxRounds      轮次上限（防御游标不收敛）
+     * @param int    $maxKeys        累计键数上限
      *
      * @return array{keys: list<string>, scanned: int, rounds: int, truncated: bool}
-     *         `keys` 为**已剥离前缀**的逻辑键名
+     *                                                                               `keys` 为**已剥离前缀**的逻辑键名
      */
     public function scanKeys(string $logicalPattern, int $count = 200, int $maxRounds = 50, int $maxKeys = 2000): array
     {
@@ -499,12 +504,14 @@ final class RedisReader
 
                 if (count($keys) >= $maxKeys) {
                     $truncated = true;
+
                     break 2;
                 }
             }
 
             if ($rounds >= $maxRounds) {
                 $truncated = $cursor !== '0';
+
                 break;
             }
         } while ($cursor !== '0');
@@ -608,9 +615,9 @@ final class RedisReader
      * 前缀**仍会由客户端自动施加**（`KeyPrefixProcessor` 会处理管道内的命令），
      * 故这里照旧只传 `RedisKeys` 产出的逻辑键名。
      *
-     * @param callable(object): void $enqueue 在 pipeline 上下文里逐键入队
-     * @param list<string>           $logicalKeys
-     * @param callable(string): mixed $single    单个键的读取方式（兜底路径）
+     * @param callable(object): void  $enqueue     在 pipeline 上下文里逐键入队
+     * @param list<string>            $logicalKeys
+     * @param callable(string): mixed $single      单个键的读取方式（兜底路径）
      *
      * @return list<mixed> 与 $logicalKeys 同序
      */

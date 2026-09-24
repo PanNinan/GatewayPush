@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin 单测 —— PusherTest。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -212,8 +217,11 @@ final class PusherTest extends TestCase
 
         $this->assertFalse($r['ok']);
         $this->assertGreaterThan(64, $r['bytes']);
-        $this->assertStringContainsString('静默丢弃', implode(' ', $r['errors']),
-            '报错必须说明「服务端会静默丢弃」这一事实，否则用户会以为后台在无理由拦截');
+        $this->assertStringContainsString(
+            '静默丢弃',
+            implode(' ', $r['errors']),
+            '报错必须说明「服务端会静默丢弃」这一事实，否则用户会以为后台在无理由拦截'
+        );
     }
 
     public function testValidatePushAcceptsPayloadExactlyAtLimit(): void

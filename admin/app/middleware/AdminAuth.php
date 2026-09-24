@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 中间件 —— AdminAuth。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -27,6 +32,9 @@ use Webman\MiddlewareInterface;
  */
 final class AdminAuth implements MiddlewareInterface
 {
+    /**
+     * 后台登录鉴权：未登录一律拒。
+     */
     public function process(Request $request, callable $handler): Response
     {
         $controller = $request->controller;
@@ -41,6 +49,7 @@ final class AdminAuth implements MiddlewareInterface
 
         $code = 0;
         $msg = '';
+
         try {
             $allowed = Auth::canAccess($controller, is_string($action) ? $action : '', $code, $msg);
         } catch (Throwable $e) {

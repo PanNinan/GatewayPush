@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 页面 / API 控制器 —— ActionController。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -54,12 +59,15 @@ final class ActionController
      */
     public const POLL_DELAYS_MS = [1000, 2000, 4000, 8000, 8000];
 
+    /**
+     * 渲染动作页骨架。
+     */
     public function index(Request $request): Response
     {
         return view('action/index', [
             'title' => 'GatewayPush 动作调试',
             'config' => [
-                /* ---- 端点 ---- */
+                // ---- 端点 ----
                 'invoke_url' => '/api/action',
                 'result_base' => '/api/action/',
 
@@ -69,13 +77,13 @@ final class ActionController
                 'actions' => ActionCatalog::forUi(),
                 'names' => ActionCatalog::names(),
 
-                /* ---- 时限与服务端口径 ---- */
+                // ---- 时限与服务端口径 ----
                 'wait_ms' => ActionCatalog::WAIT_MS_MIRROR,
                 'result_ttl' => ActionCatalog::RESULT_TTL_MIRROR,
                 'request_id_pattern' => ActionCatalog::REQUEST_ID_PATTERN,
                 'id_max_len' => SessionInspector::ID_MAX_LEN,
 
-                /* ---- 补查退避（前端定时行为的**唯一**来源）---- */
+                // ---- 补查退避（前端定时行为的**唯一**来源）----
                 'poll_delays_ms' => self::POLL_DELAYS_MS,
 
                 /* ---- 说明文案（后端下发，前端**既不编词也不选样式**）----

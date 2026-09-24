@@ -297,13 +297,26 @@ async function main() {
   env6.click('btn-next');
   check('S6 下一页 page=2', env6.rec.fetchUrls.some(function (u) { return u.indexOf('page=2') >= 0; }), true);
 
+  env6.byId['sel-event'].value = '';
+  env6.byId['sel-result'].value = '';
+  env6.byId['sel-method'].value = '';
+  env6.byId['inp-path'].value = '';
+  env6.byId['inp-admin'].value = '';
+  env6.byId['inp-from'].value = '2026-01-01T00:00:00';
+  env6.byId['inp-to'].value = '2026-01-02T00:00:00';
+  env6.click('btn-search');
+  check('S6 datetime-local 转 Y-m-d H:i:s 进查询串', env6.rec.fetchUrls.some(function (u) {
+    return u.indexOf('from=2026-01-01%2000%3A00%3A00') >= 0
+      && u.indexOf('to=2026-01-02%2000%3A00%3A00') >= 0;
+  }), true);
+
   env6.byId['sel-event'].value = 'login';
   env6.byId['sel-result'].value = 'failed';
   env6.byId['sel-method'].value = 'POST';
   env6.byId['inp-path'].value = '/app/admin';
   env6.byId['inp-admin'].value = '9';
-  env6.byId['inp-from'].value = '2026-01-01 00:00:00';
-  env6.byId['inp-to'].value = '2026-01-02 00:00:00';
+  env6.byId['inp-from'].value = '2026-01-01T00:00:00';
+  env6.byId['inp-to'].value = '2026-01-02T00:00:00';
   env6.click('btn-reset');
   check('S6 重置清空筛选', env6.byId['sel-event'].value === ''
     && env6.byId['sel-result'].value === ''

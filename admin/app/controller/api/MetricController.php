@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 页面 / API 控制器 —— MetricController。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 

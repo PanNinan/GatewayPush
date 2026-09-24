@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin 单测 —— P5OpsServiceTest。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -40,15 +45,6 @@ final class P5OpsServiceTest extends TestCase
     public function testMaskEmptyStaysEmpty(): void
     {
         $this->assertSame('', SecretMasker::mask(''), '空 = 未配置，打码反而制造「已配置」假象');
-    }
-
-    /* =====================================================================
-     | LogTailService：路径穿越防御
-     ===================================================================== */
-
-    private function svc(): LogTailService
-    {
-        return new LogTailService(__DIR__ . '/fixtures/logs');
     }
 
     public function testRejectsTraversalRole(): void
@@ -114,7 +110,7 @@ final class P5OpsServiceTest extends TestCase
             $this->markTestSkipped('主项目 RoleCatalog.php 不可读（独立部署形态）');
         }
 
-        preg_match_all("/^\s+'([a-z_]+)'\s*=>\s*\[/m", $src, $m);
+        preg_match_all("/^\\s+'([a-z_]+)'\\s*=>\\s*\\[/m", $src, $m);
         $catalogRoles = array_values(array_unique($m[1]));
         $this->assertNotEmpty($catalogRoles, '解析 RoleCatalog 失败 —— 正则与主项目源码漂移，需更新');
 
@@ -169,5 +165,14 @@ final class P5OpsServiceTest extends TestCase
             . "  TCP    0.0.0.0:8282           0.0.0.0:0              LISTENING       2222\n";
         $rows = RoleProbeService::parseNetstat($out);
         $this->assertSame(2, $rows[8282] ?? 0, '重复监听必须可被计数 —— 这是红线 ㊳ 的判定依据');
+    }
+
+    /* =====================================================================
+     | LogTailService：路径穿越防御
+     ===================================================================== */
+
+    private function svc(): LogTailService
+    {
+        return new LogTailService(__DIR__ . '/fixtures/logs');
     }
 }

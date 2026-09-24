@@ -1,22 +1,15 @@
 <?php
 /**
- * This file is part of webman.
+ * admin 配置 —— process。
  *
- * Licensed under The MIT License
- * For full copyright and license information, please see the MIT-LICENSE.txt
- * Redistributions of files must retain the above copyright notice.
- *
- * @author    walkor<walkor@workerman.net>
- * @copyright walkor<walkor@workerman.net>
- * @link      http://www.workerman.net/
- * @license   http://www.opensource.org/licenses/mit-license.php MIT License
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
  */
 
+use app\process\Http;
 use support\Log;
 use support\Request;
-use app\process\Http;
 
-global $argv;
+$argv = $GLOBALS['argv'] ?? [];
 
 return [
     'webman' => [
@@ -37,8 +30,8 @@ return [
             'requestClass' => Request::class,
             'logger' => Log::channel('default'),
             'appPath' => app_path(),
-            'publicPath' => public_path()
-        ]
+            'publicPath' => public_path(),
+        ],
     ],
     // 指标趋势采样（2.0 §1.1）：独立进程持续落 gw_metric_samples，与页面访问无关。
     // count 必须 = 1 —— 多进程并发采样会靠 uk_sampled_at 兜底，但没必要浪费。
@@ -63,12 +56,12 @@ return [
             ], glob(base_path() . '/plugin/*/app'), glob(base_path() . '/plugin/*/config'), glob(base_path() . '/plugin/*/api')),
             // Files with these suffixes will be monitored
             'monitorExtensions' => [
-                'php', 'html', 'htm', 'env'
+                'php', 'html', 'htm', 'env',
             ],
             'options' => [
                 'enable_file_monitor' => !in_array('-d', $argv) && DIRECTORY_SEPARATOR === '/',
                 'enable_memory_monitor' => DIRECTORY_SEPARATOR === '/',
-            ]
-        ]
-    ]
+            ],
+        ],
+    ],
 ];

@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 服务层 —— Pusher。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -141,6 +146,12 @@ final class Pusher
     /** 模板表的定位（P3 只做载荷复用，不做「发送计划」） */
     public const TEMPLATE_NOTE = '模板只保存「目标类型 + 载荷 + 离线策略」，不保存目标值 —— '
         . '目标是每次发送时填的；把 uid / 设备号存进模板极易误发到旧目标。';
+
+    /** 模板名的长度上限（与 `push_template.name` 的 `VARCHAR(64)` 一致） */
+    public const TEMPLATE_NAME_MAX_LEN = 64;
+
+    /** 模板备注的长度上限（与 `push_template.remark` 的 `VARCHAR(255)` 一致） */
+    public const TEMPLATE_REMARK_MAX_LEN = 255;
 
     /* =====================================================================
      | 归一（未知值一律显式失败，不回落到看似合理的默认值）
@@ -286,12 +297,6 @@ final class Pusher
         return $configured;
     }
 
-    /** 模板名的长度上限（与 `push_template.name` 的 `VARCHAR(64)` 一致） */
-    public const TEMPLATE_NAME_MAX_LEN = 64;
-
-    /** 模板备注的长度上限（与 `push_template.remark` 的 `VARCHAR(255)` 一致） */
-    public const TEMPLATE_REMARK_MAX_LEN = 255;
-
     /* =====================================================================
      | 校验主入口
      ===================================================================== */
@@ -357,68 +362,6 @@ final class Pusher
             'bytes' => $core['bytes'],
             'max' => $payloadMax,
             'msg_id_generated' => $generated,
-        ];
-    }
-
-    /**
-     * 推送与模板**共用**的校验内核：`target_type` / `offline_mode` / `payload` 三件。
-     *
-     * 刻意不含 `target` 与 `msg_id`：模板不存这两个字段（见 {@see validateTemplate()}）。
-     * 抽成内核而不是给 `validatePush()` 加开关参数 —— 开关参数会让「模板路径」与
-     * 「推送路径」的差异变成运行期分支，而这里两者的差异是**静态字段集不同**，
-     * 用组合表达比用布尔量表达更难写错。
-     *
-     * @param array<string, mixed> $input
-     *
-     * @return array{
-     *     errors: list<string>,
-     *     target_type: string,
-     *     offline_mode: string,
-     *     payload: array<mixed>,
-     *     bytes: int
-     * }
-     */
-    private static function core(array $input, int $payloadMax): array
-    {
-        $errors = [];
-
-        $targetType = self::normalizeTargetType($input['target_type'] ?? null);
-        if ($targetType === '') {
-            $errors[] = 'target_type 必须是 ' . implode(' / ', self::TARGET_TYPES) . ' 之一';
-        }
-
-        // 未知 offline_mode 显式报错而不是回落：见 OFFLINE_MODES 的注释
-        // （服务端对未知值是静默回落默认的，后台若也回落就会掩盖一个手搓请求）。
-        $mode = self::normalizeOfflineMode($input['offline_mode'] ?? null);
-        if ($mode === null) {
-            $errors[] = 'offline_mode 只能是空串（取服务端默认）/ '
-                . implode(' / ', [Push::MODE_DROP, Push::MODE_QUEUE]);
-            $mode = '';
-        }
-
-        // `?? []` 已经把「键缺失」与「显式 null」都归成了 `[]`，故此处只需再兜住空串
-        $decoded = self::decodePayload($input['payload'] ?? []);
-        if (!$decoded['ok']) {
-            $errors[] = $decoded['msg'];
-        }
-        $payload = $decoded['value'];
-        $bytes = self::payloadBytes($payload);
-
-        if ($bytes > $payloadMax) {
-            $errors[] = sprintf(
-                'payload 序列化后 %d 字节，超过上限 %d 字节'
-                . '（服务端超限时会在业务进程里静默丢弃，而 /push 仍返回 accepted）',
-                $bytes,
-                $payloadMax
-            );
-        }
-
-        return [
-            'errors' => $errors,
-            'target_type' => $targetType,
-            'offline_mode' => $mode,
-            'payload' => $payload,
-            'bytes' => $bytes,
         ];
     }
 
@@ -491,5 +434,67 @@ final class Pusher
     public static function labelOfOfflineMode(string $mode): string
     {
         return self::OFFLINE_LABELS[$mode] ?? $mode;
+    }
+
+    /**
+     * 推送与模板**共用**的校验内核：`target_type` / `offline_mode` / `payload` 三件。
+     *
+     * 刻意不含 `target` 与 `msg_id`：模板不存这两个字段（见 {@see validateTemplate()}）。
+     * 抽成内核而不是给 `validatePush()` 加开关参数 —— 开关参数会让「模板路径」与
+     * 「推送路径」的差异变成运行期分支，而这里两者的差异是**静态字段集不同**，
+     * 用组合表达比用布尔量表达更难写错。
+     *
+     * @param array<string, mixed> $input
+     *
+     * @return array{
+     *     errors: list<string>,
+     *     target_type: string,
+     *     offline_mode: string,
+     *     payload: array<mixed>,
+     *     bytes: int
+     * }
+     */
+    private static function core(array $input, int $payloadMax): array
+    {
+        $errors = [];
+
+        $targetType = self::normalizeTargetType($input['target_type'] ?? null);
+        if ($targetType === '') {
+            $errors[] = 'target_type 必须是 ' . implode(' / ', self::TARGET_TYPES) . ' 之一';
+        }
+
+        // 未知 offline_mode 显式报错而不是回落：见 OFFLINE_MODES 的注释
+        // （服务端对未知值是静默回落默认的，后台若也回落就会掩盖一个手搓请求）。
+        $mode = self::normalizeOfflineMode($input['offline_mode'] ?? null);
+        if ($mode === null) {
+            $errors[] = 'offline_mode 只能是空串（取服务端默认）/ '
+                . implode(' / ', [Push::MODE_DROP, Push::MODE_QUEUE]);
+            $mode = '';
+        }
+
+        // `?? []` 已经把「键缺失」与「显式 null」都归成了 `[]`，故此处只需再兜住空串
+        $decoded = self::decodePayload($input['payload'] ?? []);
+        if (!$decoded['ok']) {
+            $errors[] = $decoded['msg'];
+        }
+        $payload = $decoded['value'];
+        $bytes = self::payloadBytes($payload);
+
+        if ($bytes > $payloadMax) {
+            $errors[] = sprintf(
+                'payload 序列化后 %d 字节，超过上限 %d 字节'
+                . '（服务端超限时会在业务进程里静默丢弃，而 /push 仍返回 accepted）',
+                $bytes,
+                $payloadMax
+            );
+        }
+
+        return [
+            'errors' => $errors,
+            'target_type' => $targetType,
+            'offline_mode' => $mode,
+            'payload' => $payload,
+            'bytes' => $bytes,
+        ];
     }
 }

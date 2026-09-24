@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 中间件 —— AccessLog。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -68,6 +73,11 @@ final class AccessLog implements MiddlewareInterface
     /** 路径后缀（不区分大小写）：静态资源 */
     public const SKIP_SUFFIX_REGEX = '#\.(js|css|png|jpe?g|gif|svg|ico|woff2?|ttf|eot|map|webp|bmp|mp4|webm)$#i';
 
+    /**
+     * 记录本次 HTTP 访问（成功响应后、异常响应也记）。
+     *
+     * @throws Throwable 上游 handler 异常原样再抛
+     */
     public function process(Request $request, callable $handler): Response
     {
         // 身份必须在 handler **之前**取：登出会在 handler 里清 session
@@ -82,6 +92,7 @@ final class AccessLog implements MiddlewareInterface
         }
 
         $start = microtime(true);
+
         try {
             $response = $handler($request);
         } catch (Throwable $e) {
@@ -102,6 +113,7 @@ final class AccessLog implements MiddlewareInterface
                 'msg' => $this->clip($e->getMessage(), 255),
                 'cost_ms' => (int)round((microtime(true) - $start) * 1000),
             ]);
+
             throw $e;
         }
 
@@ -209,7 +221,7 @@ final class AccessLog implements MiddlewareInterface
      *     controller: string,
      *     action_name: string,
      *     query: string,
-     *     body: string|null,
+     *     body: null|string,
      *     status: int,
      *     code: int,
      *     msg: string,
@@ -234,18 +246,27 @@ final class AccessLog implements MiddlewareInterface
         return Auditor::identity();
     }
 
+    /**
+     * 是否登录页路径。
+     */
     private function isLoginPath(string $path): bool
     {
         return str_ends_with($path, '/app/admin/account/login')
             || str_ends_with($path, '/account/login');
     }
 
+    /**
+     * 是否登出页路径。
+     */
     private function isLogoutPath(string $path): bool
     {
         return str_ends_with($path, '/app/admin/account/logout')
             || str_ends_with($path, '/account/logout');
     }
 
+    /**
+     * 是否登录成功消息。
+     */
     private function loginMsg(string $path, string $result, string $envelopeMsg, int $status): string
     {
         if ($this->isLoginPath($path) || $this->isLogoutPath($path)) {
@@ -259,6 +280,9 @@ final class AccessLog implements MiddlewareInterface
         return $envelopeMsg;
     }
 
+    /**
+     * 截断到列宽。
+     */
     private function clip(string $value, int $max): string
     {
         return strlen($value) <= $max ? $value : substr($value, 0, $max);

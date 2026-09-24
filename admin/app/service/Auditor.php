@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 服务层 —— Auditor。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -115,7 +120,7 @@ final class Auditor
      *     action: string,
      *     target_type?: string,
      *     target?: string,
-     *     params?: array<string, mixed>|null,
+     *     params?: null|array<string, mixed>,
      *     result?: string,
      *     code?: int,
      *     msg?: string

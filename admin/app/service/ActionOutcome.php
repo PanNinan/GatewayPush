@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 服务层 —— ActionOutcome。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -153,10 +158,10 @@ final class ActionOutcome
      *   5. 其余（HTTP 4xx/5xx 且非 4004）一律 `rejected`。
      *
      * @param array{ok?: bool, status?: int, code?: int, msg?: string, data?: mixed} $res
-     *        刻意声明为**宽松 shape**：`GatewayPushClient::request()` 在 `data` 非数组时会把整个
-     *        `$json` 回落进来，调用方也可能直接把原始解码结果丢进来 ——
-     *        本方法必须容忍缺字段与异常类型（`testNonArrayDataIsTolerated` 钉住这一点），
-     *        而不是把「调用方传得不对」变成一次 500。
+     *                                                                                    刻意声明为**宽松 shape**：`GatewayPushClient::request()` 在 `data` 非数组时会把整个
+     *                                                                                    `$json` 回落进来，调用方也可能直接把原始解码结果丢进来 ——
+     *                                                                                    本方法必须容忍缺字段与异常类型（`testNonArrayDataIsTolerated` 钉住这一点），
+     *                                                                                    而不是把「调用方传得不对」变成一次 500
      *
      * @return array{
      *     state: string,

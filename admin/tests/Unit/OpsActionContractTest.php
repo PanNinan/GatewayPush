@@ -128,7 +128,7 @@ class OpsActionContractTest extends TestCase
 
         foreach ($expect as $path => $action) {
             $this->assertMatchesRegularExpression(
-                "#Route::post\('" . preg_quote($path, '#') . "',\s*\[OpsActionController::class,\s*'" . $action . "'\]\)#",
+                "#Route::post\\('" . preg_quote($path, '#') . "',\\s*\\[OpsActionController::class,\\s*'" . $action . "'\\]\\)#",
                 $src,
                 '路由 POST ' . $path . ' → ' . $action . ' 缺失'
             );

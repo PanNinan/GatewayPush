@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin 单测 —— MainProjectMirrorsTest。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -167,7 +172,7 @@ final class MainProjectMirrorsTest extends TestCase
         $src = (string)file_get_contents($file);
 
         if (preg_match(
-            "/Env::int\(\s*'" . preg_quote($key, '/') . "'\s*,\s*(-?\d+)\s*\)/",
+            "/Env::int\\(\\s*'" . preg_quote($key, '/') . "'\\s*,\\s*(-?\\d+)\\s*\\)/",
             $src,
             $m
         ) !== 1) {

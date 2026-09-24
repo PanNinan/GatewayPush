@@ -144,6 +144,22 @@ final class OpsAction
     }
 
     /**
+     * Token 指纹（与主项目 `Auth::tokenFingerprint()` 同口径：sha256 前 32 位）
+     *
+     * ⚠ 这是**第四处**指纹实现（主项目 Auth / 主项目 RevokeTokenAction / 后台本类 /
+     *   可能的客户端）。四处必须同口径，否则「撤销名单里的指纹」与
+     *   「界面展示的指纹」对不上。**改任何一处必须同步其余。**
+     *
+     * @param string $token
+     *
+     * @return string
+     */
+    public static function fingerprint(string $token): string
+    {
+        return substr(hash('sha256', $token), 0, 32);
+    }
+
+    /**
      * 统一转签：调主项目 `POST /action` 并把结果归一成 ActionOutcome
      *
      * 与 `/actions` 调试页走**同一条**路径（同一个 `GatewayPushClient::action()`），
@@ -153,8 +169,8 @@ final class OpsAction
      *   ② 运维动作**不自动补查** —— 它们是同步完成的，出现 `pending` 说明服务端超时，
      *      由调用方（UI）决定是否用 `request_id` 补查，不在本层起轮询。
      *
-     * @param string                $action
-     * @param array<string, mixed>  $params
+     * @param string               $action
+     * @param array<string, mixed> $params
      *
      * @return array{outcome: array<string, mixed>, caveats: string}
      */
@@ -186,21 +202,5 @@ final class OpsAction
             'outcome' => $outcome,
             'caveats' => self::CAVEATS[$action],
         ];
-    }
-
-    /**
-     * Token 指纹（与主项目 `Auth::tokenFingerprint()` 同口径：sha256 前 32 位）
-     *
-     * ⚠ 这是**第四处**指纹实现（主项目 Auth / 主项目 RevokeTokenAction / 后台本类 /
-     *   可能的客户端）。四处必须同口径，否则「撤销名单里的指纹」与
-     *   「界面展示的指纹」对不上。**改任何一处必须同步其余。**
-     *
-     * @param string $token
-     *
-     * @return string
-     */
-    public static function fingerprint(string $token): string
-    {
-        return substr(hash('sha256', $token), 0, 32);
     }
 }

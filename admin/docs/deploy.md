@@ -251,10 +251,19 @@ mysql -h "$ADMIN_DB_HOST" -u "$ADMIN_DB_USER" -p gateway_push_admin < gwadmin-YY
 
 ```bash
 cd admin
-composer test           # PHPUnit：tests/Unit（P3 后 201 tests / 1053 assertions）
+composer test           # PHPUnit：tests/Unit
 composer analyse        # PHPStan L6，**刻意不引入 baseline**（新代码零容忍）
-composer test:frontend  # 运行期前端渲染校验（dashboard 144 + session 162 + push 122 + action 103 + ops 42 + metrics 19 + trace 25 + audit 23 + accesslog 26 = **666 项**；无需浏览器 / jsdom / 服务端）
+composer test:frontend  # 运行期前端渲染校验（dashboard 144 + session 162 + push 122 + action 103 + ops 42 + metrics 19 + trace 25 + audit 24 + accesslog 27 = **668 项**；无需浏览器 / jsdom / 服务端）
+composer lint           # phpcs 审计（注释 / 命名 / 业务红线）；只读，仅 error 影响退出码
+composer lint:errors    # 同上但压掉 warning，只看 error
+composer cs:check       # php-cs-fixer 排版体检（dry-run，只报不改；落地用 composer cs）
 ```
+
+phpcs 与 php-cs-fixer **职责不重叠**（同主项目哲学）：phpcs 只审计注释完整性与业务红线、
+**不写文件**；排版只归 php-cs-fixer（`composer cs` 落地）。配置分别在
+`phpcs.xml.dist` 与 `.php-cs-fixer.dist.php`，作用域均为 admin 自有代码
+（app / config / scripts / tests，排除 plugin / runtime / app/process / `tests/Manual/_*` / `scripts/_*`）。
+**禁用 `phpcbf`** —— 它会与 fixer 反向修同一段代码。
 
 `composer test` 与 `composer test:frontend` **不可互相替代**：
 前者是**静态契约**（`DashboardContractTest` / `SessionContractTest` / `PushContractTest` /
@@ -600,7 +609,9 @@ ADMIN_ROLES_CMD="php ../start.php roles"   # 正确
    Windows（不拒绝重复 bind）下仍活着收请求 ⇒ 一套 master 也能出双监听。
    处置：`netstat -ano` 找 8292 全部监听 PID 逐个杀，master 会重 spawn 自己的 worker，
    杀不死的才是真 master。
-4. **php-cs-fixer / phpcs**：admin 无独立 lint 脚本，新增文件保持 LF（`.gitattributes`）。
+4. **php-cs-fixer / phpcs 已独立接入**（2026-09-24）：admin 自带 `composer lint` /
+   `lint:errors` / `cs` / `cs:check`，配置在 `admin/phpcs.xml.dist` 与
+   `admin/.php-cs-fixer.dist.php`；新增文件保持 LF（`.gitattributes`）。
 
 ---
 
@@ -683,8 +694,11 @@ ADMIN_ROLES_CMD="php ../start.php roles"   # 正确
 2. **`configured` 的 `||` / `&&` 优先级**：`$configured || in_array(...) && $raw !== ''`
    实际等价于 `$configured`（短路后半段恒被覆盖），属可读性陷阱；已改为
    `$present && $raw !== ''` 显式语义。
-3. **admin 无独立 php-cs-fixer**：排版门禁在主项目根目录
-   （`composer cs:check` 扫 131 文件含 admin PHP）；admin 新增文件保持 LF 即可。
+3. **admin 现已有独立 php-cs-fixer / phpcs**（2026-09-24 接入，方案 2）：
+   `composer cs:check` 只扫 admin 自有 PHP（app/config/scripts/tests，
+   **不含** plugin / runtime / 主项目 src）；主项目根 `composer cs:check` 仍是
+   131 文件（src / client / config / tests / start.php），两套互不覆盖。
+   改 admin 代码在 `admin/` 下跑 `composer lint` + `cs:check`。
 
 ## 15. 2.0 序7：限流统计 + 版本环境 + 推送送达率（2026-09-24）
 
@@ -817,5 +831,5 @@ ADMIN_ROLES_CMD="php ../start.php roles"   # 正确
 
 ### 17.3 校验
 
-- admin `composer test`（含 `AccessLogMenuContractTest`）+ `composer test:frontend`（含 `accesslog_render_check` 26 项）+ `composer analyse` 全绿。
+- admin `composer test`（含 `AccessLogMenuContractTest`）+ `composer test:frontend`（含 `accesslog_render_check` 27 项）+ `composer analyse` + `composer lint` + `composer cs:check` 全绿。
 - **生效方式**：已装环境重跑 `php scripts/install.php`（新表 + 新节点进 DB + 角色 rules 覆写）；改 `.env` / `config/middleware.php` 后需重启 admin 进程。

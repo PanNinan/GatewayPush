@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 服务层 —— Settings。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -38,7 +43,7 @@ final class Settings
      */
     public const CACHE_TTL = 5;
 
-    /** @var array{0: int, 1: array<string, string>}|null 进程内缓存：[取数时刻, 数据] */
+    /** @var null|array{0: int, 1: array<string, string>} 进程内缓存：[取数时刻, 数据] */
     private static ?array $cache = null;
 
     /**

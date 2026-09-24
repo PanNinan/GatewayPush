@@ -272,11 +272,22 @@ async function main() {
   env5.click('btn-next');
   check('S5 下一页 page=2', env5.rec.fetchUrls.some(function (u) { return u.indexOf('page=2') >= 0; }), true);
 
+  env5.byId['sel-action'].value = '';
+  env5.byId['sel-result'].value = '';
+  env5.byId['inp-admin'].value = '';
+  env5.byId['inp-from'].value = '2026-01-01T00:00:00';
+  env5.byId['inp-to'].value = '2026-01-02T00:00:00';
+  env5.click('btn-search');
+  check('S5 datetime-local 转 Y-m-d H:i:s 进查询串', env5.rec.fetchUrls.some(function (u) {
+    return u.indexOf('from=2026-01-01%2000%3A00%3A00') >= 0
+      && u.indexOf('to=2026-01-02%2000%3A00%3A00') >= 0;
+  }), true);
+
   env5.byId['sel-action'].value = 'ops.kick';
   env5.byId['sel-result'].value = 'failed';
   env5.byId['inp-admin'].value = '9';
-  env5.byId['inp-from'].value = '2026-01-01 00:00:00';
-  env5.byId['inp-to'].value = '2026-01-02 00:00:00';
+  env5.byId['inp-from'].value = '2026-01-01T00:00:00';
+  env5.byId['inp-to'].value = '2026-01-02T00:00:00';
   env5.click('btn-reset');
   check('S5 重置清空筛选', env5.byId['sel-action'].value === ''
     && env5.byId['sel-result'].value === ''

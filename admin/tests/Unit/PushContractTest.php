@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin 单测 —— PushContractTest。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -239,7 +244,7 @@ final class PushContractTest extends TestCase
         // `.*?` 而不是 `[^,]+?`：DELETE 那条的 URL 表达式内部含逗号（`... + num(t.id)`），
         // 用排除逗号的写法会整条漏掉，于是「动词被改错」这类回归反而抓不到。
         preg_match_all(
-            "/requestJson\(\s*(.*?)\s*,\s*'([A-Z]+)'/",
+            "/requestJson\\(\\s*(.*?)\\s*,\\s*'([A-Z]+)'/",
             $script,
             $calls,
             PREG_SET_ORDER
@@ -410,7 +415,7 @@ final class PushContractTest extends TestCase
     public function testEveryEndpointDeclaredByControllerHasARouteWithExpectedVerb(): void
     {
         $controller = $this->read(self::PAGE_CONTROLLER);
-        preg_match_all("/'([a-z_]+_(?:url|base))'\s*=>\s*'([^']+)'/", $controller, $m, PREG_SET_ORDER);
+        preg_match_all("/'([a-z_]+_(?:url|base))'\\s*=>\\s*'([^']+)'/", $controller, $m, PREG_SET_ORDER);
         $endpoints = [];
         foreach ($m as $row) {
             $endpoints[$row[1]] = $row[2];
@@ -419,14 +424,14 @@ final class PushContractTest extends TestCase
         $this->assertNotEmpty($endpoints, '控制器里没有解析到任何端点，正则八成失配了');
 
         $routeFile = $this->read(self::ROUTES);
-        preg_match_all("#Route::(get|post|put|delete|patch|any)\(\s*'([^']+)'#", $routeFile, $r, PREG_SET_ORDER);
+        preg_match_all("#Route::(get|post|put|delete|patch|any)\\(\\s*'([^']+)'#", $routeFile, $r, PREG_SET_ORDER);
         $verbsByPath = [];
         foreach ($r as $row) {
             $verbsByPath[$row[2]][] = $row[1];
         }
         $this->assertNotEmpty($verbsByPath, '路由文件里没有解析到任何路由，正则八成失配了');
 
-        preg_match_all("#Route::group\(\s*'([^']+)'#", $routeFile, $g);
+        preg_match_all("#Route::group\\(\\s*'([^']+)'#", $routeFile, $g);
         $groupPrefixes = array_values(array_unique($g[1]));
         $this->assertNotEmpty($groupPrefixes, '没有解析到 Route::group 前缀，正则八成失配了');
 
@@ -440,11 +445,13 @@ final class PushContractTest extends TestCase
                     foreach ([$path, $prefix . $path] as $candidate) {
                         if ($candidate === $endpoint) {
                             $matchKey = $path;
+
                             break 3;
                         }
                         $tail = str_starts_with($candidate, $endpoint) ? substr($candidate, strlen($endpoint)) : null;
                         if ($tail !== null && preg_match('/^\{[A-Za-z_][A-Za-z0-9_]*\}$/', $tail) === 1) {
                             $matchKey = $path;
+
                             break 3;
                         }
                     }
@@ -480,7 +487,7 @@ final class PushContractTest extends TestCase
     public function testPageRouteIsGuarded(): void
     {
         $this->assertMatchesRegularExpression(
-            "#Route::get\('/push',\s*\[PushController::class,\s*'index'\]\)\s*->middleware\(\[AdminAuth::class\]\)#",
+            "#Route::get\\('/push',\\s*\\[PushController::class,\\s*'index'\\]\\)\\s*->middleware\\(\\[AdminAuth::class\\]\\)#",
             $this->read(self::ROUTES),
             '/push 页面路由必须挂 AdminAuth 中间件'
         );
@@ -516,9 +523,9 @@ final class PushContractTest extends TestCase
         //   本模块的动作是 `create` / `templateSave` / `templateDelete`，含大写字母。
         //   写窄了只会匹配到 `create` 一条，而断言会以「计数不符」的形式失败 ——
         //   报错信息指向「存在非 ::class 条目」，与真实原因完全不符（已踩过）。
-        preg_match_all("/'([a-z_]+)'\s*=>\s*\[/", $inner, $allEntries);
+        preg_match_all("/'([a-z_]+)'\\s*=>\\s*\\[/", $inner, $allEntries);
         preg_match_all(
-            "/'([a-z_]+)'\s*=>\s*\[\s*([A-Za-z_][A-Za-z0-9_]*)::class\s*,\s*'([A-Za-z_][A-Za-z0-9_]*)'\s*\]/",
+            "/'([a-z_]+)'\\s*=>\\s*\\[\\s*([A-Za-z_][A-Za-z0-9_]*)::class\\s*,\\s*'([A-Za-z_][A-Za-z0-9_]*)'\\s*\\]/",
             $inner,
             $pairs,
             PREG_SET_ORDER
@@ -692,14 +699,12 @@ final class PushContractTest extends TestCase
         }
 
         // 只保留看着像 DOM id 的字面量：排除 URL / 选择器 / 类名之类
-        $found = array_filter($found, static function (string $id): bool {
-            return $id !== ''
+        $found = array_filter($found, static fn (string $id): bool => $id !== ''
                 && !str_contains($id, '/')
                 && !str_contains($id, '#')
                 && !str_contains($id, '.')
                 && !str_contains($id, ':')
-                && preg_match('/^[A-Za-z][A-Za-z0-9_-]*$/', $id) === 1;
-        });
+                && preg_match('/^[A-Za-z][A-Za-z0-9_-]*$/', $id) === 1);
 
         return array_values(array_unique($found));
     }

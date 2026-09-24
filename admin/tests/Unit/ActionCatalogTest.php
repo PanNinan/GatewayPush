@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin 单测 —— ActionCatalogTest。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -300,19 +305,19 @@ final class ActionCatalogTest extends TestCase
         $out = [];
         foreach ($chunks as $name => $body) {
             $auth = true;
-            if (preg_match("/^\s+'auth'\s*=>\s*(true|false)\s*,/m", $body, $a) === 1) {
+            if (preg_match("/^\\s+'auth'\\s*=>\\s*(true|false)\\s*,/m", $body, $a) === 1) {
                 $auth = $a[1] === 'true';
             } else {
                 $auth = $defaultAuth;
             }
 
             $description = '';
-            if (preg_match("/^\s+'description'\s*=>\s*'(.*)',\s*$/m", $body, $d) === 1) {
+            if (preg_match("/^\\s+'description'\\s*=>\\s*'(.*)',\\s*$/m", $body, $d) === 1) {
                 $description = $d[1];
             }
 
             $out[$name] = [
-                'http' => preg_match("/^\s+'http'\s*=>\s*true\s*,/m", $body) === 1,
+                'http' => preg_match("/^\\s+'http'\\s*=>\\s*true\\s*,/m", $body) === 1,
                 'auth' => $auth,
                 'description' => $description,
             ];
@@ -336,7 +341,7 @@ final class ActionCatalogTest extends TestCase
 
         foreach (explode("\n", $src) as $line) {
             if (!$inActions) {
-                if (preg_match("/^    'actions' => \[\s*$/", $line) === 1) {
+                if (preg_match("/^    'actions' => \\[\\s*$/", $line) === 1) {
                     $inActions = true;
                 }
 
@@ -344,11 +349,11 @@ final class ActionCatalogTest extends TestCase
             }
 
             // `    ],`（4 空格）= actions 块的收尾。动作自身的收尾是 8 空格，不会撞上。
-            if (preg_match("/^    \],\s*$/", $line) === 1) {
+            if (preg_match('/^    \],\s*$/', $line) === 1) {
                 break;
             }
 
-            if (preg_match("/^        '([a-z][a-z0-9_]*)' => \[\s*$/", $line, $m) === 1) {
+            if (preg_match("/^        '([a-z][a-z0-9_]*)' => \\[\\s*$/", $line, $m) === 1) {
                 $current = $m[1];
                 $chunks[$current] = '';
 
@@ -374,7 +379,7 @@ final class ActionCatalogTest extends TestCase
 
         $tail = substr($src, $pos, 400);
 
-        return preg_match("/^\s+'auth'\s*=>\s*false\s*,/m", $tail) !== 1;
+        return preg_match("/^\\s+'auth'\\s*=>\\s*false\\s*,/m", $tail) !== 1;
     }
 
     /** @return list<string> */
@@ -407,8 +412,9 @@ final class ActionCatalogTest extends TestCase
         $lines = explode("\n", $src);
         $start = -1;
         foreach ($lines as $i => $line) {
-            if (preg_match("/^\s+'" . preg_quote($name, '/') . "'\s*=>\s*\[/", $line) === 1) {
+            if (preg_match("/^\\s+'" . preg_quote($name, '/') . "'\\s*=>\\s*\\[/", $line) === 1) {
                 $start = $i;
+
                 break;
             }
         }
@@ -417,7 +423,8 @@ final class ActionCatalogTest extends TestCase
         }
 
         $out = [];
-        for ($i = $start; $i < count($lines); $i++) {
+        $lineCount = count($lines);
+        for ($i = $start; $i < $lineCount; $i++) {
             $out[] = $lines[$i];
             // 只认**顶层**收尾（4 空格缩进的 `],`）：嵌套的 params 段收尾是 12 空格，
             // 用 `/^\s*\],/` 会在 params 处提前截断（已踩过）。

@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 页面 / API 控制器 —— PushController。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -56,12 +61,15 @@ final class PushController
      */
     public const SIZE_OPTIONS = [20, 50, 100];
 
+    /**
+     * 渲染推送页骨架。
+     */
     public function index(Request $request): Response
     {
         return view('push/index', [
             'title' => 'GatewayPush 推送管理',
             'config' => [
-                /* ---- 端点（相对路径，与 config/route.php 一一对应）---- */
+                // ---- 端点（相对路径，与 config/route.php 一一对应）----
                 'create_url' => '/api/push',
                 'history_url' => '/api/push/history',
                 'templates_url' => '/api/push/templates',
@@ -76,7 +84,7 @@ final class PushController
                 'offline_modes' => Pusher::OFFLINE_MODES,
                 'offline_labels' => Pusher::OFFLINE_LABELS,
 
-                /* ---- 上限：前端预校验与后端同口径 ---- */
+                // ---- 上限：前端预校验与后端同口径 ----
                 // msg_id 留空即自动生成，故前端提示的「自动生成长度」与
                 // 「手填长度上限」是两个数，都要下发（否则会出现 16 与 64 混用的文案）。
                 'msg_id_len' => Pusher::MSG_ID_LEN,
@@ -168,6 +176,9 @@ final class PushController
         ));
     }
 
+    /**
+     * 读 gateway_push.* 配置并标量归一。
+     */
     private function cfg(string $key, string $default = ''): string
     {
         $value = config('gateway_push.' . $key, $default);

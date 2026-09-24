@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin 单测 —— SessionContractTest。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -264,7 +269,7 @@ final class SessionContractTest extends TestCase
 
         $this->assertStringContainsString("method: 'GET'", $script, '取数必须显式声明 GET');
 
-        preg_match_all("/method\s*:\s*'POST'/", $script, $posts);
+        preg_match_all("/method\\s*:\\s*'POST'/", $script, $posts);
         $this->assertCount(
             1,
             $posts[0],
@@ -282,7 +287,7 @@ final class SessionContractTest extends TestCase
         );
 
         preg_match_all('/\brunOps\(/', $script, $calls);
-        preg_match_all("/bind\('btn-ops-/", $script, $btns);
+        preg_match_all("/bind\\('btn-ops-/", $script, $btns);
         $this->assertSame(
             count($btns[0]) + 1,
             count($calls[0]),
@@ -315,7 +320,7 @@ final class SessionContractTest extends TestCase
     {
         $script = $this->read(self::SCRIPT);
 
-        $this->assertStringContainsString("row.state", $script, '状态必须取自响应的 state 字段');
+        $this->assertStringContainsString('row.state', $script, '状态必须取自响应的 state 字段');
         $this->assertDoesNotMatchRegularExpression(
             "/offline_at[^\n]{0,80}(===|!==|==|!=|\\?)/",
             $script,
@@ -394,17 +399,17 @@ final class SessionContractTest extends TestCase
     public function testEveryEndpointDeclaredByControllerHasARoute(): void
     {
         $controller = $this->read(self::PAGE_CONTROLLER);
-        preg_match_all("/'[a-z_]+_(?:url|base)'\s*=>\s*'([^']+)'/", $controller, $m);
+        preg_match_all("/'[a-z_]+_(?:url|base)'\\s*=>\\s*'([^']+)'/", $controller, $m);
         $endpoints = array_values(array_unique($m[1]));
 
         $this->assertNotEmpty($endpoints, '控制器里没有解析到任何端点，正则八成失配了');
 
         $routeFile = $this->read(self::ROUTES);
-        preg_match_all("#Route::(get|post|put|delete|patch|any)\(\s*'([^']+)'#", $routeFile, $r);
+        preg_match_all("#Route::(get|post|put|delete|patch|any)\\(\\s*'([^']+)'#", $routeFile, $r);
         $routes = array_combine($r[2], $r[1]);
         $this->assertNotEmpty($routes, '路由文件里没有解析到任何路由，正则八成失配了');
 
-        preg_match_all("#Route::group\(\s*'([^']+)'#", $routeFile, $g);
+        preg_match_all("#Route::group\\(\\s*'([^']+)'#", $routeFile, $g);
         $groupPrefixes = array_values(array_unique($g[1]));
         $this->assertNotEmpty($groupPrefixes, '没有解析到 Route::group 前缀，正则八成失配了');
 
@@ -416,11 +421,13 @@ final class SessionContractTest extends TestCase
                     foreach ([$path, $prefix . $path] as $candidate) {
                         if ($candidate === $endpoint) {
                             $matched = [$path, $verb];
+
                             break 3;
                         }
                         $tail = str_starts_with($candidate, $endpoint) ? substr($candidate, strlen($endpoint)) : null;
                         if ($tail !== null && preg_match('/^\{[A-Za-z_][A-Za-z0-9_]*\}$/', $tail) === 1) {
                             $matched = [$path, $verb];
+
                             break 3;
                         }
                     }
@@ -429,6 +436,7 @@ final class SessionContractTest extends TestCase
 
             if ($matched === null) {
                 $missing[] = $endpoint;
+
                 continue;
             }
 
@@ -471,7 +479,7 @@ final class SessionContractTest extends TestCase
         $routeFile = $this->read(self::ROUTES);
 
         $this->assertMatchesRegularExpression(
-            "#Route::get\('/sessions',\s*\[SessionController::class,\s*'index'\]\)\s*->middleware\(\[AdminAuth::class\]\)#",
+            "#Route::get\\('/sessions',\\s*\\[SessionController::class,\\s*'index'\\]\\)\\s*->middleware\\(\\[AdminAuth::class\\]\\)#",
             $routeFile,
             '/sessions 页面路由必须挂 AdminAuth 中间件'
         );
@@ -497,7 +505,7 @@ final class SessionContractTest extends TestCase
         $this->assertStringContainsString('id="ops-readonly"', $view, '无权限时必须有无权限说明');
 
         $this->assertStringContainsString('applyOpsPerms()', $script, '首屏必须做权限显隐');
-        $this->assertStringContainsString("cfg.perms", $script, '权限必须来自服务端下发的 perms，不得前端硬编码');
+        $this->assertStringContainsString('cfg.perms', $script, '权限必须来自服务端下发的 perms，不得前端硬编码');
 
         // 四项权限任一为真才显示操作区；全假时显示无权限说明
         preg_match_all('/\bp\.ops_(kick|revoke|unbind|force)\b/', $script, $m);
@@ -525,7 +533,7 @@ final class SessionContractTest extends TestCase
             $view,
             'Token 输入框必须是 password 型（明文会落在屏幕与历史里）'
         );
-        $this->assertStringContainsString("body.token = token", $script, 'Token 只能进 POST body');
+        $this->assertStringContainsString('body.token = token', $script, 'Token 只能进 POST body');
         $this->assertDoesNotMatchRegularExpression(
             '/token[^\n]{0,60}\?|encodeURIComponent\([^\n]{0,20}token|[+]\s*[\'"]token=/',
             $script,
@@ -614,14 +622,12 @@ final class SessionContractTest extends TestCase
         $found = array_merge($found, $m3[1]);
 
         // 只保留看着像 DOM id 的字面量：排除 URL / 选择器 / 类名之类
-        $found = array_filter($found, static function (string $id): bool {
-            return $id !== ''
+        $found = array_filter($found, static fn (string $id): bool => $id !== ''
                 && !str_contains($id, '/')
                 && !str_contains($id, '#')
                 && !str_contains($id, '.')
                 && !str_contains($id, ':')
-                && preg_match('/^[A-Za-z][A-Za-z0-9_-]*$/', $id) === 1;
-        });
+                && preg_match('/^[A-Za-z][A-Za-z0-9_-]*$/', $id) === 1);
 
         return array_values(array_unique($found));
     }

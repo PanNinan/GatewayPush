@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 服务层 —— RoleProbeService。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -30,7 +35,7 @@ final class RoleProbeService
      *
      * `business` 无监听端口 —— 它以客户端身份连 register / gateway，`null` = 无法端口探测。
      *
-     * @var array<string, int|null>
+     * @var array<string, null|int>
      */
     public const PORTS = [
         'register' => 1238,
@@ -113,6 +118,43 @@ final class RoleProbeService
     }
 
     /**
+     * 解析 netstat 输出（纯函数，便于单测 Windows / Linux 两种形态）
+     *
+     * @param string $out `netstat -a -n` 的原始输出
+     *
+     * @return array<int, int> 端口 => 监听行数
+     */
+    public static function parseNetstat(string $out): array
+    {
+        $rows = [];
+        foreach (explode("\n", $out) as $line) {
+            $line = trim($line);
+            if ($line === '' || stripos($line, 'proto') === 0) {
+                continue;
+            }
+            $isTcp = stripos($line, 'tcp') === 0;
+            $isUdp = stripos($line, 'udp') === 0;
+            if (!$isTcp && !$isUdp) {
+                continue;
+            }
+            // ★ 「listen」不带 ING —— Linux 的 TCP 监听行写的是 `LISTEN`；
+            //   Windows 的 `LISTENING` 同样包含它。ESTABLISHED / TIME_WAIT 不含。
+            if ($isTcp && stripos($line, 'listen') === false) {
+                continue;
+            }
+
+            // 抓「本地地址」列的端口：0.0.0.0:8282 / [::]:8282 / 127.0.0.1:1238
+            if (preg_match('/:\s*(\d+)\s/', $line, $m) !== 1) {
+                continue;
+            }
+            $port = (int)$m[1];
+            $rows[$port] = ($rows[$port] ?? 0) + 1;
+        }
+
+        return $rows;
+    }
+
+    /**
      * 源 ①：期望角色清单（`roles_cmd` 的 JSON 契约）
      *
      * @return array{0: array<string, array{enabled: bool}>, 1: bool}
@@ -160,42 +202,5 @@ final class RoleProbeService
         }
 
         return [self::parseNetstat($out), true];
-    }
-
-    /**
-     * 解析 netstat 输出（纯函数，便于单测 Windows / Linux 两种形态）
-     *
-     * @param string $out `netstat -a -n` 的原始输出
-     *
-     * @return array<int, int> 端口 => 监听行数
-     */
-    public static function parseNetstat(string $out): array
-    {
-        $rows = [];
-        foreach (explode("\n", $out) as $line) {
-            $line = trim($line);
-            if ($line === '' || stripos($line, 'proto') === 0) {
-                continue;
-            }
-            $isTcp = stripos($line, 'tcp') === 0;
-            $isUdp = stripos($line, 'udp') === 0;
-            if (!$isTcp && !$isUdp) {
-                continue;
-            }
-            // ★ 「listen」不带 ING —— Linux 的 TCP 监听行写的是 `LISTEN`；
-            //   Windows 的 `LISTENING` 同样包含它。ESTABLISHED / TIME_WAIT 不含。
-            if ($isTcp && stripos($line, 'listen') === false) {
-                continue;
-            }
-
-            // 抓「本地地址」列的端口：0.0.0.0:8282 / [::]:8282 / 127.0.0.1:1238
-            if (preg_match('/:\s*(\d+)\s/', $line, $m) !== 1) {
-                continue;
-            }
-            $port = (int)$m[1];
-            $rows[$port] = ($rows[$port] ?? 0) + 1;
-        }
-
-        return $rows;
     }
 }

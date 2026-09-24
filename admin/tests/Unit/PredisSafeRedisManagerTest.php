@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin 单测 —— PredisSafeRedisManagerTest。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -42,8 +47,10 @@ final class PredisSafeRedisManagerTest extends TestCase
              * 故意不定义 close()：若 closeClient 误调 close()，__call 会抛
              * 「Command CLOSE is not a registered Redis command」（模拟真实故障）。
              *
-             * @param  string  $name
-             * @param  array<int, mixed>  $args
+             * @param string            $name
+             * @param array<int, mixed> $args
+             *
+             * @throws \RuntimeException 未知 Redis 命令
              */
             public function __call(string $name, array $args): never
             {

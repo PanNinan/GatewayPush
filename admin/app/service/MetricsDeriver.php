@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 服务层 —— MetricsDeriver。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -81,8 +86,8 @@ final class MetricsDeriver
      *     num: list<string>,
      *     den: list<string>,
      *     kind: string,
-     *     warn: float|null,
-     *     bad: float|null
+     *     warn: null|float,
+     *     bad: null|float
      * }>
      */
     private const RATIOS = [
@@ -190,14 +195,14 @@ final class MetricsDeriver
     /**
      * 一次算齐所有派生结果（供 API 直接返回）。
      *
-     * @param array<string, string> $counter         今日累计计数器（`metrics:counter:{Ymd}` 的 HGETALL）
-     * @param array<string, string> $gauge           瞬时指标（`metrics:gauge` 的 HGETALL）
-     * @param array<string, int>    $queues          队列深度，键为逻辑队列名
-     * @param int                   $queueWarnDepth  队列积压告警阈值
-     * @param int                   $staleSecs       进程存活判据（秒）。**必须**是
-     *                                               `MONITOR_INTERVAL × 2`（默认 10），
-     *                                               不能用 `MONITOR_TTL`(600) —— 两者刻意不同
-     * @param int                   $now             当前时间戳
+     * @param array<string, string> $counter        今日累计计数器（`metrics:counter:{Ymd}` 的 HGETALL）
+     * @param array<string, string> $gauge          瞬时指标（`metrics:gauge` 的 HGETALL）
+     * @param array<string, int>    $queues         队列深度，键为逻辑队列名
+     * @param int                   $queueWarnDepth 队列积压告警阈值
+     * @param int                   $staleSecs      进程存活判据（秒）。**必须**是
+     *                                              `MONITOR_INTERVAL × 2`（默认 10），
+     *                                              不能用 `MONITOR_TTL`(600) —— 两者刻意不同
+     * @param int                   $now            当前时间戳
      *
      * @return Derived
      */
@@ -326,8 +331,8 @@ final class MetricsDeriver
     /**
      * 由派生结果 + 原始数据生成告警清单。
      *
-     * @param list<RatioRow>   $ratios
-     * @param list<ProcessRow> $processes
+     * @param list<RatioRow>        $ratios
+     * @param list<ProcessRow>      $processes
      * @param array<string, string> $gauge
      * @param array<string, int>    $queues
      *
@@ -409,7 +414,7 @@ final class MetricsDeriver
      * 覆盖项任何非法（非数组 / 非数字）一律**静默忽略** —— 阈值只影响配色，
      * 不该因为一个手滑的配置把整个监控页打挂。
      *
-     * @return array<string, array{warn: float|null, bad: float|null}>
+     * @return array<string, array{warn: null|float, bad: null|float}>
      */
     private function resolveThresholds(): array
     {

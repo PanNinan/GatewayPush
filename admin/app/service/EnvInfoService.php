@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 服务层 —— EnvInfoService。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -63,6 +68,19 @@ final class EnvInfoService
         return [
             'items' => $items,
             'notes' => self::notes(),
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function notes(): array
+    {
+        return [
+            'PHP 版本取自**后台进程**运行时 —— 后台与主项目同机部署时即主项目口径；分机部署时以主项目机器为准。',
+            '包版本读主项目根 composer.lock（部署态真源），不读 vendor/composer/installed.json（可能被 --no-dev 洗掉传递依赖）。',
+            'APP_ENV 只读主项目 .env 白名单一钥；未配置时显示「—」，不回落代码默认值冒充部署态。',
+            '配置无热重载：.env 改了 APP_ENV 只对新启动的主项目进程生效。',
         ];
     }
 
@@ -146,19 +164,6 @@ final class EnvInfoService
             'value' => $value,
             'configured' => $value !== '',
             'source' => $source,
-        ];
-    }
-
-    /**
-     * @return list<string>
-     */
-    public static function notes(): array
-    {
-        return [
-            'PHP 版本取自**后台进程**运行时 —— 后台与主项目同机部署时即主项目口径；分机部署时以主项目机器为准。',
-            '包版本读主项目根 composer.lock（部署态真源），不读 vendor/composer/installed.json（可能被 --no-dev 洗掉传递依赖）。',
-            'APP_ENV 只读主项目 .env 白名单一钥；未配置时显示「—」，不回落代码默认值冒充部署态。',
-            '配置无热重载：.env 改了 APP_ENV 只对新启动的主项目进程生效。',
         ];
     }
 }

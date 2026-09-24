@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 页面 / API 控制器 —— DashboardController。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -41,6 +46,9 @@ final class DashboardController
      */
     private const HISTORY_POINTS = 120;
 
+    /**
+     * 渲染健康总览页骨架（数据由前端快/慢 tick 分别拉取）。
+     */
     public function index(Request $request): Response
     {
         return view('dashboard/index', [
@@ -62,6 +70,9 @@ final class DashboardController
         ]);
     }
 
+    /**
+     * 读 gateway_push.* 配置并标量归一。
+     */
     private function cfg(string $key, string $default = ''): string
     {
         $value = config('gateway_push.' . $key, $default);

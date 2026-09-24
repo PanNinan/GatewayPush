@@ -19,10 +19,10 @@ function check(string $name, bool $ok, string $detail = ''): void
     global $pass, $fail;
     if ($ok) {
         $pass++;
-        echo "  [PASS] $name\n";
+        echo "  [PASS] {$name}\n";
     } else {
         $fail++;
-        echo "  [FAIL] $name  $detail\n";
+        echo "  [FAIL] {$name}  {$detail}\n";
     }
 }
 
@@ -72,6 +72,7 @@ function readCaptcha(string $jar): string
     if (!is_file($file)) {
         return '';
     }
+
     /** @var mixed $data */
     $data = @unserialize((string)file_get_contents($file), ['allowed_classes' => false]);
     if (!is_array($data)) {
@@ -144,7 +145,8 @@ $b = jsonBody($r['body']);
 check('subscriptions 未知 uid 返回空 topics', $r['status'] === 200 && ($b['data']['topics'] ?? ['x']) === []);
 
 @unlink($jar);
-echo "\n结论: $pass PASS / $fail FAIL\n";
+echo "\n结论: {$pass} PASS / {$fail} FAIL\n";
+
 exit($fail === 0 ? 0 : 1);
 
 /** 读 admin/.env（含特殊字符，parse_ini_file 不可用） */

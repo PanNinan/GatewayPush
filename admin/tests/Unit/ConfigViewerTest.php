@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin 单测 —— ConfigViewerTest。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -63,28 +68,6 @@ final class ConfigViewerTest extends TestCase
         $this->assertSame([], ConfigViewer::parseEnv("# only comment\n"));
     }
 
-    /* =====================================================================
-     | renderGroups：白名单 + 脱敏 + configured 语义
-     ===================================================================== */
-
-    /**
-     * @param array<int|string, mixed> $groups
-     *
-     * @return array<string, mixed>
-     */
-    private function findItem(array $groups, string $key): array
-    {
-        foreach ($groups as $group) {
-            foreach ($group['items'] as $item) {
-                if ($item['key'] === $key) {
-                    return $item;
-                }
-            }
-        }
-
-        $this->fail('白名单投影里找不到键 ' . $key);
-    }
-
     public function testWhitelistIsClosedToConfiguredKeysOnly(): void
     {
         $groups = ConfigViewer::renderGroups([
@@ -101,8 +84,11 @@ final class ConfigViewerTest extends TestCase
         }
 
         $this->assertStringContainsString('APP_ENV', $flat);
-        $this->assertStringNotContainsString('MY_NEW_SECRET_KEY', $flat,
-            '★ 非白名单键出现在输出 —— 误加进 .env 的新密钥会被本页带出去');
+        $this->assertStringNotContainsString(
+            'MY_NEW_SECRET_KEY',
+            $flat,
+            '★ 非白名单键出现在输出 —— 误加进 .env 的新密钥会被本页带出去'
+        );
         $this->assertStringNotContainsString('s3cr3t-should-never-appear', $flat);
         $this->assertStringNotContainsString('SOME_UNKNOWN', $flat);
     }
@@ -220,5 +206,27 @@ final class ConfigViewerTest extends TestCase
             $this->assertNotSame('', $view['file']);
             $this->assertNotEmpty($view['groups']);
         }
+    }
+
+    /* =====================================================================
+     | renderGroups：白名单 + 脱敏 + configured 语义
+     ===================================================================== */
+
+    /**
+     * @param array<int|string, mixed> $groups
+     *
+     * @return array<string, mixed>
+     */
+    private function findItem(array $groups, string $key): array
+    {
+        foreach ($groups as $group) {
+            foreach ($group['items'] as $item) {
+                if ($item['key'] === $key) {
+                    return $item;
+                }
+            }
+        }
+
+        $this->fail('白名单投影里找不到键 ' . $key);
     }
 }

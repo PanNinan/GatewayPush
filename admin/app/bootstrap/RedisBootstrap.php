@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 引导 —— RedisBootstrap。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -26,7 +31,8 @@ use Workerman\Worker;
 class RedisBootstrap implements Bootstrap
 {
     /**
-     * @param  Worker|null  $worker
+     * @param null|Worker $worker
+     *
      * @return void
      */
     public static function start(?Worker $worker)

@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 页面 / API 控制器 —— PushController。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -98,6 +103,7 @@ final class PushController
         // ── 受理记录（落库失败不改变「推送是否已受理」这个事实，故只标记不抛） ──
         $recorded = true;
         $recordError = '';
+
         try {
             PushRepository::insert([
                 'request_id' => $requestId,

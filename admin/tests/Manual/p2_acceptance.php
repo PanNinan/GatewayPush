@@ -1,5 +1,4 @@
 <?php
-
 /**
  * P2 验收脚本（手工执行，**不在** PHPUnit 套件内：它依赖后台服务与主项目在线）。
  *
@@ -47,6 +46,7 @@ use GatewayPush\Common\RedisKeys;
 use support\Redis;
 
 require __DIR__ . '/../../vendor/autoload.php';
+
 require __DIR__ . '/../../support/bootstrap.php';
 
 const ADMIN_HOST = '127.0.0.1';
@@ -317,6 +317,7 @@ $isLoopback = in_array($redisHost, ['127.0.0.1', 'localhost', '::1'], true);
 if ($seed && !$isLoopback) {
     echo PHP_EOL . '[ABORT] --seed 只允许对回环 Redis 执行；当前 ADMIN_REDIS_HOST=' . $redisHost . PHP_EOL;
     echo '        若确需对非回环实例建立夹具，请手工设置 ADMIN_REDIS_HOST=127.0.0.1 后重试。' . PHP_EOL;
+
     exit(2);
 }
 
@@ -334,17 +335,21 @@ $reader = new RedisReader();
 $ping = $reader->ping();
 
 check('Redis 连通', $ping['ok'], $ping['ok'] ? $ping['latency_ms'] . 'ms' : $ping['msg']);
-check('Redis 库号与主项目一致（ADMIN_REDIS_DB）',
+check(
+    'Redis 库号与主项目一致（ADMIN_REDIS_DB）',
     RedisReader::dbIndex() === (int)(getenv('ADMIN_REDIS_DB') ?: 0),
-    'db=' . RedisReader::dbIndex() . ' prefix=' . RedisReader::prefix());
+    'db=' . RedisReader::dbIndex() . ' prefix=' . RedisReader::prefix()
+);
 
 $inspector = new SessionInspector();
 
 if (!$ping['ok']) {
     note('服务层后续检查', 'Redis 不可用');
 } elseif (!$seed) {
-    note('夹具相关检查（在线 / 保留 / 已回收三态、按 uid 反查、离线队列、撤销指纹）',
-        '未启用 --seed；如需完整语义验收请加 --seed');
+    note(
+        '夹具相关检查（在线 / 保留 / 已回收三态、按 uid 反查、离线队列、撤销指纹）',
+        '未启用 --seed；如需完整语义验收请加 --seed'
+    );
 } else {
     try {
         seedFixture();
@@ -353,113 +358,160 @@ if (!$ping['ok']) {
 
         // ---- 在线判定：★ 带 offline_at 但在集合内 → 必须判 online ----
         $online = $inspector->detail(FIX_ONLINE, [], $now);
-        check('★ 夹具写入成功（会话 Hash 带 offline_at 且在 online:clients 内）',
-            $online['found'] === true, 'found=' . var_export($online['found'], true));
-        check('★ 带 offline_at 的在线会话被判为 online（offline_at 是粘性字段，不可作在线判据）',
+        check(
+            '★ 夹具写入成功（会话 Hash 带 offline_at 且在 online:clients 内）',
+            $online['found'] === true,
+            'found=' . var_export($online['found'], true)
+        );
+        check(
+            '★ 带 offline_at 的在线会话被判为 online（offline_at 是粘性字段，不可作在线判据）',
             $online['state'] === SessionInspector::STATE_ONLINE,
-            'state=' . $online['state']);
-        check('offline_at 仍如实展示为「最后断开」',
+            'state=' . $online['state']
+        );
+        check(
+            'offline_at 仍如实展示为「最后断开」',
             $online['offline_secs'] !== null && $online['offline_secs'] >= 290,
-            'offline_secs=' . var_export($online['offline_secs'], true));
-        check('心跳独立键可读', $online['heartbeat'] !== null && $online['heartbeat_age_secs'] <= 5,
-            'heartbeat_age=' . var_export($online['heartbeat_age_secs'], true));
+            'offline_secs=' . var_export($online['offline_secs'], true)
+        );
+        check(
+            '心跳独立键可读',
+            $online['heartbeat'] !== null && $online['heartbeat_age_secs'] <= 5,
+            'heartbeat_age=' . var_export($online['heartbeat_age_secs'], true)
+        );
 
         // ---- 保留 vs 已回收 ----
         $retained = $inspector->detail(FIX_RETAINED, [], $now);
-        check('不在集合内但键存在 → retained',
+        check(
+            '不在集合内但键存在 → retained',
             $retained['found'] === true && $retained['state'] === SessionInspector::STATE_RETAINED,
-            'state=' . $retained['state']);
+            'state=' . $retained['state']
+        );
 
         $gone = $inspector->detail(FIX_GONE, [], $now);
-        check('★ 键不存在 → found=false 且 state=gone（与 retained 刻意区分）',
+        check(
+            '★ 键不存在 → found=false 且 state=gone（与 retained 刻意区分）',
             $gone['found'] === false && $gone['state'] === SessionInspector::STATE_GONE,
-            'found=' . var_export($gone['found'], true) . ' state=' . $gone['state']);
+            'found=' . var_export($gone['found'], true) . ' state=' . $gone['state']
+        );
 
         // ---- 列表三态 ----
         $onlineList = $inspector->list(['scope' => 'online'], $now);
         $onlineIds = array_column($onlineList['items'], 'client_id');
-        check('scope=online 含在线夹具、不含保留夹具',
+        check(
+            'scope=online 含在线夹具、不含保留夹具',
             in_array(FIX_ONLINE, $onlineIds, true) && !in_array(FIX_RETAINED, $onlineIds, true),
-            'online_total=' . $onlineList['online_total'] . ' items=' . implode(',', $onlineIds));
+            'online_total=' . $onlineList['online_total'] . ' items=' . implode(',', $onlineIds)
+        );
         check('★ scope=online 不 SCAN（scan 为 null）', $onlineList['scan'] === null);
 
         $retainedList = $inspector->list(['scope' => 'retained'], $now);
         $retainedIds = array_column($retainedList['items'], 'client_id');
-        check('scope=retained 含保留夹具、不含在线夹具',
+        check(
+            'scope=retained 含保留夹具、不含在线夹具',
             in_array(FIX_RETAINED, $retainedIds, true) && !in_array(FIX_ONLINE, $retainedIds, true),
-            'items=' . implode(',', $retainedIds));
-        check('★ scope=retained 走 SCAN 且回带 scanned/truncated',
+            'items=' . implode(',', $retainedIds)
+        );
+        check(
+            '★ scope=retained 走 SCAN 且回带 scanned/truncated',
             is_array($retainedList['scan'])
             && isset($retainedList['scan']['scanned'], $retainedList['scan']['truncated']),
             'scanned=' . ($retainedList['scan']['scanned'] ?? '?')
-            . ' truncated=' . var_export($retainedList['scan']['truncated'] ?? null, true));
+            . ' truncated=' . var_export($retainedList['scan']['truncated'] ?? null, true)
+        );
 
         $allList = $inspector->list(['scope' => 'all', 'size' => 100], $now);
         $allIds = array_column($allList['items'], 'client_id');
-        check('scope=all 同时含在线与保留',
-            in_array(FIX_ONLINE, $allIds, true) && in_array(FIX_RETAINED, $allIds, true));
-        check('列表按「在线优先」排序（首条为在线夹具）',
+        check(
+            'scope=all 同时含在线与保留',
+            in_array(FIX_ONLINE, $allIds, true) && in_array(FIX_RETAINED, $allIds, true)
+        );
+        check(
+            '列表按「在线优先」排序（首条为在线夹具）',
             ($allList['items'][0]['client_id'] ?? '') === FIX_ONLINE,
-            'first=' . ($allList['items'][0]['client_id'] ?? '?'));
+            'first=' . ($allList['items'][0]['client_id'] ?? '?')
+        );
 
         // ---- uid 过滤 / 分页 ----
         $byUidList = $inspector->list(['scope' => 'all', 'uid' => FIX_UID], $now);
-        check('scope=all + uid 过滤只返回该 uid',
+        check(
+            'scope=all + uid 过滤只返回该 uid',
             array_column($byUidList['items'], 'uid') === [FIX_UID, FIX_UID]
             || array_unique(array_column($byUidList['items'], 'uid')) === [FIX_UID],
-            'total=' . $byUidList['total']);
+            'total=' . $byUidList['total']
+        );
 
         $paged = $inspector->list(['scope' => 'all', 'page' => 1, 'size' => 1], $now);
-        check('分页 size=1 只返回 1 条但 total 仍是全量',
+        check(
+            '分页 size=1 只返回 1 条但 total 仍是全量',
             count($paged['items']) === 1 && $paged['total'] >= 2,
-            'items=' . count($paged['items']) . ' total=' . $paged['total'] . ' pages=' . $paged['pages']);
+            'items=' . count($paged['items']) . ' total=' . $paged['total'] . ' pages=' . $paged['pages']
+        );
 
         $oversize = $inspector->list(['scope' => 'online', 'size' => 99999], $now);
-        check('★ size 超限被夹到 SIZE_MAX',
+        check(
+            '★ size 超限被夹到 SIZE_MAX',
             $oversize['size'] === SessionInspector::SIZE_MAX,
-            'size=' . $oversize['size']);
+            'size=' . $oversize['size']
+        );
 
         // ---- 反查 ----
         $byUid = $inspector->findByUid(FIX_UID, $now);
         $byUidIds = array_column($byUid['items'], 'client_id');
-        check('★ 按 uid 反查能看到「保留」会话（uid:clients 不随断开清理）',
+        check(
+            '★ 按 uid 反查能看到「保留」会话（uid:clients 不随断开清理）',
             in_array(FIX_ONLINE, $byUidIds, true) && in_array(FIX_RETAINED, $byUidIds, true),
-            'items=' . implode(',', $byUidIds));
+            'items=' . implode(',', $byUidIds)
+        );
 
         $byDevice = $inspector->findByDevice(FIX_DEVICE, $now);
-        check('按设备反查命中当前 clientId',
+        check(
+            '按设备反查命中当前 clientId',
             array_column($byDevice['items'], 'client_id') === [FIX_ONLINE],
-            'items=' . implode(',', array_column($byDevice['items'], 'client_id')));
+            'items=' . implode(',', array_column($byDevice['items'], 'client_id'))
+        );
 
         $byDeviceMiss = $inspector->findByDevice(FIX . '-no-such-device', $now);
-        check('按不存在的设备反查返回空 + 可读提示',
-            $byDeviceMiss['total'] === 0 && $byDeviceMiss['hint'] !== '');
+        check(
+            '按不存在的设备反查返回空 + 可读提示',
+            $byDeviceMiss['total'] === 0 && $byDeviceMiss['hint'] !== ''
+        );
 
         // ---- 离线队列 ----
         $queue = $inspector->offlineQueue(FIX_UID, 1, 2);
         check('离线队列 len 正确', $queue['len'] === 3, 'len=' . $queue['len']);
-        check('离线队列首页切片正确（size=2 → 2 条）',
+        check(
+            '离线队列首页切片正确（size=2 → 2 条）',
             count($queue['items']) === 2 && $queue['items'][0] === 'p2test-msg-1',
-            implode(',', $queue['items']));
+            implode(',', $queue['items'])
+        );
         check('离线队列分页数正确（3 条 / 每页 2 → 2 页）', $queue['pages'] === 2, 'pages=' . $queue['pages']);
         $queue2 = $inspector->offlineQueue(FIX_UID, 2, 2);
-        check('离线队列第 2 页取到剩余 1 条',
-            count($queue2['items']) === 1 && $queue2['items'][0] === 'p2test-msg-3');
+        check(
+            '离线队列第 2 页取到剩余 1 条',
+            count($queue2['items']) === 1 && $queue2['items'][0] === 'p2test-msg-3'
+        );
 
         // ---- 订阅 ----
         $subs = $inspector->subscriptions(FIX_UID, FIX_TOPIC);
-        check('订阅双向都对上',
+        check(
+            '订阅双向都对上',
             $subs['topics'] === [FIX_TOPIC] && $subs['subscribers'] === [FIX_UID],
-            'topics=' . implode(',', $subs['topics']) . ' subscribers=' . implode(',', $subs['subscribers']));
+            'topics=' . implode(',', $subs['topics']) . ' subscribers=' . implode(',', $subs['subscribers'])
+        );
 
         // ---- 撤销名单 ----
         $revoked = $inspector->revoked();
         $fingerprints = array_column($revoked['items'], 'fingerprint');
-        check('撤销名单含刚写入的指纹', in_array(FIX_FINGERPRINT, $fingerprints, true),
-            '共 ' . count($revoked['items']) . ' 条');
-        check('撤销名单带 scanned / truncated（SCAN 有界）',
+        check(
+            '撤销名单含刚写入的指纹',
+            in_array(FIX_FINGERPRINT, $fingerprints, true),
+            '共 ' . count($revoked['items']) . ' 条'
+        );
+        check(
+            '撤销名单带 scanned / truncated（SCAN 有界）',
             $revoked['scanned'] > 0 && is_bool($revoked['truncated']),
-            'scanned=' . $revoked['scanned'] . ' truncated=' . var_export($revoked['truncated'], true));
+            'scanned=' . $revoked['scanned'] . ' truncated=' . var_export($revoked['truncated'], true)
+        );
 
         $hit = null;
         foreach ($revoked['items'] as $item) {
@@ -467,17 +519,21 @@ if (!$ping['ok']) {
                 $hit = $item;
             }
         }
-        check('撤销条目的 TTL 被读出（限期 → permanent=false）',
+        check(
+            '撤销条目的 TTL 被读出（限期 → permanent=false）',
             is_array($hit) && $hit['permanent'] === false && $hit['ttl'] > 0,
-            'ttl=' . var_export($hit['ttl'] ?? null, true));
+            'ttl=' . var_export($hit['ttl'] ?? null, true)
+        );
 
         // ---- 入参校验 ----
         check('超长 uid 被 validId 拒绝', SessionInspector::validId(str_repeat('x', 129)) === false);
         check('含控制字符的 id 被拒绝', SessionInspector::validId("a\nb") === false);
 
         // ---- 空态区分（清掉夹具后必然为空，此处只验 hint 字段形态）----
-        check('未命中查询带可读 hint（空态 ≠ 静默留白）',
-            $byDeviceMiss['hint'] !== '' && $byDeviceMiss['skeleton_ok'] === true);
+        check(
+            '未命中查询带可读 hint（空态 ≠ 静默留白）',
+            $byDeviceMiss['hint'] !== '' && $byDeviceMiss['skeleton_ok'] === true
+        );
     } finally {
         unseedFixture();
         echo '  夹具已清理（p2test-* 全部删除，online:clients 成员已摘除）' . PHP_EOL;
@@ -489,8 +545,10 @@ if (!$ping['ok']) {
             }
         }
         check('★ 夹具清理干净（会话键不再存在）', $leftover === 0, '残留 ' . $leftover . ' 个');
-        check('★ 夹具清理后不在在线集合内',
-            !in_array(FIX_ONLINE, $reader->onlineClientIds(), true));
+        check(
+            '★ 夹具清理后不在在线集合内',
+            !in_array(FIX_ONLINE, $reader->onlineClientIds(), true)
+        );
     }
 }
 
@@ -515,46 +573,64 @@ $badNodes = [];
 foreach ($nodes as $alias => $key) {
     if (!preg_match('/^(.*)@([a-zA-Z]+)$/', $key, $m)) {
         $badNodes[] = $alias . '（key 形态异常）';
+
         continue;
     }
     // 动作必须在对应控制器的源码里真实存在
-    $src = str_contains($m[1], '\\api\\') ? $apiSrc : $pageSrc;
+    $src = str_contains($m[1], '\api\\') ? $apiSrc : $pageSrc;
     if (!preg_match('/function\s+' . preg_quote($m[2], '/') . '\s*\(/', $src)) {
         $badNodes[] = $alias . ' → ' . $key;
     }
 }
-check('★ 每个节点的 {控制器}@{action} 都能在控制器里找到真实方法',
-    $badNodes === [], implode('、', $badNodes));
+check(
+    '★ 每个节点的 {控制器}@{action} 都能在控制器里找到真实方法',
+    $badNodes === [],
+    implode('、', $badNodes)
+);
 
-check('★ 页`/sessions` 的菜单节点已登记（key = app\\controller\\SessionController）',
+check(
+    '★ 页`/sessions` 的菜单节点已登记（key = app\controller\SessionController）',
     str_contains($installSrc, "'app\\\\controller\\\\SessionController'"),
-    '漏登记的症状是「登录后点菜单 403」，不是白屏');
-check('★ 只读角色包含 7 个会话节点',
+    '漏登记的症状是「登录后点菜单 403」，不是白屏'
+);
+check(
+    '★ 只读角色包含 7 个会话节点',
     substr_count($installSrc, "\$nodeIds['sess.") >= 6
-    && str_contains($installSrc, "\$nodeIds['auth.revoked']"));
+    && str_contains($installSrc, "\$nodeIds['auth.revoked']")
+);
 
 // 路由：唯一写入口径的静态守卫（写操作属后续阶段）
 $routeSrc = (string)@file_get_contents(__DIR__ . '/../../config/route.php');
-check('★ /sessions 页面路由已挂 AdminAuth',
+check(
+    '★ /sessions 页面路由已挂 AdminAuth',
     (bool)preg_match(
-        "#Route::get\('/sessions',\s*\[SessionController::class,\s*'index'\]\)\s*->middleware\(\[AdminAuth::class\]\)#",
+        "#Route::get\\('/sessions',\\s*\\[SessionController::class,\\s*'index'\\]\\)\\s*->middleware\\(\\[AdminAuth::class\\]\\)#",
         $routeSrc
-    ));
-check('★ 两个 Session 控制器都已 disableDefaultRoute',
+    )
+);
+check(
+    '★ 两个 Session 控制器都已 disableDefaultRoute',
     str_contains($routeSrc, 'Route::disableDefaultRoute(SessionController::class);')
-    && str_contains($routeSrc, 'Route::disableDefaultRoute(SessionApiController::class);'));
-check('★ 会话相关路由全部是 GET（本页一期只读）',
-    !preg_match("#Route::(post|put|delete|patch)\(\s*'/sessions?#", $routeSrc));
+    && str_contains($routeSrc, 'Route::disableDefaultRoute(SessionApiController::class);')
+);
+check(
+    '★ 会话相关路由全部是 GET（本页一期只读）',
+    !preg_match("#Route::(post|put|delete|patch)\\(\\s*'/sessions?#", $routeSrc)
+);
 
 // 脚手架欢迎页控制器：2026-09-23 发现三个零鉴权默认路径 → 先 disableDefaultRoute 关闭；
 // 2026-09-24 已**彻底删除**控制器文件与 app/view/index/ 视图目录。
 // 全量覆盖（app/controller/** 逐个比对）由 tests/Unit/RouteGuardTest.php 守，此处只做点名确认。
-check('★ 脚手架欢迎页控制器已彻底移除（类文件不存在且 route.php 无代码引用）',
+check(
+    '★ 脚手架欢迎页控制器已彻底移除（类文件不存在且 route.php 无代码引用）',
     !is_file(__DIR__ . '/../../app/controller/IndexController.php')
-    && !preg_match('/^(use\s+app\\\\controller\\\\IndexController;|Route::disableDefaultRoute\(IndexController::class\);)/m', $routeSrc));
-check('★ 未全局禁用默认路由（全禁会让 webman-admin 的 /app/admin/* 整片 404）',
+    && !preg_match('/^(use\s+app\\\controller\\\IndexController;|Route::disableDefaultRoute\(IndexController::class\);)/m', $routeSrc)
+);
+check(
+    '★ 未全局禁用默认路由（全禁会让 webman-admin 的 /app/admin/* 整片 404）',
     !preg_match('/Route::disableDefaultRoute\(\s*\)\s*;/', $routeSrc)
-    && !preg_match("/Route::disableDefaultRoute\(\s*''\s*\)\s*;/", $routeSrc));
+    && !preg_match("/Route::disableDefaultRoute\\(\\s*''\\s*\\)\\s*;/", $routeSrc)
+);
 
 // ===========================================================================
 // 3. HTTP 层
@@ -568,23 +644,34 @@ if ($up['status'] !== 200 || strlen($up['body']) < 1000) {
 } else {
     check('GET /static/session.js → 200', strlen($up['body']) > 1000, strlen($up['body']) . ' bytes');
     $css = http('GET', '/static/session.css');
-    check('GET /static/session.css → 200', $css['status'] === 200 && strlen($css['body']) > 500,
-        'HTTP ' . $css['status'] . ' ' . strlen($css['body']) . ' bytes');
+    check(
+        'GET /static/session.css → 200',
+        $css['status'] === 200 && strlen($css['body']) > 500,
+        'HTTP ' . $css['status'] . ' ' . strlen($css['body']) . ' bytes'
+    );
     check('JS 里没有 innerHTML（XSS 纪律）', !preg_match('/\.innerHTML\s*=/', $up['body']));
-    check('★ JS 里没有任何定时器（按需取数，不轮询）',
-        !preg_match('/\b(setTimeout|setInterval)\s*\(/', $up['body']));
+    check(
+        '★ JS 里没有任何定时器（按需取数，不轮询）',
+        !preg_match('/\b(setTimeout|setInterval)\s*\(/', $up['body'])
+    );
 
     $jar = sys_get_temp_dir() . '/gw_p2_' . getmypid() . '.txt';
     @unlink($jar);
 
     // ---- 未登录 ----
     $page = http('GET', '/sessions', [], ['Accept: text/html'], $jar);
-    check('未登录 GET /sessions → 302 到登录页', $page['status'] === 302,
-        'HTTP ' . $page['status'] . ' Location=' . ($page['headers']['location'] ?? '-'));
+    check(
+        '未登录 GET /sessions → 302 到登录页',
+        $page['status'] === 302,
+        'HTTP ' . $page['status'] . ' Location=' . ($page['headers']['location'] ?? '-')
+    );
 
     $api = http('GET', '/api/sessions', [], ['Accept: application/json'], $jar);
-    check('未登录 GET /api/sessions → 401/403', in_array($api['status'], [401, 403], true),
-        'HTTP ' . $api['status']);
+    check(
+        '未登录 GET /api/sessions → 401/403',
+        in_array($api['status'], [401, 403], true),
+        'HTTP ' . $api['status']
+    );
 
     // ---- ★ 默认路由回归（2026-09-23 修的鉴权洞）----
     //
@@ -613,25 +700,32 @@ if ($up['status'] !== 200 || strlen($up['body']) < 1000) {
         $code = (int)(jsonBody($res['body'])['code'] ?? 0);
         $ok = in_array($res['status'], [404, 401], true) || ($res['status'] === 200 && $code === 404);
 
-        check('★ 未登录 ' . $path . ' → 不可达（404/401/200+code404）：' . $desc, $ok,
-            'HTTP ' . $res['status'] . ' code=' . ($code !== 0 ? $code : '-'));
+        check(
+            '★ 未登录 ' . $path . ' → 不可达（404/401/200+code404）：' . $desc,
+            $ok,
+            'HTTP ' . $res['status'] . ' code=' . ($code !== 0 ? $code : '-')
+        );
     }
 
     // 根路径必须仍是「302 → /app/admin」而不是 404：
     // `/` 的默认路由恰好落在脚手架控制器的 index 动作上，禁用之后若没人显式接管就会变 404。
     $root = http('GET', '/', [], ['Accept: text/html'], $jar);
-    check('★ 未登录 GET / → 302 到 /app/admin（禁用脚手架后根路径不得变 404）',
+    check(
+        '★ 未登录 GET / → 302 到 /app/admin（禁用脚手架后根路径不得变 404）',
         $root['status'] === 302 && str_contains((string)($root['headers']['location'] ?? ''), '/app/admin'),
-        'HTTP ' . $root['status'] . ' Location=' . ($root['headers']['location'] ?? '-'));
+        'HTTP ' . $root['status'] . ' Location=' . ($root['headers']['location'] ?? '-')
+    );
 
     // ---- 写方法一律不可用 ----
     // 同上：POST 到只注册了 GET 的路径，admin 的异常处理器同样可能给 `200 + code=404`，
     // 但**必须**是 code=404；若出现 200 + code=0 那就是真的被写入了，断言会红。
     $post = http('POST', '/api/sessions', ['x' => '1'], ['Accept: application/json'], $jar);
     $postCode = (int)(jsonBody($post['body'])['code'] ?? 0);
-    check('POST /api/sessions 不可用（405/404；admin JSON 口径可能是 200+code404）',
+    check(
+        'POST /api/sessions 不可用（405/404；admin JSON 口径可能是 200+code404）',
         in_array($post['status'], [404, 405], true) || ($post['status'] === 200 && $postCode === 404),
-        'HTTP ' . $post['status'] . ' code=' . ($postCode !== 0 ? $postCode : '-'));
+        'HTTP ' . $post['status'] . ' code=' . ($postCode !== 0 ? $postCode : '-')
+    );
 
     // ---- 登录后 ----
     $env = $_ENV + $_SERVER;
@@ -649,8 +743,10 @@ if ($up['status'] !== 200 || strlen($up['body']) < 1000) {
         $html = $page['body'];
         check('登录后 GET /sessions → 200', $page['status'] === 200, 'HTTP ' . $page['status']);
         check('页面含 #session-config 注入块', str_contains($html, 'id="session-config"'));
-        check('页面引用 /static/session.js 与 .css',
-            str_contains($html, '/static/session.js') && str_contains($html, '/static/session.css'));
+        check(
+            '页面引用 /static/session.js 与 .css',
+            str_contains($html, '/static/session.js') && str_contains($html, '/static/session.css')
+        );
         check('页面含抽屉容器（详情为页内展开）', str_contains($html, 'id="drawer"'));
         check('页面无 meta refresh', !str_contains($html, 'http-equiv="refresh"'));
 
@@ -662,33 +758,47 @@ if ($up['status'] !== 200 || strlen($up['body']) < 1000) {
             $res = http('GET', $path, [], ['Accept: application/json'], $jar);
             $body = jsonBody($res['body']);
             $data = is_array($body['data'] ?? null) ? $body['data'] : [];
-            check('GET ' . $path . ' → 200 + code=0',
+            check(
+                'GET ' . $path . ' → 200 + code=0',
                 $res['status'] === 200 && (int)($body['code'] ?? -1) === 0,
-                'HTTP ' . $res['status'] . ' code=' . ($body['code'] ?? '?'));
+                'HTTP ' . $res['status'] . ' code=' . ($body['code'] ?? '?')
+            );
             $missingKeys = array_values(array_filter($keys, static fn (string $k): bool => !array_key_exists($k, $data)));
-            check('  响应含字段：' . implode('/', $keys), $missingKeys === [],
-                $missingKeys === [] ? '' : '缺 ' . implode(',', $missingKeys));
+            check(
+                '  响应含字段：' . implode('/', $keys),
+                $missingKeys === [],
+                $missingKeys === [] ? '' : '缺 ' . implode(',', $missingKeys)
+            );
         }
 
         // 详情：不存在的 clientId 必须 404 + code 4004，且带 found=false
         $detail = http('GET', '/api/session/p2test-not-exist', [], ['Accept: application/json'], $jar);
         $detailBody = jsonBody($detail['body']);
-        check('★ 详情：不存在的 clientId → HTTP 404 + code 4004',
+        check(
+            '★ 详情：不存在的 clientId → HTTP 404 + code 4004',
             $detail['status'] === 404 && (int)($detailBody['code'] ?? 0) === 4004,
-            'HTTP ' . $detail['status'] . ' code=' . ($detailBody['code'] ?? '?'));
-        check('★ 404 响应体仍带 found=false（前端据此区分「已回收」与「取数失败」）',
-            ($detailBody['data']['found'] ?? null) === false);
+            'HTTP ' . $detail['status'] . ' code=' . ($detailBody['code'] ?? '?')
+        );
+        check(
+            '★ 404 响应体仍带 found=false（前端据此区分「已回收」与「取数失败」）',
+            ($detailBody['data']['found'] ?? null) === false
+        );
 
         // 入参校验：超长 uid → 400 + 4007
         $bad = http('GET', '/api/sessions/by-uid/' . str_repeat('x', 200), [], ['Accept: application/json'], $jar);
-        check('★ 超长 uid → HTTP 400 + code 4007',
+        check(
+            '★ 超长 uid → HTTP 400 + code 4007',
             $bad['status'] === 400 && (int)(jsonBody($bad['body'])['code'] ?? 0) === 4007,
-            'HTTP ' . $bad['status']);
+            'HTTP ' . $bad['status']
+        );
 
         // 订阅端点：两个参数都缺 → 400
         $noArg = http('GET', '/api/sessions/subscriptions', [], ['Accept: application/json'], $jar);
-        check('订阅端点缺 uid/topic → HTTP 400',
-            $noArg['status'] === 400, 'HTTP ' . $noArg['status']);
+        check(
+            '订阅端点缺 uid/topic → HTTP 400',
+            $noArg['status'] === 400,
+            'HTTP ' . $noArg['status']
+        );
 
         // viewer 动态矩阵
         $viewerUser = (string)($env['ADMIN_VIEWER_USER'] ?? '');
@@ -704,8 +814,11 @@ if ($up['status'] !== 200 || strlen($up['body']) < 1000) {
                     check('viewer GET ' . $path . ' → 200', $res['status'] === 200, 'HTTP ' . $res['status']);
                 }
                 $denied = http('GET', '/api/ops/api/probe', [], ['Accept: application/json'], $vjar);
-                check('viewer GET /api/ops/api/probe → 403（密钥状态仍只给运维）',
-                    $denied['status'] === 403, 'HTTP ' . $denied['status']);
+                check(
+                    'viewer GET /api/ops/api/probe → 403（密钥状态仍只给运维）',
+                    $denied['status'] === 403,
+                    'HTTP ' . $denied['status']
+                );
             } else {
                 check('viewer 登录', false, $viewerUser . ' 登录失败');
             }

@@ -20,7 +20,9 @@
   "require-dev": {
     "webman/skills": "^1.0",
     "phpunit/phpunit": "^10.0",
-    "phpstan/phpstan": "^2.0"
+    "phpstan/phpstan": "^2.0",
+    "squizlabs/php_codesniffer": "^4.0",
+    "friendsofphp/php-cs-fixer": "^3.95"
   },
   "suggest": {
     "ext-event": "For better performance. "
@@ -71,7 +73,12 @@
     "test:acceptance:p2": "php tests/Manual/p2_acceptance.php",
     "test:acceptance:p3": "php tests/Manual/p3_acceptance.php",
     "test:acceptance:p4": "php tests/Manual/p4_acceptance.php",
-    "analyse": "phpstan analyse --memory-limit=512M"
+    "analyse": "phpstan analyse --memory-limit=512M",
+    "lint": "phpcs --standard=phpcs.xml.dist",
+    "lint:summary": "phpcs --standard=phpcs.xml.dist --report=source --no-colors",
+    "lint:errors": "phpcs --standard=phpcs.xml.dist --warning-severity=0",
+    "cs": "php-cs-fixer fix --config=.php-cs-fixer.dist.php --sequential",
+    "cs:check": "php-cs-fixer fix --config=.php-cs-fixer.dist.php --dry-run --diff --sequential"
   },
   "minimum-stability": "dev",
   "prefer-stable": true

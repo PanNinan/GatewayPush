@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 页面 / API 控制器 —— AuditPageController。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -27,6 +32,9 @@ use support\Response;
  */
 final class AuditPageController
 {
+    /**
+     * 渲染行为日志页骨架。
+     */
     public function index(Request $request): Response
     {
         return view('audit/index', [

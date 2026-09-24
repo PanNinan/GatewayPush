@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 服务层 —— RateInspector。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -45,7 +50,7 @@ final class RateInspector
      *     }>,
      *     buckets: list<array{
      *         key: string, dim: string, fingerprint: string,
-     *         tokens: float, burst: float|null, level: string
+     *         tokens: float, burst: null|float, level: string
      *     }>,
      *     api_windows: list<array{
      *         minute: int, minute_text: string, hits: int, fingerprint: string
@@ -92,6 +97,7 @@ final class RateInspector
             [$dim, $fingerprint] = $parsed;
 
             $hash = [];
+
             try {
                 $raw = Redis::hGetAll($logical);
                 $hash = is_array($raw) ? $raw : [];
@@ -130,11 +136,13 @@ final class RateInspector
             $order = ['conn' => 0, 'uid' => 1, 'ip' => 2, 'ping' => 3];
             $oa = $order[$a['dim']] ?? 9;
             $ob = $order[$b['dim']] ?? 9;
+
             return $oa <=> $ob ?: strcmp($a['dim'], $b['dim']);
         });
         // 低令牌桶排前（正在被限的先看见）
         usort($buckets, static function (array $a, array $b): int {
             $rank = ['bad' => 0, 'warn' => 1, 'ok' => 2];
+
             return ($rank[$a['level']] ?? 3) <=> ($rank[$b['level']] ?? 3)
                 ?: strcmp($a['dim'], $b['dim']);
         });
@@ -154,72 +162,9 @@ final class RateInspector
     }
 
     /**
-     * 当前及前 N-1 个分钟窗口的 HTTP 侧命中计数。
-     *
-     * 只读 `api:rate:{md5}:{slot}` —— 键本身带 md5，**无法**还原 IP；
-     * 同一 md5 在多分钟各有一格，这里按分钟各报一行（hits=0 的格不列，
-     * 避免刷一屏「没人打过」的空窗）。
-     *
-     * @return list<array{minute: int, minute_text: string, hits: int, fingerprint: string}>
-     */
-    private function apiWindows(RedisReader $reader, bool &$truncated): array
-    {
-        $nowMinute = (int)floor(time() / 60);
-        $scan = $reader->scanKeys(
-            RedisKeys::RATE_LIMIT_API . '*',
-            100,
-            20,
-            100
-        );
-        if ($scan['truncated']) {
-            $truncated = true;
-        }
-
-        $bySlot = [];
-        foreach ($scan['keys'] as $logical) {
-            $parts = explode(':', $logical);
-            // api:rate:{md5}:{slot} —— 恰好 4 段
-            if (count($parts) !== 4 || $parts[0] !== 'api' || $parts[1] !== 'rate') {
-                continue;
-            }
-            $slot = (int)$parts[3];
-            // 只保留最近 API_WINDOWS 个窗口（更早的格子多半已 PEXPIRE）
-            if ($slot < $nowMinute - self::API_WINDOWS + 1 || $slot > $nowMinute) {
-                continue;
-            }
-
-            $hits = 0;
-            try {
-                $raw = Redis::get($logical);
-                if (is_numeric($raw)) {
-                    $hits = (int)$raw;
-                }
-            } catch (Throwable) {
-                continue;
-            }
-            if ($hits <= 0) {
-                continue;
-            }
-
-            $bySlot[$slot] = [
-                'minute' => $slot,
-                'minute_text' => date('H:i', $slot * 60),
-                'hits' => $hits,
-                // md5 前 12 位：够区分「是不是同一个源」，又不是可拼回的原文
-                'fingerprint' => substr($parts[2], 0, 12),
-            ];
-        }
-
-        $rows = array_values($bySlot);
-        usort($rows, static fn (array $a, array $b): int => $b['minute'] <=> $a['minute']);
-
-        return $rows;
-    }
-
-    /**
      * `rl:{dim}:{md5}` → [dim, fingerprint]；形态不符返回 null。
      *
-     * @return array{0: string, 1: string}|null
+     * @return null|array{0: string, 1: string}
      */
     public static function parseBucketKey(string $logical): ?array
     {
@@ -265,6 +210,70 @@ final class RateInspector
             'HTTP 侧 api:rate: 按分钟开窗；只列最近有命中的窗口，全 0 时不刷空行。',
             '当日 hit 计数取自 metrics:counter（Monitor::incr(\'rate_limit_hit\')），跨天归零属正常。',
         ];
+    }
+
+    /**
+     * 当前及前 N-1 个分钟窗口的 HTTP 侧命中计数。
+     *
+     * 只读 `api:rate:{md5}:{slot}` —— 键本身带 md5，**无法**还原 IP；
+     * 同一 md5 在多分钟各有一格，这里按分钟各报一行（hits=0 的格不列，
+     * 避免刷一屏「没人打过」的空窗）。
+     *
+     * @return list<array{minute: int, minute_text: string, hits: int, fingerprint: string}>
+     */
+    private function apiWindows(RedisReader $reader, bool &$truncated): array
+    {
+        $nowMinute = (int)floor(time() / 60);
+        $scan = $reader->scanKeys(
+            RedisKeys::RATE_LIMIT_API . '*',
+            100,
+            20,
+            100
+        );
+        if ($scan['truncated']) {
+            $truncated = true;
+        }
+
+        $bySlot = [];
+        foreach ($scan['keys'] as $logical) {
+            $parts = explode(':', $logical);
+            // api:rate:{md5}:{slot} —— 恰好 4 段
+            if (count($parts) !== 4 || $parts[0] !== 'api' || $parts[1] !== 'rate') {
+                continue;
+            }
+            $slot = (int)$parts[3];
+            // 只保留最近 API_WINDOWS 个窗口（更早的格子多半已 PEXPIRE）
+            if ($slot < $nowMinute - self::API_WINDOWS + 1 || $slot > $nowMinute) {
+                continue;
+            }
+
+            $hits = 0;
+
+            try {
+                $raw = Redis::get($logical);
+                if (is_numeric($raw)) {
+                    $hits = (int)$raw;
+                }
+            } catch (Throwable) {
+                continue;
+            }
+            if ($hits <= 0) {
+                continue;
+            }
+
+            $bySlot[$slot] = [
+                'minute' => $slot,
+                'minute_text' => date('H:i', $slot * 60),
+                'hits' => $hits,
+                // md5 前 12 位：够区分「是不是同一个源」，又不是可拼回的原文
+                'fingerprint' => substr($parts[2], 0, 12),
+            ];
+        }
+
+        $rows = array_values($bySlot);
+        usort($rows, static fn (array $a, array $b): int => $b['minute'] <=> $a['minute']);
+
+        return $rows;
     }
 
     /**

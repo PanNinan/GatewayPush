@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 服务层 —— AccessLogger。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -74,7 +79,7 @@ final class AccessLogger
      *     controller?: string,
      *     action_name?: string,
      *     query?: string,
-     *     body?: string|null,
+     *     body?: null|string,
      *     status?: int,
      *     code?: int,
      *     msg?: string,
@@ -170,7 +175,7 @@ final class AccessLogger
     /**
      * 请求体脱敏快照：JSON 优先，否则 http_build_query 形态再 redact。
      *
-     * @return string|null null = 无体 / 不可解析（不记原文，避免把未知格式塞进日志）
+     * @return null|string null = 无体 / 不可解析（不记原文，避免把未知格式塞进日志）
      */
     public static function redactBody(?string $raw, string $contentType): ?string
     {
@@ -191,6 +196,7 @@ final class AccessLogger
 
                 return is_string($out) ? $out : null;
             }
+
             // 非法 JSON：不落原文（可能是截断二进制）
             return null;
         }
@@ -205,6 +211,9 @@ final class AccessLogger
         return http_build_query($safe);
     }
 
+    /**
+     * 截断 body 列宽。
+     */
     private static function clipBody(?string $body): ?string
     {
         if ($body === null) {
@@ -214,6 +223,9 @@ final class AccessLogger
         return self::clip($body, self::BODY_MAX);
     }
 
+    /**
+     * 截断到列宽。
+     */
     private static function clip(string $value, int $max): string
     {
         return strlen($value) <= $max ? $value : substr($value, 0, $max);

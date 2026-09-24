@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin 单测 —— ActionContractTest。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -128,7 +133,7 @@ final class ActionContractTest extends TestCase
     {
         $script = $this->read(self::SCRIPT);
         preg_match_all(
-            "/\?\s*'([a-z][a-z0-9]*(?:-[a-z0-9]+)+)'\s*:\s*'([a-z][a-z0-9]*(?:-[a-z0-9]+)+)'/",
+            "/\\?\\s*'([a-z][a-z0-9]*(?:-[a-z0-9]+)+)'\\s*:\\s*'([a-z][a-z0-9]*(?:-[a-z0-9]+)+)'/",
             $script,
             $m
         );
@@ -454,7 +459,7 @@ final class ActionContractTest extends TestCase
     public function testScriptUsesExpectedVerbsAndConfigUrls(): void
     {
         $script = $this->read(self::SCRIPT);
-        preg_match_all("/requestJson\(\s*(.*?)\s*,\s*'([A-Z]+)'/", $script, $calls, PREG_SET_ORDER);
+        preg_match_all("/requestJson\\(\\s*(.*?)\\s*,\\s*'([A-Z]+)'/", $script, $calls, PREG_SET_ORDER);
 
         $this->assertNotEmpty($calls, '没有解析到任何 requestJson 调用，正则八成失配了');
 
@@ -496,12 +501,12 @@ final class ActionContractTest extends TestCase
         $routeFile = $this->read(self::ROUTES);
 
         $this->assertMatchesRegularExpression(
-            "#Route::post\('/action',\s*\[ActionApiController::class,\s*'invoke'\]\)#",
+            "#Route::post\\('/action',\\s*\\[ActionApiController::class,\\s*'invoke'\\]\\)#",
             $routeFile,
             'POST /api/action 必须指向 ActionApiController::invoke'
         );
         $this->assertMatchesRegularExpression(
-            "#Route::get\('/action/\{requestId\}',\s*\[ActionApiController::class,\s*'result'\]\)#",
+            "#Route::get\\('/action/\\{requestId\\}',\\s*\\[ActionApiController::class,\\s*'result'\\]\\)#",
             $routeFile,
             'GET /api/action/{requestId} 必须指向 ActionApiController::result —— '
             . '补查是纯读，动词改成 POST 会让它变成写端点'
@@ -519,7 +524,7 @@ final class ActionContractTest extends TestCase
     public function testPageRouteIsGuarded(): void
     {
         $this->assertMatchesRegularExpression(
-            "#Route::get\('/actions',\s*\[ActionController::class,\s*'index'\]\)\s*->middleware\(\[AdminAuth::class\]\)#",
+            "#Route::get\\('/actions',\\s*\\[ActionController::class,\\s*'index'\\]\\)\\s*->middleware\\(\\[AdminAuth::class\\]\\)#",
             $this->read(self::ROUTES),
             '/actions 页面路由必须挂 AdminAuth 中间件'
         );
@@ -566,9 +571,9 @@ final class ActionContractTest extends TestCase
         preg_match('/\'perms\'\s*=>\s*Perm::map\(\s*\[(.*?)\]\s*\)/s', $controller, $block);
         $inner = $block[1];
 
-        preg_match_all("/'([a-z_]+)'\s*=>\s*\[/", $inner, $allEntries);
+        preg_match_all("/'([a-z_]+)'\\s*=>\\s*\\[/", $inner, $allEntries);
         preg_match_all(
-            "/'([a-z_]+)'\s*=>\s*\[\s*([A-Za-z_][A-Za-z0-9_]*)::class\s*,\s*'([A-Za-z_][A-Za-z0-9_]*)'\s*\]/",
+            "/'([a-z_]+)'\\s*=>\\s*\\[\\s*([A-Za-z_][A-Za-z0-9_]*)::class\\s*,\\s*'([A-Za-z_][A-Za-z0-9_]*)'\\s*\\]/",
             $inner,
             $pairs,
             PREG_SET_ORDER
@@ -681,20 +686,18 @@ final class ActionContractTest extends TestCase
         // 三元表达式选节点（renderOutcome 的两组目标）—— 见 testOutcomeScopeTargetsExistInView。
         // ⚠ 要求含连字符，否则会把 `? 'warn' : 'info'` 这类**选 tone** 的表达式当成 id。
         preg_match_all(
-            "/\?\s*'([a-z][a-z0-9]*(?:-[a-z0-9]+)+)'\s*:\s*'([a-z][a-z0-9]*(?:-[a-z0-9]+)+)'/",
+            "/\\?\\s*'([a-z][a-z0-9]*(?:-[a-z0-9]+)+)'\\s*:\\s*'([a-z][a-z0-9]*(?:-[a-z0-9]+)+)'/",
             $script,
             $m4
         );
         $found = array_merge($found, $m4[1], $m4[2]);
 
-        $found = array_filter($found, static function (string $id): bool {
-            return $id !== ''
+        $found = array_filter($found, static fn (string $id): bool => $id !== ''
                 && !str_contains($id, '/')
                 && !str_contains($id, '#')
                 && !str_contains($id, '.')
                 && !str_contains($id, ':')
-                && preg_match('/^[A-Za-z][A-Za-z0-9_-]*$/', $id) === 1;
-        });
+                && preg_match('/^[A-Za-z][A-Za-z0-9_-]*$/', $id) === 1);
 
         return array_values(array_unique($found));
     }

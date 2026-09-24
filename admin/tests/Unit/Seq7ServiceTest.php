@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin 单测 —— Seq7ServiceTest。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -110,6 +115,7 @@ final class Seq7ServiceTest extends TestCase
         $lockPath = dirname(__DIR__, 3) . '/composer.lock';
         if (!is_file($lockPath)) {
             self::assertNotContains('workerman/workerman', $keys, '独立部署下不得伪造包版本');
+
             return;
         }
 

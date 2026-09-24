@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 页面 / API 控制器 —— MetricsPageController。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -23,6 +28,9 @@ use support\Response;
  */
 final class MetricsPageController
 {
+    /**
+     * 渲染指标页骨架。
+     */
     public function index(Request $request): Response
     {
         return view('metrics/index', [

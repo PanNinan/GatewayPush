@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 服务层 —— LogTailService。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -34,8 +39,12 @@ final class LogTailService
     /** 单次尾读的最大行数（UI 也按此夹取） */
     public const TAIL_MAX = 500;
 
+    /** @var string 日志根目录 */
     private string $logDir;
 
+    /**
+     * @param null|string $logDir 日志根目录；null = 读 gateway_push.log_dir
+     */
     public function __construct(?string $logDir = null)
     {
         $dir = $logDir !== null
@@ -121,6 +130,8 @@ final class LogTailService
      * 但为了不让一次过滤扫描整份大文件，**向前扫描最多 20000 行**即止（truncated 标记）。
      *
      * @return array{lines: list<string>, matched: int, truncated: bool}
+     *
+     * @throws RuntimeException 日志不可读
      */
     private function readTail(string $file, int $lines, string $keyword): array
     {
@@ -144,8 +155,9 @@ final class LogTailService
             $chunkSize = 65536;
             $pos = $size;
             $carry = '';
+            $bufferCount = count($buffer);
 
-            while (count($buffer) < $lines && $pos > 0) {
+            while ($bufferCount < $lines && $pos > 0) {
                 $read = min($chunkSize, $pos);
                 $pos -= $read;
 
@@ -164,10 +176,12 @@ final class LogTailService
 
                 // 最早读到的块在最前；倒序拼（块内行序保持，块间从后往前）
                 $buffer = array_merge($rows, $buffer);
+                $bufferCount = count($buffer);
 
-                if (count($buffer) > $scanLimit) {
+                if ($bufferCount > $scanLimit) {
                     $truncated = true;
                     $buffer = array_slice($buffer, -$scanLimit);
+
                     break;
                 }
             }

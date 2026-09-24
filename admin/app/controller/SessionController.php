@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 页面 / API 控制器 —— SessionController。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -42,6 +47,15 @@ use support\Response;
 final class SessionController
 {
     /**
+     * 页大小下拉候选。
+     *
+     * `public` 是刻意的：`tests/Unit/SessionContractTest.php` 直接断言
+     * `max(SIZE_OPTIONS) <= SessionInspector::SIZE_MAX` ——
+     * 用真实常量断言，而不是正则去匹配源码文本（后者改个排版就失效）。
+     */
+    public const SIZE_OPTIONS = [20, 50, 100];
+
+    /**
      * 离线队列在抽屉内的分页大小。
      *
      * 刻意**不读 `admin_settings`**：它是抽屉里的「展开看一眼」视图，
@@ -51,14 +65,8 @@ final class SessionController
     private const OFFLINE_PAGE_SIZE = 20;
 
     /**
-     * 页大小下拉候选。
-     *
-     * `public` 是刻意的：`tests/Unit/SessionContractTest.php` 直接断言
-     * `max(SIZE_OPTIONS) <= SessionInspector::SIZE_MAX` ——
-     * 用真实常量断言，而不是正则去匹配源码文本（后者改个排版就失效）。
+     * 渲染会话页骨架。
      */
-    public const SIZE_OPTIONS = [20, 50, 100];
-
     public function index(Request $request): Response
     {
         return view('session/index', [
@@ -155,6 +163,9 @@ final class SessionController
         return max(SessionInspector::SIZE_MIN, min(SessionInspector::SIZE_MAX, $configured));
     }
 
+    /**
+     * 读 gateway_push.* 配置并标量归一。
+     */
     private function cfg(string $key, string $default = ''): string
     {
         $value = config('gateway_push.' . $key, $default);

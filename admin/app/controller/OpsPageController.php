@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 页面 / API 控制器 —— OpsPageController。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -26,6 +31,9 @@ use support\Response;
  */
 final class OpsPageController
 {
+    /**
+     * 渲染运维页骨架。
+     */
     public function index(Request $request): Response
     {
         return view('ops/index', [

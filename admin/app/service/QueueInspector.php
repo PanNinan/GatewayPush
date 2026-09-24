@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 服务层 —— QueueInspector。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -55,7 +60,7 @@ final class QueueInspector
     /**
      * 把原始深度拼成带阈值与级别的展示行。纯函数。
      *
-     * @param array<string, int> $depths     逻辑键名 / 聚合键（push_offline / action_result）=> 深度
+     * @param array<string, int>             $depths     逻辑键名 / 聚合键（push_offline / action_result）=> 深度
      * @param array{queue: int, action: int} $thresholds 已夹取过的正整数阈值
      *
      * @return list<array{

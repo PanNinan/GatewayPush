@@ -6,6 +6,7 @@
 .env
 /tests/tmp
 /tests/.phpunit.result.cache
+/.php-cs-fixer.cache
 
 # plugin/admin 是 composer 包 webman/admin(v2.1.8) 的**纯副本**：
 # 其 Install.php 的 $pathRelation = ['plugin/admin' => 'plugin/admin']，

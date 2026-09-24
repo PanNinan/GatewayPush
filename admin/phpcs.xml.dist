@@ -1,0 +1,165 @@
+<?xml version="1.0"?>
+<!--
+  =====================================================================
+  admin phpcs —— 只做「注释 / 命名 / 业务红线」审计
+  =====================================================================
+  与 admin/.php-cs-fixer.dist.php 分工，两者**职责不得重叠**：
+
+    phpcs（本文件）                        审计：注释的完整性与正确性 / 命名 / 业务红线。只读不写。
+    php-cs-fixer（.php-cs-fixer.dist.php） 排版：空白/换行/缩进/括号/引号/phpdoc 排版/语法现代化。
+
+  与主项目根 phpcs.xml.dist **同哲学、不同作用域**：
+  - 不挂 PSR12 整包（避免与 fixer 抢排版）；
+  - 中文注释体例类规则刻意排除；
+  - 作用域只覆盖 admin 自有代码（app / config / scripts / tests），
+    不含 plugin（vendor 副本）、vendor、runtime、app/process（webman 骨架）。
+
+  用法：
+    审计（错误即失败） composer lint
+    只看摘要           composer lint:summary
+  不要用 phpcbf 批量修排版 —— 排版归 php-cs-fixer。
+-->
+<ruleset name="GatewayPushAdmin">
+    <description>admin 注释 / 命名 / 业务红线审计（排版由 php-cs-fixer 独占）</description>
+
+    <!-- 警告（复杂度/嵌套/TODO 等）只作提示，不影响退出码，门禁只看 error -->
+    <config name="ignore_warnings_on_exit" value="1"/>
+
+    <!-- ==================== 扫描范围 ==================== -->
+    <file>app</file>
+    <file>config</file>
+    <file>scripts</file>
+    <file>tests</file>
+
+    <exclude-pattern>*/vendor/*</exclude-pattern>
+    <exclude-pattern>*/runtime/*</exclude-pattern>
+    <!-- plugin/ 是 composer 包 webman/admin 的副本，不由本项目维护 -->
+    <exclude-pattern>*/plugin/*</exclude-pattern>
+    <!-- app/process 是 webman 骨架自带脚手架（Http / Monitor），与 phpstan.neon 同口径排除 -->
+    <exclude-pattern>*/app/process/*</exclude-pattern>
+    <!-- tests/Manual/_* 与 scripts/_* 临时验证/批处理脚本：下划线前缀＝不纳入审计 -->
+    <exclude-pattern>*/tests/Manual/_*</exclude-pattern>
+    <exclude-pattern>*/scripts/_*</exclude-pattern>
+
+    <arg name="extensions" value="php"/>
+    <arg name="basepath" value="."/>
+    <arg name="colors"/>
+
+    <!-- =====================================================================
+         一、注释
+         ===================================================================== -->
+    <rule ref="Squiz.Commenting.FileComment">
+        <exclude name="Squiz.Commenting.FileComment.MissingPackageTag"/>
+        <!-- webman 骨架配置/入口的 @author/@copyright 不是本项目体例；
+             项目自有文件用简体中文文件头（无这两 tag）也不会误伤 -->
+        <exclude name="Squiz.Commenting.FileComment.IncorrectAuthor"/>
+        <exclude name="Squiz.Commenting.FileComment.IncorrectCopyright"/>
+        <exclude name="Squiz.Commenting.FileComment.WrongStyle"/>
+        <!-- PHPCS 4 拆码：@package 缺失已由 MissingPackageTag 排除，
+             带 @author 的 webman 头仍会按「位置必须 package→subpackage→author」连锁报错。
+             项目头不写这些 tag，故整组 TagOrder / MissingSubpackage 一并排除。 -->
+        <exclude name="Squiz.Commenting.FileComment.PackageTagOrder"/>
+        <exclude name="Squiz.Commenting.FileComment.SubpackageTagOrder"/>
+        <exclude name="Squiz.Commenting.FileComment.AuthorTagOrder"/>
+        <exclude name="Squiz.Commenting.FileComment.CopyrightTagOrder"/>
+        <exclude name="Squiz.Commenting.FileComment.MissingSubpackageTag"/>
+    </rule>
+    <rule ref="Squiz.Commenting.ClassComment">
+        <exclude name="Squiz.Commenting.ClassComment.WrongStyle"/>
+        <exclude-pattern>*/tests/*</exclude-pattern>
+        <exclude-pattern>*/config/*</exclude-pattern>
+    </rule>
+    <rule ref="Squiz.Commenting.FunctionComment">
+        <!-- 与根 phpcs.xml.dist 同源：long form / 形状类型比对与 fixer、PHPStan 互为回退 -->
+        <exclude name="Squiz.Commenting.FunctionComment.MissingReturn"/>
+        <exclude name="Squiz.Commenting.FunctionComment.MissingParamTag"/>
+        <!-- PHPCS 4 拆码：ParamNameNoMatch / IncorrectParamVarName 按「位置配对 + long form」比对，
+             与根项目当年排除 IncorrectParamVarName 同因；真实错名由 PHPStan + 评审兜 -->
+        <exclude name="Squiz.Commenting.FunctionComment.ParamNameNoMatch"/>
+        <exclude name="Squiz.Commenting.FunctionComment.IncorrectParamVarName"/>
+        <!-- doc 里 list<string> / array{…} 与原生 array 形参比对 —— 保留 PHPStan 的更细形状 -->
+        <exclude name="Squiz.Commenting.FunctionComment.IncorrectTypeHint"/>
+        <!-- 多行 array{…} 形参：Squiz 解析不到收尾 $name，报 MissingParamName 属误报 -->
+        <exclude name="Squiz.Commenting.FunctionComment.MissingParamName"/>
+        <exclude name="Squiz.Commenting.FunctionComment.InvalidReturn"/>
+        <exclude name="Squiz.Commenting.FunctionComment.MissingParamComment"/>
+        <exclude name="Squiz.Commenting.FunctionComment.ParamCommentFullStop"/>
+        <exclude name="Squiz.Commenting.FunctionComment.ParamCommentNotCapital"/>
+        <exclude name="Squiz.Commenting.FunctionComment.ScalarTypeHintMissing"/>
+        <exclude name="Squiz.Commenting.FunctionComment.TypeHintMissing"/>
+        <exclude name="Squiz.Commenting.FunctionComment.SpacingAfterParamName"/>
+        <exclude name="Squiz.Commenting.FunctionComment.SpacingAfterParamType"/>
+        <exclude name="Squiz.Commenting.FunctionComment.ThrowsNoFullStop"/>
+        <exclude name="Squiz.Commenting.FunctionComment.ThrowsNotCapital"/>
+        <exclude name="Squiz.Commenting.FunctionComment.WrongStyle"/>
+        <exclude-pattern>*/tests/*</exclude-pattern>
+        <exclude-pattern>*/config/*</exclude-pattern>
+    </rule>
+    <rule ref="Squiz.Commenting.FunctionCommentThrowTag"/>
+    <rule ref="Squiz.Commenting.VariableComment">
+        <exclude name="Squiz.Commenting.VariableComment.IncorrectVarType"/>
+        <exclude-pattern>*/tests/*</exclude-pattern>
+        <exclude-pattern>*/config/*</exclude-pattern>
+    </rule>
+    <rule ref="Squiz.Commenting.EmptyCatchComment"/>
+    <rule ref="Generic.Commenting.Todo"/>
+    <rule ref="Generic.Commenting.Fixme"/>
+
+    <!-- =====================================================================
+         二、命名
+         ===================================================================== -->
+    <rule ref="PSR1.Classes.ClassDeclaration"/>
+    <rule ref="PSR1.Methods.CamelCapsMethodName"/>
+    <rule ref="PSR2.Classes.PropertyDeclaration"/>
+    <rule ref="Squiz.Classes.ValidClassName"/>
+    <rule ref="Squiz.NamingConventions.ValidFunctionName">
+        <exclude name="Squiz.NamingConventions.ValidFunctionName.PrivateNoUnderscore"/>
+    </rule>
+    <rule ref="Squiz.NamingConventions.ValidVariableName">
+        <exclude name="Squiz.NamingConventions.ValidVariableName.PrivateNoUnderscore"/>
+        <exclude name="Squiz.NamingConventions.ValidVariableName.PublicHasUnderscore"/>
+        <exclude name="Squiz.NamingConventions.ValidVariableName.MemberNotCamelCaps"/>
+    </rule>
+    <rule ref="Generic.NamingConventions.UpperCaseConstantName"/>
+    <rule ref="Generic.NamingConventions.ConstructorName"/>
+
+    <!-- =====================================================================
+         三、结构与质量
+         ===================================================================== -->
+    <rule ref="Squiz.Scope.MethodScope"/>
+    <rule ref="Squiz.Scope.MemberVarScope"/>
+    <rule ref="Squiz.Scope.StaticThisUsage"/>
+    <rule ref="Squiz.PHP.Eval"/>
+    <!-- Manual 验收脚本是 CLI 一次性进程，global 计数器是其既定写法；常驻代码仍禁 -->
+    <rule ref="Squiz.PHP.GlobalKeyword">
+        <exclude-pattern>*/tests/Manual/*</exclude-pattern>
+    </rule>
+    <rule ref="Squiz.PHP.InnerFunctions"/>
+    <rule ref="Squiz.PHP.NonExecutableCode"/>
+    <rule ref="Squiz.PHP.DisallowSizeFunctionsInLoops"/>
+    <rule ref="Generic.CodeAnalysis.AssignmentInCondition"/>
+    <rule ref="Generic.CodeAnalysis.EmptyStatement">
+        <!-- 有意空 catch + 注释：EmptyCatchComment 已强制「必须写注释」，
+             这里只要再排除「无语句」本身，否则两边互锁 -->
+        <exclude name="Generic.CodeAnalysis.EmptyStatement.DetectedCatch"/>
+    </rule>
+    <rule ref="Generic.CodeAnalysis.JumbledIncrementer"/>
+    <rule ref="Generic.CodeAnalysis.RequireExplicitBooleanOperatorPrecedence"/>
+    <rule ref="Generic.CodeAnalysis.UnusedFunctionParameter">
+        <exclude-pattern>*/tests/*</exclude-pattern>
+        <!-- webman 路由动作统一签名 process(Request, callable) / index(Request)，
+             框架接口要求带 $request，参数本身按路由语义可不使用 -->
+        <exclude-pattern>*/app/controller/*</exclude-pattern>
+        <exclude-pattern>*/app/middleware/*</exclude-pattern>
+    </rule>
+    <rule ref="Generic.PHP.DisallowShortOpenTag"/>
+    <rule ref="Generic.PHP.DeprecatedFunctions"/>
+    <rule ref="Generic.Metrics.CyclomaticComplexity">
+        <type>warning</type>
+    </rule>
+    <rule ref="Generic.Metrics.NestingLevel">
+        <type>warning</type>
+    </rule>
+
+    <!-- 刻意排除与主项目一致：排版归 fixer、英文散文体例对中文误报、观点过强规则 -->
+</ruleset>

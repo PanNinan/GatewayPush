@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 支撑组件 —— PredisSafeRedisManager。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -54,9 +59,9 @@ class PredisSafeRedisManager extends RedisManager
      * 本项目走本类 connection() 覆写（连接创建时直接 setEventDispatcher），
      * events 恒为 false，读不到 $app。
      *
-     * @param  string  $app  占位，与 vendor 的 '' 对齐；不写入 $this->app
-     * @param  string  $driver
-     * @param  array<string, mixed>  $config
+     * @param string               $app    占位，与 vendor 的 '' 对齐；不写入 $this->app
+     * @param string               $driver
+     * @param array<string, mixed> $config
      */
     public function __construct(string $app, string $driver, array $config)
     {
@@ -72,21 +77,25 @@ class PredisSafeRedisManager extends RedisManager
      *
      * 供连接池 closer 与单测共用，避免两份逻辑漂移。
      *
-     * @param  object  $client  phpredis \Redis 或 predis\Client（或其它带 close/disconnect 的对象）
+     * @param object $client phpredis \Redis 或 predis\Client（或其它带 close/disconnect 的对象）
+     *
      * @return void
      */
     public static function closeClient(object $client): void
     {
         if (method_exists($client, 'close')) {
             $client->close();
+
             return;
         }
         if ($client instanceof PredisClient) {
             $client->disconnect();
+
             return;
         }
         if (method_exists($client, 'disconnect')) {
             $client->disconnect();
+
             return;
         }
         // 最后手段：与父类行为一致（会走 __call；正常客户端到不了这里）。
@@ -96,14 +105,16 @@ class PredisSafeRedisManager extends RedisManager
     /**
      * Get connection.
      *
-     * @param  string|null  $name
-     * @return Connection|mixed|StdClass|null
-     * @throws Throwable
+     * @param null|string $name
+     *
+     * @return null|Connection|mixed|StdClass
+     *
+     * @throws Throwable 连接池异常
      */
     public function connection($name = null)
     {
         $name = $name ?: 'default';
-        $key = "redis.connections.$name";
+        $key = "redis.connections.{$name}";
         $connection = Context::get($key);
         if ($connection) {
             $connection = $this->probeCached($connection, $key, $name);
@@ -119,6 +130,7 @@ class PredisSafeRedisManager extends RedisManager
                     }
                     $this->allConnections ??= new WeakMap();
                     $this->allConnections[$connection] = true;
+
                     return $connection;
                 });
                 // 与父类唯一差异：走 closeClient()，predis 不再触发 CLOSE 命令。
@@ -130,6 +142,7 @@ class PredisSafeRedisManager extends RedisManager
                 });
                 static::$pools[$name] = $pool;
             }
+
             try {
                 $connection = static::$pools[$name]->get();
                 Context::set($key, $connection);
@@ -144,39 +157,8 @@ class PredisSafeRedisManager extends RedisManager
                 });
             }
         }
-        return $connection;
-    }
 
-    /**
-     * 对 Context 缓存的连接做限频探活；死了就还池关闭，返回 null 让调用方换新。
-     *
-     * @param  object  $connection  Illuminate Connection（或等价对象）
-     * @param  string  $key  Context 键（redis.connections.{name}）
-     * @param  string  $name  池名
-     * @return object|null  活连接原样返回；死连接返回 null 并已回收
-     */
-    private function probeCached(object $connection, string $key, string $name): ?object
-    {
-        $probedAt = (int)Context::get($key . '.probed_at', 0);
-        if (time() - $probedAt < self::PROBE_TTL) {
-            return $connection;
-        }
-        Context::set($key . '.probed_at', time());
-        try {
-            // 必须是 PING 命令：get('PING') 是 GET 键，死连接同样会抛，但语义含糊。
-            $connection->ping();
-            return $connection;
-        } catch (Throwable) {
-            try {
-                if (isset(static::$pools[$name])) {
-                    static::$pools[$name]->closeConnection($connection);
-                }
-            } catch (Throwable) {
-                // already gone / never registered
-            }
-            Context::set($key, null);
-            return null;
-        }
+        return $connection;
     }
 
     /**
@@ -190,9 +172,46 @@ class PredisSafeRedisManager extends RedisManager
             return [];
         }
         $connections = [];
-        foreach ($this->allConnections as $connection => $_) {
+        foreach ($this->allConnections as $connection => $_unused) {
             $connections[] = $connection;
         }
+
         return $connections;
+    }
+
+    /**
+     * 对 Context 缓存的连接做限频探活；死了就还池关闭，返回 null 让调用方换新。
+     *
+     * @param object $connection Illuminate Connection（或等价对象）
+     * @param string $key        Context 键（redis.connections.{name}）
+     * @param string $name       池名
+     *
+     * @return null|object 活连接原样返回；死连接返回 null 并已回收
+     */
+    private function probeCached(object $connection, string $key, string $name): ?object
+    {
+        $probedAt = (int)Context::get($key . '.probed_at', 0);
+        if (time() - $probedAt < self::PROBE_TTL) {
+            return $connection;
+        }
+        Context::set($key . '.probed_at', time());
+
+        try {
+            // 必须是 PING 命令：get('PING') 是 GET 键，死连接同样会抛，但语义含糊。
+            $connection->ping();
+
+            return $connection;
+        } catch (Throwable) {
+            try {
+                if (isset(static::$pools[$name])) {
+                    static::$pools[$name]->closeConnection($connection);
+                }
+            } catch (Throwable) {
+                // already gone / never registered
+            }
+            Context::set($key, null);
+
+            return null;
+        }
     }
 }

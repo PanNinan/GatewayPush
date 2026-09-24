@@ -1,5 +1,4 @@
 <?php
-
 /**
  * P3 验收脚本（手工执行，**不在** PHPUnit 套件内：它依赖后台服务、MySQL 与主项目在线）。
  *
@@ -65,6 +64,7 @@ use app\service\TemplateRepository;
 use support\Db;
 
 require __DIR__ . '/../../vendor/autoload.php';
+
 require __DIR__ . '/../../support/bootstrap.php';
 
 const ADMIN_HOST = '127.0.0.1';
@@ -91,6 +91,7 @@ const FIX_TPL_NAME = FIX . '-tpl';
  */
 const FIX_REQ_ACC = 'p3acc00000000001';
 const FIX_REQ_REJ = 'p3rej00000000001';
+
 /**
  * 夹具操作者 id。
  *
@@ -315,6 +316,7 @@ function seedFixture(): void
 function unseedFixture(): void
 {
     $removed = 0;
+
     try {
         $removed = (int)Db::table('push_task')->where('target', 'like', FIX . '%')->delete();
     } catch (Throwable $e) {
@@ -326,6 +328,7 @@ function unseedFixture(): void
         Db::table('admin_audit_log')->where('target', 'like', FIX . '%')->delete();
     } catch (Throwable $e) {
         echo '  [WARN] 模板 / 审计夹具清理失败：' . $e->getMessage() . PHP_EOL;
+
         return;
     }
 
@@ -361,6 +364,7 @@ if ($seed && $redisOk) {
         if ($reader->sessionExists($probeTarget)) {
             echo PHP_EOL . '[ABORT] 夹具目标 ' . $probeTarget . ' 是**真实存在**的会话；'
                 . '本脚本会向它投递消息，拒绝执行。' . PHP_EOL;
+
             exit(2);
         }
     }
@@ -398,11 +402,15 @@ if ($envValues === []) {
     foreach ($mirrors as $key => [$label, $mirror]) {
         if (!array_key_exists($key, $envValues)) {
             note('主项目 .env 未显式设置 ' . $key, $label . '=' . $mirror . '（取默认值，由静态测试守）');
+
             continue;
         }
         $actual = (int)$envValues[$key];
-        check('★ ' . $key . ' 的镜像与主项目 .env 一致', $actual === $mirror,
-            'env=' . $actual . ' ' . $label . '=' . $mirror);
+        check(
+            '★ ' . $key . ' 的镜像与主项目 .env 一致',
+            $actual === $mirror,
+            'env=' . $actual . ' ' . $label . '=' . $mirror
+        );
     }
 }
 
@@ -412,17 +420,21 @@ if ($envValues === []) {
 section('[2] 服务层：纯函数（无 IO）');
 
 $payload = ['a' => '中文'];
-check('payloadBytes 与 Message::encode 同口径（中文 3 字节）',
+check(
+    'payloadBytes 与 Message::encode 同口径（中文 3 字节）',
     Pusher::payloadBytes($payload)
     === strlen((string)json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
-    Pusher::payloadBytes($payload) . ' bytes');
+    Pusher::payloadBytes($payload) . ' bytes'
+);
 
 // 服务端判据是**紧凑重新编码**后的字节数，而不是用户输入的原文长度：
 // 一个多行缩进的载荷原文可能大得多 —— 按原文拦就是误杀（前端 `encodePayload` 同样口径）。
 $pretty = "{\n    \"a\": \"中文\"\n}";
-check('★ 字节数按紧凑编码计，不按原文（格式化 JSON 不被误拦）',
+check(
+    '★ 字节数按紧凑编码计，不按原文（格式化 JSON 不被误拦）',
     Pusher::payloadBytes(['a' => '中文']) < strlen($pretty),
-    'compact=' . Pusher::payloadBytes(['a' => '中文']) . ' raw=' . strlen($pretty));
+    'compact=' . Pusher::payloadBytes(['a' => '中文']) . ' raw=' . strlen($pretty)
+);
 
 check('零载荷按服务端的 [] 计 2 字节', Pusher::payloadBytes([]) === 2, Pusher::payloadBytes([]) . ' bytes');
 check('payloadMax() 无配置时回落镜像值', Pusher::payloadMax() === Pusher::PAYLOAD_MAX_MIRROR);
@@ -430,26 +442,39 @@ check('payloadMax() 无配置时回落镜像值', Pusher::payloadMax() === Pushe
 // ★ 只允许**调小**：服务端上限没变，后台放开只会产出「已受理但被静默丢弃」的载荷 ——
 //   正是第 6 节反证 A 要消灭的那类故障。故 `payloadMax()` 是**夹取**而不是采信。
 //   （初版验收脚本在这里断言「8192 被采纳」，跑出 FAIL —— 错的是断言，不是代码。）
-check('★ payloadMax(8192) 调大**无效**，仍回落镜像值（放开只会产出被静默丢弃的载荷）',
+check(
+    '★ payloadMax(8192) 调大**无效**，仍回落镜像值（放开只会产出被静默丢弃的载荷）',
     Pusher::payloadMax(Pusher::PAYLOAD_MAX_MIRROR * 2) === Pusher::PAYLOAD_MAX_MIRROR,
-    'payloadMax(8192)=' . Pusher::payloadMax(8192));
+    'payloadMax(8192)=' . Pusher::payloadMax(8192)
+);
 check('★ payloadMax(1024) 调小生效', Pusher::payloadMax(1024) === 1024);
-check('  payloadMax(0) / 负数 走镜像值',
+check(
+    '  payloadMax(0) / 负数 走镜像值',
     Pusher::payloadMax(0) === Pusher::PAYLOAD_MAX_MIRROR
-    && Pusher::payloadMax(-1) === Pusher::PAYLOAD_MAX_MIRROR);
+    && Pusher::payloadMax(-1) === Pusher::PAYLOAD_MAX_MIRROR
+);
 
 $max = Pusher::payloadMax();
 
 $ok = Pusher::validatePush(['target_type' => 'uid', 'target' => FIX_TARGET_UID, 'payload' => ['x' => 1]], $max);
 check('validatePush 放行合法请求', $ok['ok'], implode('; ', $ok['errors']));
-check('★ msg_id 留空时自动补一个（服务端只在有 msg_id 时去重）',
-    $ok['msg_id_generated'] === true && $ok['job']['msg_id'] !== '', 'msg_id=' . $ok['job']['msg_id']);
-check('自动补的 msg_id 是 16 字符（8 字节 hex）',
-    strlen($ok['job']['msg_id']) === Pusher::MSG_ID_LEN, strlen($ok['job']['msg_id']) . ' 字符');
+check(
+    '★ msg_id 留空时自动补一个（服务端只在有 msg_id 时去重）',
+    $ok['msg_id_generated'] === true && $ok['job']['msg_id'] !== '',
+    'msg_id=' . $ok['job']['msg_id']
+);
+check(
+    '自动补的 msg_id 是 16 字符（8 字节 hex）',
+    strlen($ok['job']['msg_id']) === Pusher::MSG_ID_LEN,
+    strlen($ok['job']['msg_id']) . ' 字符'
+);
 
 $badType = Pusher::validatePush(['target_type' => 'topic', 'target' => 'x', 'payload' => []], $max);
-check('★ 非法 target_type 被拒（R1：不存在「按主题推送」）',
-    !$badType['ok'], implode('; ', $badType['errors']));
+check(
+    '★ 非法 target_type 被拒（R1：不存在「按主题推送」）',
+    !$badType['ok'],
+    implode('; ', $badType['errors'])
+);
 
 $noTarget = Pusher::validatePush(['target_type' => 'uid', 'target' => '  ', 'payload' => []], $max);
 check('空 target 被拒', !$noTarget['ok'], implode('; ', $noTarget['errors']));
@@ -458,23 +483,33 @@ $over = Pusher::validatePush(
     ['target_type' => 'uid', 'target' => FIX_TARGET_UID, 'payload' => ['big' => str_repeat('中', $max)]],
     $max
 );
-check('★ 超限载荷被拒（放过去会静默丢弃，见第 6 节的反证 A）', !$over['ok'],
-    'bytes=' . $over['bytes'] . ' max=' . $over['max']);
+check(
+    '★ 超限载荷被拒（放过去会静默丢弃，见第 6 节的反证 A）',
+    !$over['ok'],
+    'bytes=' . $over['bytes'] . ' max=' . $over['max']
+);
 check('  超限时字节数如实给出（前端据此定位差值）', $over['bytes'] > $max);
 
-check('normalizeOfflineMode 对未知值返回 null（区别于「没传」= 空串）',
-    Pusher::normalizeOfflineMode('nope') === null && Pusher::normalizeOfflineMode('') === '');
+check(
+    'normalizeOfflineMode 对未知值返回 null（区别于「没传」= 空串）',
+    Pusher::normalizeOfflineMode('nope') === null && Pusher::normalizeOfflineMode('') === ''
+);
 
-check('ActionCatalog::names() = 6 个 HTTP 开放动作',
-    count(ActionCatalog::names()) === 6, implode('/', ActionCatalog::names()));
+check(
+    'ActionCatalog::names() = 6 个 HTTP 开放动作',
+    count(ActionCatalog::names()) === 6,
+    implode('/', ActionCatalog::names())
+);
 check('session 不在 HTTP 开放清单内', !in_array('session', ActionCatalog::names(), true));
-check('forUi() 每项都带 UI 必需元信息',
-    array_reduce(ActionCatalog::forUi(), static function (bool $c, array $a): bool {
-        return $c && isset($a['name'], $a['description'], $a['params_hint'])
-            && array_key_exists('requires_uid', $a);
-    }, true));
-check('validRequestId 接受调用方自造 id（比 16 位 hex 宽得多）',
-    ActionCatalog::validRequestId('A_b-9') && !ActionCatalog::validRequestId('bad id!'));
+check(
+    'forUi() 每项都带 UI 必需元信息',
+    array_reduce(ActionCatalog::forUi(), static fn (bool $c, array $a): bool => $c && isset($a['name'], $a['description'], $a['params_hint'])
+            && array_key_exists('requires_uid', $a), true)
+);
+check(
+    'validRequestId 接受调用方自造 id（比 16 位 hex 宽得多）',
+    ActionCatalog::validRequestId('A_b-9') && !ActionCatalog::validRequestId('bad id!')
+);
 
 $redacted = Auditor::redact([
     'api_secret' => 'x',
@@ -482,11 +517,13 @@ $redacted = Auditor::redact([
     'nested' => ['token' => 'z'],
     'keep' => 'v',
 ]);
-check('★ 审计脱敏：密钥类字段一律打码，普通字段原样保留',
+check(
+    '★ 审计脱敏：密钥类字段一律打码，普通字段原样保留',
     $redacted['api_secret'] === Auditor::MASK
     && $redacted['password'] === Auditor::MASK
     && $redacted['nested']['token'] === Auditor::MASK
-    && $redacted['keep'] === 'v');
+    && $redacted['keep'] === 'v'
+);
 
 // ===========================================================================
 // 3. 静态一致性：节点 ↔ 控制器动作 ↔ 路由 ↔ 角色规则
@@ -496,8 +533,8 @@ section('[3] 静态一致性：install.php 节点 ↔ 控制器动作 ↔ 路由
 $installSrc = (string)@file_get_contents(__DIR__ . '/../../scripts/install.php');
 $routeSrc = (string)@file_get_contents(__DIR__ . '/../../config/route.php');
 $apiSources = [
-    'api\\PushController' => (string)@file_get_contents(__DIR__ . '/../../app/controller/api/PushController.php'),
-    'api\\ActionController' => (string)@file_get_contents(__DIR__ . '/../../app/controller/api/ActionController.php'),
+    'api\PushController' => (string)@file_get_contents(__DIR__ . '/../../app/controller/api/PushController.php'),
+    'api\ActionController' => (string)@file_get_contents(__DIR__ . '/../../app/controller/api/ActionController.php'),
 ];
 
 $nodeAliases = [
@@ -519,8 +556,11 @@ foreach ($nm as $hit) {
 }
 
 $missingNodes = array_values(array_diff($nodeAliases, array_keys($nodes)));
-check('★ install.php 里 9 个 P3 节点齐全（含 2 个菜单节点）', $missingNodes === [],
-    $missingNodes === [] ? '解析到 ' . count($nodes) . ' 个' : '缺 ' . implode('、', $missingNodes));
+check(
+    '★ install.php 里 9 个 P3 节点齐全（含 2 个菜单节点）',
+    $missingNodes === [],
+    $missingNodes === [] ? '解析到 ' . count($nodes) . ' 个' : '缺 ' . implode('、', $missingNodes)
+);
 
 $badNodes = [];
 foreach ($nodes as $alias => $key) {
@@ -529,6 +569,7 @@ foreach ($nodes as $alias => $key) {
         if (!str_contains($key, 'controller')) {
             $badNodes[] = $alias . '（key 形态异常：' . $key . '）';
         }
+
         continue;
     }
     $src = '';
@@ -546,47 +587,55 @@ check('★ 每个 {控制器}@{action} 都能在控制器里找到真实方法',
 $viewerBlock = '';
 preg_match('/\$viewerRules\s*=\s*\[(.*?)\];/s', $installSrc, $vm);
 $viewerBlock = (string)($vm[1] ?? '');
-check('★ 只读角色不含任何 P3 写权限点',
+check(
+    '★ 只读角色不含任何 P3 写权限点',
     $viewerBlock !== ''
     && !str_contains($viewerBlock, 'push.create')
     && !str_contains($viewerBlock, 'push.tplSave')
     && !str_contains($viewerBlock, 'push.tplDelete')
     && !str_contains($viewerBlock, 'action.invoke')
     && !str_contains($viewerBlock, 'action.result')
-    && !str_contains($viewerBlock, "\$nodeIds['actions']"));
-check('★ 只读角色含 P3 只读三项（push / push.history / push.tplList）',
+    && !str_contains($viewerBlock, "\$nodeIds['actions']")
+);
+check(
+    '★ 只读角色含 P3 只读三项（push / push.history / push.tplList）',
     $viewerBlock !== ''
     && str_contains($viewerBlock, "\$nodeIds['push']")
     && str_contains($viewerBlock, "\$nodeIds['push.history']")
-    && str_contains($viewerBlock, "\$nodeIds['push.tplList']"));
+    && str_contains($viewerBlock, "\$nodeIds['push.tplList']")
+);
 
 $routeExpect = [
-    "#Route::post\('/push',\s*\[PushApiController::class,\s*'create'\]\)#" => 'POST /api/push → create',
-    "#Route::get\('/push/history',\s*\[PushApiController::class,\s*'history'\]\)#" => 'GET /api/push/history → history',
-    "#Route::get\('/push/templates',\s*\[PushApiController::class,\s*'templateList'\]\)#" => 'GET /api/push/templates → templateList',
-    "#Route::post\('/push/templates',\s*\[PushApiController::class,\s*'templateSave'\]\)#" => 'POST /api/push/templates → templateSave',
-    "#Route::delete\('/push/templates/\{id\}',\s*\[PushApiController::class,\s*'templateDelete'\]\)#" => 'DELETE /api/push/templates/{id} → templateDelete',
-    "#Route::post\('/action',\s*\[ActionApiController::class,\s*'invoke'\]\)#" => 'POST /api/action → invoke',
-    "#Route::get\('/action/\{requestId\}',\s*\[ActionApiController::class,\s*'result'\]\)#" => 'GET /api/action/{requestId} → result',
+    "#Route::post\\('/push',\\s*\\[PushApiController::class,\\s*'create'\\]\\)#" => 'POST /api/push → create',
+    "#Route::get\\('/push/history',\\s*\\[PushApiController::class,\\s*'history'\\]\\)#" => 'GET /api/push/history → history',
+    "#Route::get\\('/push/templates',\\s*\\[PushApiController::class,\\s*'templateList'\\]\\)#" => 'GET /api/push/templates → templateList',
+    "#Route::post\\('/push/templates',\\s*\\[PushApiController::class,\\s*'templateSave'\\]\\)#" => 'POST /api/push/templates → templateSave',
+    "#Route::delete\\('/push/templates/\\{id\\}',\\s*\\[PushApiController::class,\\s*'templateDelete'\\]\\)#" => 'DELETE /api/push/templates/{id} → templateDelete',
+    "#Route::post\\('/action',\\s*\\[ActionApiController::class,\\s*'invoke'\\]\\)#" => 'POST /api/action → invoke',
+    "#Route::get\\('/action/\\{requestId\\}',\\s*\\[ActionApiController::class,\\s*'result'\\]\\)#" => 'GET /api/action/{requestId} → result',
 ];
 foreach ($routeExpect as $pattern => $label) {
     check('★ 路由 ' . $label, (bool)preg_match($pattern, $routeSrc));
 }
 
-check('★ 两个 P3 页面路由都挂了 AdminAuth',
+check(
+    '★ 两个 P3 页面路由都挂了 AdminAuth',
     (bool)preg_match(
-        "#Route::get\('/push',\s*\[PushController::class,\s*'index'\]\)\s*->middleware\(\[AdminAuth::class\]\)#",
+        "#Route::get\\('/push',\\s*\\[PushController::class,\\s*'index'\\]\\)\\s*->middleware\\(\\[AdminAuth::class\\]\\)#",
         $routeSrc
     )
     && (bool)preg_match(
-        "#Route::get\('/actions',\s*\[ActionController::class,\s*'index'\]\)\s*->middleware\(\[AdminAuth::class\]\)#",
+        "#Route::get\\('/actions',\\s*\\[ActionController::class,\\s*'index'\\]\\)\\s*->middleware\\(\\[AdminAuth::class\\]\\)#",
         $routeSrc
-    ));
-check('★ 四个 P3 控制器都已 disableDefaultRoute（默认路径 ≠ 显式路径 ⇒ 不禁就是 4 个免鉴权入口）',
+    )
+);
+check(
+    '★ 四个 P3 控制器都已 disableDefaultRoute（默认路径 ≠ 显式路径 ⇒ 不禁就是 4 个免鉴权入口）',
     str_contains($routeSrc, 'Route::disableDefaultRoute(PushController::class);')
     && str_contains($routeSrc, 'Route::disableDefaultRoute(ActionController::class);')
     && str_contains($routeSrc, 'Route::disableDefaultRoute(PushApiController::class);')
-    && str_contains($routeSrc, 'Route::disableDefaultRoute(ActionApiController::class);'));
+    && str_contains($routeSrc, 'Route::disableDefaultRoute(ActionApiController::class);')
+);
 
 // ---------------------------------------------------------------------------
 // 3b. DB 实际状态
@@ -600,6 +649,7 @@ check('★ 四个 P3 控制器都已 disableDefaultRoute（默认路径 ≠ 显�
 
 $dbRules = null;
 $dbRoles = null;
+
 try {
     $dbRules = Db::table('wa_rules')->pluck('id', 'key')->toArray();
     $dbRoles = Db::table('wa_roles')->get();
@@ -614,12 +664,14 @@ if (is_array($dbRules)) {
             $missingInDb[] = $alias . ' → ' . $key;
         }
     }
-    check('★ 9 个 P3 节点都已写进 wa_rules（install.php 跑过才生效，静态检查发现不了）',
+    check(
+        '★ 9 个 P3 节点都已写进 wa_rules（install.php 跑过才生效，静态检查发现不了）',
         $missingInDb === [],
         $missingInDb === []
             ? 'wa_rules 共 ' . count($dbRules) . ' 条'
             : '缺 ' . count($missingInDb) . ' 个：' . implode('；', $missingInDb)
-              . ' —— 运行 php scripts/install.php');
+              . ' —— 运行 php scripts/install.php'
+    );
 
     $roleIds = [];
     // ⚠ `support\Db::table()->get()` 在本项目的取数模式下返回 **array of array**（不是 stdClass），
@@ -643,9 +695,7 @@ if (is_array($dbRules)) {
         }
     }
 
-    $idOf = static function (string $alias) use ($nodes, $dbRules): int {
-        return (int)($dbRules[$nodes[$alias] ?? ''] ?? 0);
-    };
+    $idOf = static fn (string $alias): int => (int)($dbRules[$nodes[$alias] ?? ''] ?? 0);
 
     if (is_array($viewerIds)) {
         $mustHave = ['push', 'push.history', 'push.tplList'];
@@ -664,12 +714,21 @@ if (is_array($dbRules)) {
             }
         }
 
-        check('★ DB 里只读角色确实拿到 P3 只读三项', $lack === [],
-            $lack === [] ? '' : '缺 ' . implode('、', $lack));
-        check('★ DB 里只读角色确实拿不到 P3 写权限与动作调试', $leak === [],
-            $leak === [] ? '' : '越权拿到 ' . implode('、', $leak));
-        check('  只读角色节点数 = 23（行为日志 + 访问日志各页 + API；新增阶段须同步更新本断言）', count($viewerIds) === 23,
-            '实际 ' . count($viewerIds) . ' 个');
+        check(
+            '★ DB 里只读角色确实拿到 P3 只读三项',
+            $lack === [],
+            $lack === [] ? '' : '缺 ' . implode('、', $lack)
+        );
+        check(
+            '★ DB 里只读角色确实拿不到 P3 写权限与动作调试',
+            $leak === [],
+            $leak === [] ? '' : '越权拿到 ' . implode('、', $leak)
+        );
+        check(
+            '  只读角色节点数 = 23（行为日志 + 访问日志各页 + API；新增阶段须同步更新本断言）',
+            count($viewerIds) === 23,
+            '实际 ' . count($viewerIds) . ' 个'
+        );
     } else {
         note('DB 只读角色', 'wa_roles 里找不到「只读」角色');
     }
@@ -681,11 +740,17 @@ if (is_array($dbRules)) {
                 $lackOp[] = $a;
             }
         }
-        check('★ DB 里运维角色拿到全部 9 个 P3 节点', $lackOp === [],
-            $lackOp === [] ? '' : '缺 ' . implode('、', $lackOp));
+        check(
+            '★ DB 里运维角色拿到全部 9 个 P3 节点',
+            $lackOp === [],
+            $lackOp === [] ? '' : '缺 ' . implode('、', $lackOp)
+        );
         // P4 追加了 4 个运维动作节点（ops.kick / ops.revoke / ops.unbind / ops.forceOffline）
-        check('  运维角色节点数 = 41（行为日志 + 访问日志各页 + API；新增阶段须同步更新本断言）', count($operatorIds) === 41,
-            '实际 ' . count($operatorIds) . ' 个');
+        check(
+            '  运维角色节点数 = 41（行为日志 + 访问日志各页 + API；新增阶段须同步更新本断言）',
+            count($operatorIds) === 41,
+            '实际 ' . count($operatorIds) . ' 个'
+        );
 
         // 只读角色**一个运维节点都不能有** —— 它们会改变别人的连接状态且不可撤销
         $opsLeak = [];
@@ -695,8 +760,11 @@ if (is_array($dbRules)) {
             }
         }
         if (is_array($viewerIds)) {
-            check('★ DB 里只读角色拿不到任何 P4 运维节点', $opsLeak === [],
-                $opsLeak === [] ? '' : '越权拿到 ' . implode('、', $opsLeak));
+            check(
+                '★ DB 里只读角色拿不到任何 P4 运维节点',
+                $opsLeak === [],
+                $opsLeak === [] ? '' : '越权拿到 ' . implode('、', $opsLeak)
+            );
         }
     } else {
         note('DB 运维角色', 'wa_roles 里找不到「运维」角色');
@@ -716,17 +784,23 @@ if (!$adminOnline) {
 } else {
     check('GET /static/push.js → 200', strlen($pushJs['body']) > 1000, strlen($pushJs['body']) . ' bytes');
     $pushCss = http('GET', '/static/push.css');
-    check('GET /static/push.css → 200',
+    check(
+        'GET /static/push.css → 200',
         $pushCss['status'] === 200 && strlen($pushCss['body']) > 500,
-        'HTTP ' . $pushCss['status'] . ' ' . strlen($pushCss['body']) . ' bytes');
+        'HTTP ' . $pushCss['status'] . ' ' . strlen($pushCss['body']) . ' bytes'
+    );
     $actionJs = http('GET', '/static/action.js');
-    check('GET /static/action.js → 200',
+    check(
+        'GET /static/action.js → 200',
         $actionJs['status'] === 200 && strlen($actionJs['body']) > 1000,
-        'HTTP ' . $actionJs['status'] . ' ' . strlen($actionJs['body']) . ' bytes');
+        'HTTP ' . $actionJs['status'] . ' ' . strlen($actionJs['body']) . ' bytes'
+    );
     check('action.js 里没有 innerHTML（XSS 纪律）', !preg_match('/\.innerHTML\s*=/', $actionJs['body']));
-    check('★ push.js / action.js 里没有 setInterval 族（两页都不允许周期轮询）',
+    check(
+        '★ push.js / action.js 里没有 setInterval 族（两页都不允许周期轮询）',
         !preg_match('/\b(setInterval|setImmediate)\s*\(/', $pushJs['body'])
-        && !preg_match('/\b(setInterval|setImmediate)\s*\(/', $actionJs['body']));
+        && !preg_match('/\b(setInterval|setImmediate)\s*\(/', $actionJs['body'])
+    );
 
     $jar = sys_get_temp_dir() . '/gw_p3_' . getmypid() . '.txt';
     @unlink($jar);
@@ -745,25 +819,36 @@ if (!$adminOnline) {
     foreach ($probe as $path => $desc) {
         $res = http('GET', $path, [], ['Accept: application/json'], $jar);
         $code = (int)(jsonBody($res['body'])['code'] ?? 0);
-        check('★ 未登录 ' . $path . ' → 不可达（404/401/200+code404）：' . $desc,
+        check(
+            '★ 未登录 ' . $path . ' → 不可达（404/401/200+code404）：' . $desc,
             in_array($res['status'], [404, 401], true) || ($res['status'] === 200 && $code === 404),
-            'HTTP ' . $res['status'] . ' code=' . ($code !== 0 ? $code : '-'));
+            'HTTP ' . $res['status'] . ' code=' . ($code !== 0 ? $code : '-')
+        );
     }
 
     foreach (['/push', '/actions'] as $path) {
         $res = http('GET', $path, [], ['Accept: text/html'], $jar);
-        check('★ 未登录 GET ' . $path . ' → 302 到登录页',
-            $res['status'] === 302, 'HTTP ' . $res['status'] . ' Location=' . ($res['headers']['location'] ?? '-'));
+        check(
+            '★ 未登录 GET ' . $path . ' → 302 到登录页',
+            $res['status'] === 302,
+            'HTTP ' . $res['status'] . ' Location=' . ($res['headers']['location'] ?? '-')
+        );
     }
 
     foreach (['/api/push', '/api/push/templates', '/api/action'] as $path) {
         $res = http('POST', $path, ['x' => '1'], ['Accept: application/json'], $jar);
-        check('★ 未登录 POST ' . $path . ' → 401/403/302',
-            in_array($res['status'], [401, 403, 302], true), 'HTTP ' . $res['status']);
+        check(
+            '★ 未登录 POST ' . $path . ' → 401/403/302',
+            in_array($res['status'], [401, 403, 302], true),
+            'HTTP ' . $res['status']
+        );
     }
     $del = http('DELETE', '/api/push/templates/1', [], ['Accept: application/json'], $jar);
-    check('★ 未登录 DELETE /api/push/templates/1 → 401/403/302',
-        in_array($del['status'], [401, 403, 302], true), 'HTTP ' . $del['status']);
+    check(
+        '★ 未登录 DELETE /api/push/templates/1 → 401/403/302',
+        in_array($del['status'], [401, 403, 302], true),
+        'HTTP ' . $del['status']
+    );
 
     // =======================================================================
     // 5. HTTP 层（登录后）
@@ -790,8 +875,10 @@ if (!$adminOnline) {
             $html = $page['body'];
             check('登录后 GET ' . $path . ' → 200', $page['status'] === 200, 'HTTP ' . $page['status']);
             check('  ' . $path . ' 含 #' . $cfgId . ' 注入块', str_contains($html, 'id="' . $cfgId . '"'));
-            check('  ' . $path . ' 引用 ' . $js . ' 与 ' . $cssAsset,
-                str_contains($html, $js) && str_contains($html, $cssAsset));
+            check(
+                '  ' . $path . ' 引用 ' . $js . ' 与 ' . $cssAsset,
+                str_contains($html, $js) && str_contains($html, $cssAsset)
+            );
             check('  ' . $path . ' 含 #' . $sectionId . ' 主区块', str_contains($html, 'id="' . $sectionId . '"'));
             check('  ' . $path . ' 无 meta refresh', !str_contains($html, 'http-equiv="refresh"'));
         }
@@ -818,9 +905,11 @@ if (!$adminOnline) {
         foreach ($pushCases as $label => $body) {
             $res = http('POST', '/api/push', $body, ['Accept: application/json'], $jar);
             $b = jsonBody($res['body']);
-            check('★ /api/push ' . $label . ' → 400 + 4007',
+            check(
+                '★ /api/push ' . $label . ' → 400 + 4007',
                 $res['status'] === 400 && (int)($b['code'] ?? 0) === 4007,
-                'HTTP ' . $res['status'] . ' code=' . ($b['code'] ?? '?'));
+                'HTTP ' . $res['status'] . ' code=' . ($b['code'] ?? '?')
+            );
         }
 
         // ★ 超限载荷必须被后台拦下（第 6 节的反证 A 说明「放过去会怎样」）
@@ -830,26 +919,35 @@ if (!$adminOnline) {
             'payload' => ['big' => str_repeat('中', $max)],
         ], ['Accept: application/json'], $jar);
         $overBody = jsonBody($overRes['body']);
-        check('★ /api/push 超限载荷 → 400 + 4007（绝不返回 200 accepted）',
+        check(
+            '★ /api/push 超限载荷 → 400 + 4007（绝不返回 200 accepted）',
             $overRes['status'] === 400 && (int)($overBody['code'] ?? 0) === 4007,
-            'HTTP ' . $overRes['status'] . ' code=' . ($overBody['code'] ?? '?') . ' max=' . $max);
+            'HTTP ' . $overRes['status'] . ' code=' . ($overBody['code'] ?? '?') . ' max=' . $max
+        );
 
         // ---- 5.3 /api/push/history 的筛选白名单（非法条件被静默丢弃）----
         $histClean = http('GET', '/api/push/history?page=1&size=20', [], ['Accept: application/json'], $jar);
         $histCleanData = dataOf(jsonBody($histClean['body']));
-        check('GET /api/push/history → 200 + code=0',
+        check(
+            'GET /api/push/history → 200 + code=0',
             $histClean['status'] === 200 && (int)(jsonBody($histClean['body'])['code'] ?? -1) === 0,
-            'HTTP ' . $histClean['status']);
+            'HTTP ' . $histClean['status']
+        );
         $histKeys = ['items', 'total', 'page', 'size', 'pages', 'filters', 'summary', 'statuses', 'size_max', 'record_note'];
         $missingHist = array_values(array_filter(
             $histKeys,
             static fn (string $k): bool => !array_key_exists($k, $histCleanData)
         ));
-        check('  历史响应含字段：' . implode('/', $histKeys), $missingHist === [],
-            $missingHist === [] ? '' : '缺 ' . implode(',', $missingHist));
-        check('★ 历史页带「受理记录」口径说明（不得宣称已投递/已去重）',
+        check(
+            '  历史响应含字段：' . implode('/', $histKeys),
+            $missingHist === [],
+            $missingHist === [] ? '' : '缺 ' . implode(',', $missingHist)
+        );
+        check(
+            '★ 历史页带「受理记录」口径说明（不得宣称已投递/已去重）',
             str_contains((string)($histCleanData['record_note'] ?? ''), '受理'),
-            mb_substr((string)($histCleanData['record_note'] ?? ''), 0, 40));
+            mb_substr((string)($histCleanData['record_note'] ?? ''), 0, 40)
+        );
 
         // ★ 反证：非法筛选**不报错**，直接被服务端丢掉 ——
         //   所以前端必须自己预校验，否则用户会以为「筛了但没生效」（这是本页的一个已修缺陷）。
@@ -861,61 +959,83 @@ if (!$adminOnline) {
             $jar
         );
         $histDirtyData = dataOf(jsonBody($histDirty['body']));
-        check('★ 反证：非法筛选被静默丢弃（返回 200 且 filters 里没有它们）',
+        check(
+            '★ 反证：非法筛选被静默丢弃（返回 200 且 filters 里没有它们）',
             $histDirty['status'] === 200
             && !array_key_exists('target', (array)($histDirtyData['filters'] ?? []))
             && !array_key_exists('foo', (array)($histDirtyData['filters'] ?? [])),
-            'filters=' . json_encode($histDirtyData['filters'] ?? null));
-        check('  被丢弃的筛选不改变结果集（total 与不带筛选一致）',
-            (int)($histDirtyData['total'] ?? -1) === (int)($histCleanData['total'] ?? -2));
+            'filters=' . json_encode($histDirtyData['filters'] ?? null)
+        );
+        check(
+            '  被丢弃的筛选不改变结果集（total 与不带筛选一致）',
+            (int)($histDirtyData['total'] ?? -1) === (int)($histCleanData['total'] ?? -2)
+        );
 
         $tplList = http('GET', '/api/push/templates', [], ['Accept: application/json'], $jar);
-        check('GET /api/push/templates → 200 + code=0',
+        check(
+            'GET /api/push/templates → 200 + code=0',
             $tplList['status'] === 200 && (int)(jsonBody($tplList['body'])['code'] ?? -1) === 0,
-            'HTTP ' . $tplList['status']);
+            'HTTP ' . $tplList['status']
+        );
 
         // ---- 5.4 /api/action 的校验分支与补查语义 ----
         $invBad = http('POST', '/api/action', ['action' => 'nope', 'uid' => FIX_TARGET_UID], ['Accept: application/json'], $jar);
         $invBadBody = jsonBody($invBad['body']);
-        check('★ /api/action 未知动作 → 400 + 4007',
+        check(
+            '★ /api/action 未知动作 → 400 + 4007',
             $invBad['status'] === 400 && (int)($invBadBody['code'] ?? 0) === 4007,
-            'HTTP ' . $invBad['status'] . ' code=' . ($invBadBody['code'] ?? '?'));
+            'HTTP ' . $invBad['status'] . ' code=' . ($invBadBody['code'] ?? '?')
+        );
         check('  拒绝文案里列出允许的动作清单', is_array(dataOf($invBadBody)['allowed'] ?? null));
 
         $sessInv = http('POST', '/api/action', ['action' => 'session', 'uid' => FIX_TARGET_UID], ['Accept: application/json'], $jar);
         $sessBody = jsonBody($sessInv['body']);
-        check('★ /api/action session（http=false）→ 400 + 4007',
+        check(
+            '★ /api/action session（http=false）→ 400 + 4007',
             $sessInv['status'] === 400 && (int)($sessBody['code'] ?? 0) === 4007,
-            'HTTP ' . $sessInv['status'] . ' code=' . ($sessBody['code'] ?? '?'));
+            'HTTP ' . $sessInv['status'] . ' code=' . ($sessBody['code'] ?? '?')
+        );
 
         $noUid = http('POST', '/api/action', ['action' => 'echo'], ['Accept: application/json'], $jar);
         $noUidBody = jsonBody($noUid['body']);
-        check('★ /api/action 缺 uid → 400 + 4007（6 个动作的 auth 均为 true）',
+        check(
+            '★ /api/action 缺 uid → 400 + 4007（6 个动作的 auth 均为 true）',
             $noUid['status'] === 400 && (int)($noUidBody['code'] ?? 0) === 4007,
-            'HTTP ' . $noUid['status'] . ' code=' . ($noUidBody['code'] ?? '?'));
+            'HTTP ' . $noUid['status'] . ' code=' . ($noUidBody['code'] ?? '?')
+        );
 
         $badId = http('GET', '/api/action/bad%20id!', [], ['Accept: application/json'], $jar);
-        check('★ GET /api/action/{非法 id} → 400 + 4007',
+        check(
+            '★ GET /api/action/{非法 id} → 400 + 4007',
             $badId['status'] === 400 && (int)(jsonBody($badId['body'])['code'] ?? 0) === 4007,
-            'HTTP ' . $badId['status']);
+            'HTTP ' . $badId['status']
+        );
 
         // ★ 反证 C：补查未命中**不是** 404
         $miss = http('GET', '/api/action/' . FIX . 'nosuchid0001', [], ['Accept: application/json'], $jar);
         $missBody = jsonBody($miss['body']);
         $missData = dataOf($missBody);
-        check('★ 反证C：补查未命中 → HTTP 200 + code=0（不是 404，否则前端会把它当接口故障并打断补查）',
+        check(
+            '★ 反证C：补查未命中 → HTTP 200 + code=0（不是 404，否则前端会把它当接口故障并打断补查）',
             $miss['status'] === 200 && (int)($missBody['code'] ?? -1) === 0,
-            'HTTP ' . $miss['status'] . ' code=' . ($missBody['code'] ?? '?'));
-        check('★ 反证C：state=expired 且解释里明说「不区分」两种含义',
+            'HTTP ' . $miss['status'] . ' code=' . ($missBody['code'] ?? '?')
+        );
+        check(
+            '★ 反证C：state=expired 且解释里明说「不区分」两种含义',
             ($missData['state'] ?? '') === 'expired'
             && str_contains((string)($missData['note'] ?? ''), '不区分'),
-            'state=' . var_export($missData['state'] ?? null, true));
-        check('★ 反证C：expired 的重发判定是 unknown / 待确认（**不是** safe）',
+            'state=' . var_export($missData['state'] ?? null, true)
+        );
+        check(
+            '★ 反证C：expired 的重发判定是 unknown / 待确认（**不是** safe）',
             ($missData['resend'] ?? '') === 'unknown' && ($missData['resend_label'] ?? '') === '待确认',
             'resend=' . var_export($missData['resend'] ?? null, true)
-            . ' label=' . var_export($missData['resend_label'] ?? null, true));
-        check('  补查不落审计（audited=false —— 每次轮询都写会把审计表刷满）',
-            ($missData['audited'] ?? null) === false);
+            . ' label=' . var_export($missData['resend_label'] ?? null, true)
+        );
+        check(
+            '  补查不落审计（audited=false —— 每次轮询都写会把审计表刷满）',
+            ($missData['audited'] ?? null) === false
+        );
         check('  补查响应带 resend_note（前端不编词）', (string)($missData['resend_note'] ?? '') !== '');
 
         // ---- 5.5 viewer 动态矩阵：只读角色拿不到任何 P3 写权限 ----
@@ -944,15 +1064,24 @@ if (!$adminOnline) {
                     'DELETE /api/push/templates/1' => http('DELETE', '/api/push/templates/1', [], ['Accept: application/json'], $vjar),
                 ];
                 foreach ($denied as $label => $res) {
-                    check('★ viewer ' . $label . ' → 403（只读角色不得有 P3 写权限）',
-                        $res['status'] === 403, 'HTTP ' . $res['status']);
+                    check(
+                        '★ viewer ' . $label . ' → 403（只读角色不得有 P3 写权限）',
+                        $res['status'] === 403,
+                        'HTTP ' . $res['status']
+                    );
                 }
                 $roActions = http('GET', '/actions', [], ['Accept: text/html'], $vjar);
-                check('★ viewer GET /actions → 403（动作调试只给运维）',
-                    $roActions['status'] === 403, 'HTTP ' . $roActions['status']);
+                check(
+                    '★ viewer GET /actions → 403（动作调试只给运维）',
+                    $roActions['status'] === 403,
+                    'HTTP ' . $roActions['status']
+                );
                 $roPush = http('GET', '/push', [], ['Accept: text/html'], $vjar);
-                check('  viewer GET /push → 200（只读角色可看历史与模板）',
-                    $roPush['status'] === 200, 'HTTP ' . $roPush['status']);
+                check(
+                    '  viewer GET /push → 200（只读角色可看历史与模板）',
+                    $roPush['status'] === 200,
+                    'HTTP ' . $roPush['status']
+                );
             } else {
                 check('viewer 登录', false, $viewerUser . ' 登录失败');
             }
@@ -972,6 +1101,7 @@ if (!$seed) {
     note('真实链路检查', '未加 --seed —— 本节会向真实目标投递消息，故默认不执行');
 } else {
     $dbOk = true;
+
     try {
         Db::table('push_task')->count();
     } catch (Throwable $e) {
@@ -979,9 +1109,7 @@ if (!$seed) {
         note('真实链路检查', 'MySQL 不可用：' . $e->getMessage());
     }
 
-    if (!$dbOk) {
-        // 已 SKIP
-    } else {
+    if ($dbOk) {
         // 夹具自检：`request_id` 列宽 16。超长会以「Data too long」致命退出而不是干净 FAIL，
         // 故先量一遍 —— 把「常量漂移」变成一条可诊断的断言。
         $widths = [
@@ -1001,29 +1129,43 @@ if (!$seed) {
             // ---- 6.1 分页 / 筛选 / 汇总 ----
             $noFilter = PushRepository::page([], 1, 20, 20);
             check('PushRepository::page 返回夹具行', $noFilter['total'] >= 2, 'total=' . $noFilter['total']);
-            check('  分页字段自洽（pages = ceil(total/size)）',
+            check(
+                '  分页字段自洽（pages = ceil(total/size)）',
                 (int)$noFilter['pages'] === (int)ceil($noFilter['total'] / max(1, $noFilter['size'])),
-                'pages=' . $noFilter['pages'] . ' total=' . $noFilter['total'] . ' size=' . $noFilter['size']);
+                'pages=' . $noFilter['pages'] . ' total=' . $noFilter['total'] . ' size=' . $noFilter['size']
+            );
 
             // ★ 服务端侧的同一条反证：非法筛选静默丢弃，不报错
             $dirty = ['target' => "bad\x01id", 'msg_id' => str_repeat('x', 65), 'status' => 'nope', 'foo' => '1'];
-            check('★ 非法筛选被 appliedFilters 静默丢弃（不报错 ⇒ 前端必须自己拦）',
+            check(
+                '★ 非法筛选被 appliedFilters 静默丢弃（不报错 ⇒ 前端必须自己拦）',
                 PushRepository::appliedFilters($dirty) === [],
-                'applied=' . json_encode(PushRepository::appliedFilters($dirty)));
+                'applied=' . json_encode(PushRepository::appliedFilters($dirty))
+            );
             $dirtyPage = PushRepository::page($dirty, 1, 20, 20);
-            check('  带脏筛选的结果与不带筛选完全一致（= 条件被丢弃）',
+            check(
+                '  带脏筛选的结果与不带筛选完全一致（= 条件被丢弃）',
                 $dirtyPage['total'] === $noFilter['total'],
-                $dirtyPage['total'] . ' vs ' . $noFilter['total']);
+                $dirtyPage['total'] . ' vs ' . $noFilter['total']
+            );
 
-            check('★ validDate 拒绝「格式合法但日期非法」（不静默顺延成 3 月 3 日）',
+            check(
+                '★ validDate 拒绝「格式合法但日期非法」（不静默顺延成 3 月 3 日）',
                 PushRepository::validDate('2026-02-31') === ''
-                && PushRepository::validDate('2026-02-28') === '2026-02-28');
+                && PushRepository::validDate('2026-02-28') === '2026-02-28'
+            );
 
             $summary = PushRepository::summary();
-            check('summary 与 page 的 total 一致', $summary['total'] === $noFilter['total'],
-                'summary=' . $summary['total'] . ' page=' . $noFilter['total']);
-            check('  rejected = total - accepted',
-                $summary['rejected'] === $summary['total'] - $summary['accepted'], json_encode($summary));
+            check(
+                'summary 与 page 的 total 一致',
+                $summary['total'] === $noFilter['total'],
+                'summary=' . $summary['total'] . ' page=' . $noFilter['total']
+            );
+            check(
+                '  rejected = total - accepted',
+                $summary['rejected'] === $summary['total'] - $summary['accepted'],
+                json_encode($summary)
+            );
 
             // ---- 6.2 模板 CRUD 往返 ----
             $tplId = TemplateRepository::save(null, [
@@ -1038,8 +1180,10 @@ if (!$seed) {
 
             $found = TemplateRepository::find($tplId);
             check('  find() 能取回刚建的模板', is_array($found) && ($found['name'] ?? '') === FIX_TPL_NAME);
-            check('  模板以 payload（解码）+ payload_raw（原文）两种形态回带',
-                is_array($found) && array_key_exists('payload', $found) && array_key_exists('payload_raw', $found));
+            check(
+                '  模板以 payload（解码）+ payload_raw（原文）两种形态回带',
+                is_array($found) && array_key_exists('payload', $found) && array_key_exists('payload_raw', $found)
+            );
 
             $updated = TemplateRepository::save($tplId, [
                 'name' => FIX_TPL_NAME,
@@ -1050,8 +1194,10 @@ if (!$seed) {
             ], FIX_OPERATOR);
             check('  更新走同一个 save()（id 非空即更新）', $updated === $tplId, 'id=' . $updated);
             $afterUpdate = TemplateRepository::find($tplId);
-            check('  更新后 target_type 已变为 client',
-                is_array($afterUpdate) && ($afterUpdate['target_type'] ?? '') === 'client');
+            check(
+                '  更新后 target_type 已变为 client',
+                is_array($afterUpdate) && ($afterUpdate['target_type'] ?? '') === 'client'
+            );
 
             check('★ 删除返回 true', TemplateRepository::delete($tplId));
             check('★ 删除后 find() 返回 null（硬删除，名字可复用）', TemplateRepository::find($tplId) === null);
@@ -1072,11 +1218,13 @@ if (!$seed) {
                     'payload' => ['big' => str_repeat('中', $max)],
                     'offline_mode' => 'drop',
                 ]);
-                check('★ 反证A：直连主项目发**超限**载荷 → 主项目仍回受理（code=0）',
+                check(
+                    '★ 反证A：直连主项目发**超限**载荷 → 主项目仍回受理（code=0）',
                     (bool)($overLimit['ok'] ?? false),
                     'HTTP ' . var_export($overLimit['status'] ?? null, true)
                     . ' code=' . var_export($overLimit['code'] ?? null, true)
-                    . ' msg=' . substr((string)($overLimit['msg'] ?? ''), 0, 60));
+                    . ' msg=' . substr((string)($overLimit['msg'] ?? ''), 0, 60)
+                );
 
                 // 计数增量才是「丢弃真的发生了」的证据 —— 需要 business 角色消费队列
                 $afterFail = $beforeFail;
@@ -1089,8 +1237,11 @@ if (!$seed) {
                 if (!$redisOk) {
                     note('反证A 的计数增量', 'Redis 不可达，无法读 metrics:counter');
                 } elseif ($afterFail > $beforeFail) {
-                    check('★ 反证A：push_fail 计数增加 —— 证明主项目**丢弃**了它而不是投递',
-                        true, $beforeFail . ' → ' . $afterFail);
+                    check(
+                        '★ 反证A：push_fail 计数增加 —— 证明主项目**丢弃**了它而不是投递',
+                        true,
+                        $beforeFail . ' → ' . $afterFail
+                    );
                 } else {
                     note('反证A 的计数增量', 'push_fail 未变化 —— business 角色可能未在线（本项需它消费队列）');
                 }
@@ -1106,10 +1257,12 @@ if (!$seed) {
                 $first = $client->push($dedupJob);
                 $second = $client->push($dedupJob);
 
-                check('★ 反证B：同 msg_id 连发两次 → 两次都回受理',
+                check(
+                    '★ 反证B：同 msg_id 连发两次 → 两次都回受理',
                     (bool)($first['ok'] ?? false) && (bool)($second['ok'] ?? false),
                     '1st=' . var_export($first['code'] ?? null, true)
-                    . ' 2nd=' . var_export($second['code'] ?? null, true));
+                    . ' 2nd=' . var_export($second['code'] ?? null, true)
+                );
 
                 $firstData = dataOf($first);
                 $secondData = dataOf($second);
@@ -1117,12 +1270,17 @@ if (!$seed) {
                 $secondKeys = array_keys($secondData);
                 sort($firstKeys);
                 sort($secondKeys);
-                check('★ 反证B：两次响应的**键集合完全一致**（没有任何字段能区分「被去重」）',
-                    $firstKeys !== [] && $firstKeys === $secondKeys, implode('/', $firstKeys));
-                check('★ 反证B：两次的 code 与 msg 也一致（只能靠 request_id 区分是哪一次）',
+                check(
+                    '★ 反证B：两次响应的**键集合完全一致**（没有任何字段能区分「被去重」）',
+                    $firstKeys !== [] && $firstKeys === $secondKeys,
+                    implode('/', $firstKeys)
+                );
+                check(
+                    '★ 反证B：两次的 code 与 msg 也一致（只能靠 request_id 区分是哪一次）',
                     ($first['code'] ?? null) === ($second['code'] ?? null)
                     && ($first['msg'] ?? null) === ($second['msg'] ?? null),
-                    'request_id: ' . ($firstData['request_id'] ?? '-') . ' vs ' . ($secondData['request_id'] ?? '-'));
+                    'request_id: ' . ($firstData['request_id'] ?? '-') . ' vs ' . ($secondData['request_id'] ?? '-')
+                );
 
                 if ($redisOk) {
                     $afterDedup = $beforeDedup;
@@ -1131,8 +1289,11 @@ if (!$seed) {
                         $afterDedup = (int)($reader->counter()['push_dedup'] ?? $beforeDedup);
                     }
                     if ($afterDedup > $beforeDedup) {
-                        check('★ 反证B：push_dedup 计数增加 —— 去重真的发生了，而两次响应长得一模一样',
-                            true, $beforeDedup . ' → ' . $afterDedup);
+                        check(
+                            '★ 反证B：push_dedup 计数增加 —— 去重真的发生了，而两次响应长得一模一样',
+                            true,
+                            $beforeDedup . ' → ' . $afterDedup
+                        );
                     } else {
                         note('反证B 的计数增量', 'push_dedup 未变化 —— business 角色可能未在线，或该 msg_id 已在幂等窗口内');
                     }
@@ -1157,17 +1318,25 @@ if (!$seed) {
                 $pushBody = jsonBody($pushRes['body']);
                 $pushData = dataOf($pushBody);
 
-                check('★ POST /api/push 端到端 → 200 + code=0',
+                check(
+                    '★ POST /api/push 端到端 → 200 + code=0',
                     $pushRes['status'] === 200 && (int)($pushBody['code'] ?? -1) === 0,
                     'HTTP ' . $pushRes['status'] . ' code=' . ($pushBody['code'] ?? '?')
-                    . ' msg=' . substr((string)($pushBody['msg'] ?? ''), 0, 80));
-                check('  响应含 request_id / msg_id / payload_bytes / offline_mode',
-                    isset($pushData['request_id'], $pushData['msg_id'], $pushData['payload_bytes'], $pushData['offline_mode']));
-                check('★ offline_mode 回带的是**实际生效值**（未传时回落服务端默认）',
+                    . ' msg=' . substr((string)($pushBody['msg'] ?? ''), 0, 80)
+                );
+                check(
+                    '  响应含 request_id / msg_id / payload_bytes / offline_mode',
+                    isset($pushData['request_id'], $pushData['msg_id'], $pushData['payload_bytes'], $pushData['offline_mode'])
+                );
+                check(
+                    '★ offline_mode 回带的是**实际生效值**（未传时回落服务端默认）',
                     (string)($pushData['offline_mode'] ?? '') !== '' && isset($pushData['offline_label']),
-                    'offline_mode=' . var_export($pushData['offline_mode'] ?? null, true));
-                check('  响应带 3 条口径说明（不得宣称已投递）',
-                    count((array)($pushData['notes'] ?? [])) === 3);
+                    'offline_mode=' . var_export($pushData['offline_mode'] ?? null, true)
+                );
+                check(
+                    '  响应带 3 条口径说明（不得宣称已投递）',
+                    count((array)($pushData['notes'] ?? [])) === 3
+                );
 
                 $rid = (string)($pushData['request_id'] ?? '');
                 if ($rid === '') {
@@ -1176,14 +1345,20 @@ if (!$seed) {
                     $row = Db::table('push_task')->where('request_id', $rid)->first();
                     $rowArr = (array)$row;
                     check('★ 受理记录已落库（request_id = ' . $rid . '）', $rowArr !== [], '字段数=' . count($rowArr));
-                    check('  落库的 offline_mode 与响应一致（原样落库，不二次推断）',
-                        (string)($rowArr['offline_mode'] ?? '') === (string)($pushData['offline_mode'] ?? ''));
-                    check('  落库的 payload_bytes 与响应一致',
+                    check(
+                        '  落库的 offline_mode 与响应一致（原样落库，不二次推断）',
+                        (string)($rowArr['offline_mode'] ?? '') === (string)($pushData['offline_mode'] ?? '')
+                    );
+                    check(
+                        '  落库的 payload_bytes 与响应一致',
                         (int)($rowArr['payload_bytes'] ?? -1) === (int)($pushData['payload_bytes'] ?? -2),
                         'db=' . var_export($rowArr['payload_bytes'] ?? null, true)
-                        . ' resp=' . var_export($pushData['payload_bytes'] ?? null, true));
-                    check('  落库 status = accepted',
-                        (string)($rowArr['status'] ?? '') === PushRepository::STATUS_ACCEPTED);
+                        . ' resp=' . var_export($pushData['payload_bytes'] ?? null, true)
+                    );
+                    check(
+                        '  落库 status = accepted',
+                        (string)($rowArr['status'] ?? '') === PushRepository::STATUS_ACCEPTED
+                    );
                 }
             }
             @unlink($jarE2e);
@@ -1192,9 +1367,13 @@ if (!$seed) {
             $auditPush = (int)Db::table('admin_audit_log')
                 ->where('action', Auditor::ACTION_PUSH_CREATE)
                 ->where('target', 'like', FIX . '%')
-                ->count();
-            check('★ 推送创建已落审计（P3 起提前启用 admin_audit_log）', $auditPush > 0,
-                'push.create 行数=' . $auditPush);
+                ->count()
+            ;
+            check(
+                '★ 推送创建已落审计（P3 起提前启用 admin_audit_log）',
+                $auditPush > 0,
+                'push.create 行数=' . $auditPush
+            );
         } finally {
             unseedFixture();
 

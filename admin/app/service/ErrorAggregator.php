@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 服务层 —— ErrorAggregator。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -35,8 +40,12 @@ final class ErrorAggregator
     /** 单角色默认展示行数（服务端夹取到 LogTailService::TAIL_MAX） */
     public const DEFAULT_LINES = 20;
 
+    /** @var LogTailService */
     private LogTailService $tail;
 
+    /**
+     * @param null|LogTailService $tail 缺省自建；测试可注入夹具目录
+     */
     public function __construct(?LogTailService $tail = null)
     {
         $this->tail = $tail ?? new LogTailService();

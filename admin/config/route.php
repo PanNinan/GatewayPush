@@ -1,37 +1,30 @@
 <?php
 /**
- * This file is part of webman.
+ * admin 配置 —— route。
  *
- * Licensed under The MIT License
- * For full copyright and license information, please see the MIT-LICENSE.txt
- * Redistributions of files must retain the above copyright notice.
- *
- * @author    walkor<walkor@workerman.net>
- * @copyright walkor<walkor@workerman.net>
- * @link      http://www.workerman.net/
- * @license   http://www.opensource.org/licenses/mit-license.php MIT License
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
  */
 
-use app\controller\api\MonitorController;
-use app\controller\api\OpsActionController;
-use app\controller\api\OpsController;
+use app\controller\AccessLogPageController;
+use app\controller\ActionController;
+use app\controller\api\AccessLogController as AccessLogApiController;
 // 别名：API 控制器与页面控制器同名（分属 app\controller\api 与 app\controller），
 // 二者在 wa_rules.key 里是不同字符串（`...\api\SessionController@x` vs `...\SessionController`），不会互相顶掉。
 use app\controller\api\ActionController as ActionApiController;
-use app\controller\api\AccessLogController as AccessLogApiController;
-use app\controller\api\PushController as PushApiController;
-use app\controller\api\SessionController as SessionApiController;
-use app\controller\ActionController;
-use app\controller\AccessLogPageController;
-use app\controller\AuditPageController;
-use app\controller\DashboardController;
-use app\controller\OpsPageController;
-use app\controller\MetricsPageController;
-use app\controller\TracePageController;
 use app\controller\api\AuditController;
 use app\controller\api\MetricController;
+use app\controller\api\MonitorController;
+use app\controller\api\OpsActionController;
+use app\controller\api\OpsController;
+use app\controller\api\PushController as PushApiController;
+use app\controller\api\SessionController as SessionApiController;
+use app\controller\AuditPageController;
+use app\controller\DashboardController;
+use app\controller\MetricsPageController;
+use app\controller\OpsPageController;
 use app\controller\PushController;
 use app\controller\SessionController;
+use app\controller\TracePageController;
 use app\middleware\AdminAuth;
 use Webman\Route;
 

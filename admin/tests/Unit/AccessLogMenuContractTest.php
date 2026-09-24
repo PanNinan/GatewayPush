@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin 单测 —— AccessLogMenuContractTest。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -109,7 +114,7 @@ final class AccessLogMenuContractTest extends TestCase
             'config/middleware.php 必须注册全局 AccessLog 中间件（否则登录/登出零留痕）'
         );
         $this->assertStringContainsString(
-            'use app\\middleware\\AccessLog',
+            'use app\middleware\AccessLog',
             $src,
             'middleware.php 必须 use AccessLog'
         );

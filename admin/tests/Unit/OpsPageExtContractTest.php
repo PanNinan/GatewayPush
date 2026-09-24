@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin 单测 —— OpsPageExtContractTest。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -143,7 +148,7 @@ final class OpsPageExtContractTest extends TestCase
 
         foreach (self::ROUTES as $path => $action) {
             $this->assertMatchesRegularExpression(
-                "#Route::get\('" . preg_quote($path, '#') . "',\s*\[OpsController::class,\s*'" . $action . "'\]\)#",
+                "#Route::get\\('" . preg_quote($path, '#') . "',\\s*\\[OpsController::class,\\s*'" . $action . "'\\]\\)#",
                 $src,
                 '路由 GET ' . $path . ' → ' . $action . ' 缺失（只读端点不得 POST 以外的动词语义）'
             );
@@ -179,12 +184,21 @@ final class OpsPageExtContractTest extends TestCase
     {
         $sql = $this->read('database/001_gw_tables.sql');
 
-        $this->assertStringContainsString("'ops.queue_warn_depth'", $sql,
-            '缺 ops.queue_warn_depth 种子 —— 阈值回落代码默认值，运维改库不生效');
-        $this->assertStringContainsString("'ops.action_warn_depth'", $sql,
-            '缺 ops.action_warn_depth 种子');
-        $this->assertStringContainsString("'ops.error_lines'", $sql,
-            '缺 ops.error_lines 种子');
+        $this->assertStringContainsString(
+            "'ops.queue_warn_depth'",
+            $sql,
+            '缺 ops.queue_warn_depth 种子 —— 阈值回落代码默认值，运维改库不生效'
+        );
+        $this->assertStringContainsString(
+            "'ops.action_warn_depth'",
+            $sql,
+            '缺 ops.action_warn_depth 种子'
+        );
+        $this->assertStringContainsString(
+            "'ops.error_lines'",
+            $sql,
+            '缺 ops.error_lines 种子'
+        );
     }
 
     /* =====================================================================
@@ -257,8 +271,11 @@ final class OpsPageExtContractTest extends TestCase
 
         // 视图文件头的 @var 注解必须跟上真实 $config 形状（防文档漂移）
         foreach (['queues_url', 'errors_url', 'config_url', 'rate_url', 'error_default_lines'] as $key) {
-            $this->assertStringContainsString($key, $view,
-                '视图 @var 注解缺 ' . $key);
+            $this->assertStringContainsString(
+                $key,
+                $view,
+                '视图 @var 注解缺 ' . $key
+            );
         }
     }
 

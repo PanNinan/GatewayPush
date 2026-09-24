@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 服务层 —— MetricService。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -110,7 +115,8 @@ final class MetricService
                 ->where('sampled_at', '<=', $to)
                 ->orderBy('sampled_at', 'asc')
                 ->limit(self::MAX_RAW_ROWS)
-                ->get();
+                ->get()
+            ;
         } catch (Throwable) {
             return [];
         }
@@ -128,7 +134,7 @@ final class MetricService
     /**
      * 最新一行（趋势页「当前值」栏）。
      *
-     * @return array<string, mixed>|null
+     * @return null|array<string, mixed>
      */
     public function latest(): ?array
     {
@@ -136,7 +142,8 @@ final class MetricService
             $rows = Db::table('gw_metric_samples')
                 ->orderBy('sampled_at', 'desc')
                 ->limit(1)
-                ->get();
+                ->get()
+            ;
         } catch (Throwable) {
             return null;
         }
@@ -161,35 +168,19 @@ final class MetricService
         try {
             return (int)Db::table('gw_metric_samples')
                 ->where('sampled_at', '<', time() - $keepDays * 86400)
-                ->delete();
+                ->delete()
+            ;
         } catch (Throwable) {
             return -1;
         }
     }
 
     /**
-     * DB 行 → 标准行：JSON 列解码、整型归一。
-     *
-     * @param array<string, mixed> $row
-     * @return array<string, mixed>
-     */
-    private function normalizeRow(array $row): array
-    {
-        return [
-            'sampled_at' => (int)($row['sampled_at'] ?? 0),
-            'conn_ws' => (int)($row['conn_ws'] ?? 0),
-            'conn_udp' => (int)($row['conn_udp'] ?? 0),
-            'conn_total' => (int)($row['conn_total'] ?? 0),
-            'queues' => (array)json_decode((string)($row['queues'] ?? '{}'), true),
-            'counters' => (array)json_decode((string)($row['counters'] ?? '{}'), true),
-        ];
-    }
-
-    /**
      * 均匀降采样：保留首尾两点，中间按等距取。纯函数。
      *
-     * @param list<array<string, mixed>> $rows 已按 sampled_at 升序
-     * @param positive-int $points
+     * @param list<array<string, mixed>> $rows   已按 sampled_at 升序
+     * @param positive-int               $points
+     *
      * @return list<array<string, mixed>>
      */
     public static function downsample(array $rows, int $points): array
@@ -222,6 +213,7 @@ final class MetricService
      *   与其置 null 制造空洞，不如按「此前一直是 0」理解）。
      *
      * @param list<array<string, mixed>> $rows 已按 sampled_at 升序
+     *
      * @return list<array<string, mixed>>
      */
     public static function withRates(array $rows): array
@@ -247,5 +239,24 @@ final class MetricService
         }
 
         return $out;
+    }
+
+    /**
+     * DB 行 → 标准行：JSON 列解码、整型归一。
+     *
+     * @param array<string, mixed> $row
+     *
+     * @return array<string, mixed>
+     */
+    private function normalizeRow(array $row): array
+    {
+        return [
+            'sampled_at' => (int)($row['sampled_at'] ?? 0),
+            'conn_ws' => (int)($row['conn_ws'] ?? 0),
+            'conn_udp' => (int)($row['conn_udp'] ?? 0),
+            'conn_total' => (int)($row['conn_total'] ?? 0),
+            'queues' => (array)json_decode((string)($row['queues'] ?? '{}'), true),
+            'counters' => (array)json_decode((string)($row['counters'] ?? '{}'), true),
+        ];
     }
 }

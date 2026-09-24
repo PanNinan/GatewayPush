@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin 单测 —— QueueInspectorTest。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -98,8 +103,11 @@ final class QueueInspectorTest extends TestCase
         }
 
         $this->assertSame(QueueInspector::LEVEL_BAD, $byName[RedisKeys::QUEUE_ACTION_IN]['level']);
-        $this->assertSame(QueueInspector::LEVEL_OK, $byName[RedisKeys::QUEUE_PUSH_OUT]['level'],
-            'queue 阈值是 1000，150 不该被 action 的 100 误伤');
+        $this->assertSame(
+            QueueInspector::LEVEL_OK,
+            $byName[RedisKeys::QUEUE_PUSH_OUT]['level'],
+            'queue 阈值是 1000，150 不该被 action 的 100 误伤'
+        );
     }
 
     public function testOfflineAndBacklogUseExpectedThresholdBuckets(): void
@@ -152,8 +160,11 @@ final class QueueInspectorTest extends TestCase
 
         $this->assertSame(1, $byName[RedisKeys::QUEUE_UDP_IN]['threshold'], '坏阈值回落 1，不许除零或恒绿');
         $this->assertSame(1, $byName[RedisKeys::QUEUE_ACTION_IN]['threshold']);
-        $this->assertSame(QueueInspector::LEVEL_BAD, $byName[RedisKeys::QUEUE_UDP_IN]['level'],
-            '阈值 1 且深度 1 → 达阈值即红');
+        $this->assertSame(
+            QueueInspector::LEVEL_BAD,
+            $byName[RedisKeys::QUEUE_UDP_IN]['level'],
+            '阈值 1 且深度 1 → 达阈值即红'
+        );
     }
 
     public function testEveryRowCarriesLabelKindAndThreshold(): void

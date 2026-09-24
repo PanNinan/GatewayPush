@@ -21,6 +21,15 @@
 
     function $(id) { return document.getElementById(id); }
 
+    /** datetime-local → `Y-m-d H:i:s`（后端 parseTime / strtotime 口径）；空返回 ''。 */
+    function timeVal(id) {
+        var n = $(id);
+        if (!n || !n.value) { return ''; }
+        var v = String(n.value).replace('T', ' ');
+        if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(v)) { v += ':00'; }
+        return v;
+    }
+
     function el(tag, className, text) {
         var n = document.createElement(tag);
         if (className) { n.className = className; }
@@ -63,8 +72,8 @@
         add('action', $('sel-action') ? $('sel-action').value : '');
         add('result', $('sel-result') ? $('sel-result').value : '');
         add('admin_id', $('inp-admin') && $('inp-admin').value !== '' ? $('inp-admin').value : '');
-        add('from', $('inp-from') ? $('inp-from').value.trim() : '');
-        add('to', $('inp-to') ? $('inp-to').value.trim() : '');
+        add('from', timeVal('inp-from'));
+        add('to', timeVal('inp-to'));
         add('size', $('sel-size') ? $('sel-size').value : (cfg.page_size_default || 20));
         add('page', String(page));
         return base + (qs.length ? ('?' + qs.join('&')) : '');

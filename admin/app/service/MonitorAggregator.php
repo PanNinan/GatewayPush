@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 服务层 —— MonitorAggregator。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -32,6 +37,7 @@ use Throwable;
  * 恰好在最需要它的时候失去可用性。快 tick 只碰 Redis，因此永远快。
  *
  * @phpstan-import-type Derived from MetricsDeriver
+ *
  * @phpstan-type RedisLive array{
  *     ok: bool, msg: string, latency_ms: float, online: int,
  *     gauge: array<string, string>, counter: array<string, string>,
@@ -41,10 +47,16 @@ use Throwable;
  */
 final class MonitorAggregator
 {
+    /** @var RedisReader */
     private RedisReader $redis;
 
+    /** @var GatewayPushClient */
     private GatewayPushClient $api;
 
+    /**
+     * @param null|RedisReader       $redis
+     * @param null|GatewayPushClient $api
+     */
     public function __construct(?RedisReader $redis = null, ?GatewayPushClient $api = null)
     {
         $this->redis = $redis ?? new RedisReader();

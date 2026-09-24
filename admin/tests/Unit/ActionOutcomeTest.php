@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin 单测 —— ActionOutcomeTest。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -306,28 +311,6 @@ final class ActionOutcomeTest extends TestCase
         }
     }
 
-    /* =====================================================================
-     | ⑤ 「补查能不能重试」≠「动作能不能再发一次」
-     |
-     | 2026-09-23 修的界面缺陷：回执行一度用 `retryable` 渲染「重发」判定，
-     | 于是 `rejected`（最该重发的状态）被显示成「不要重发」，
-     | 而 `done`（最不该重发的状态）拿到了「重发安全」的措辞 —— 两个方向都错。
-     | 本节把两个判据的**分离**钉死。
-     ===================================================================== */
-
-    /** @return array<string, array<string, mixed>> 六个状态的样本请求（与上一节同源） */
-    private function stateSamples(): array
-    {
-        return [
-            ActionOutcome::STATE_DONE => ['ok' => true, 'status' => 200, 'code' => 0, 'msg' => '', 'data' => ['status' => 'done']],
-            ActionOutcome::STATE_FAILED => ['ok' => false, 'status' => 200, 'code' => 4007, 'msg' => '', 'data' => ['status' => 'failed']],
-            ActionOutcome::STATE_PENDING => ['ok' => true, 'status' => 202, 'code' => 0, 'msg' => '', 'data' => ['status' => 'pending']],
-            ActionOutcome::STATE_REJECTED => ['ok' => false, 'status' => 400, 'code' => 4000, 'msg' => '', 'data' => []],
-            ActionOutcome::STATE_EXPIRED => ['ok' => false, 'status' => 404, 'code' => 4004, 'msg' => '', 'data' => ['status' => 'pending']],
-            ActionOutcome::STATE_TRANSPORT => ['ok' => false, 'status' => 0, 'code' => 10002, 'msg' => '', 'data' => []],
-        ];
-    }
-
     /**
      * ★ 核心回归护栏：`retryable` 与 `resend` 是两个判据，且在 `rejected` 上相反。
      */
@@ -445,5 +428,27 @@ final class ActionOutcomeTest extends TestCase
         ) {
             $this->assertArrayHasKey($key, $o, '响应体缺字段：' . $key . '（前端回执少一行，且不会报错）');
         }
+    }
+
+    /* =====================================================================
+     | ⑤ 「补查能不能重试」≠「动作能不能再发一次」
+     |
+     | 2026-09-23 修的界面缺陷：回执行一度用 `retryable` 渲染「重发」判定，
+     | 于是 `rejected`（最该重发的状态）被显示成「不要重发」，
+     | 而 `done`（最不该重发的状态）拿到了「重发安全」的措辞 —— 两个方向都错。
+     | 本节把两个判据的**分离**钉死。
+     ===================================================================== */
+
+    /** @return array<string, array<string, mixed>> 六个状态的样本请求（与上一节同源） */
+    private function stateSamples(): array
+    {
+        return [
+            ActionOutcome::STATE_DONE => ['ok' => true, 'status' => 200, 'code' => 0, 'msg' => '', 'data' => ['status' => 'done']],
+            ActionOutcome::STATE_FAILED => ['ok' => false, 'status' => 200, 'code' => 4007, 'msg' => '', 'data' => ['status' => 'failed']],
+            ActionOutcome::STATE_PENDING => ['ok' => true, 'status' => 202, 'code' => 0, 'msg' => '', 'data' => ['status' => 'pending']],
+            ActionOutcome::STATE_REJECTED => ['ok' => false, 'status' => 400, 'code' => 4000, 'msg' => '', 'data' => []],
+            ActionOutcome::STATE_EXPIRED => ['ok' => false, 'status' => 404, 'code' => 4004, 'msg' => '', 'data' => ['status' => 'pending']],
+            ActionOutcome::STATE_TRANSPORT => ['ok' => false, 'status' => 0, 'code' => 10002, 'msg' => '', 'data' => []],
+        ];
     }
 }

@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 服务层 —— GatewayPushClient。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -41,27 +46,34 @@ final class GatewayPushClient
     public const CODE_BAD_PARAM = 4000;
     public const CODE_BAD_SIGN = 4001;
     public const CODE_EXPIRED = 4002;
+
     /** 动作声明 `auth=true` 但请求未给 `uid`（`src/Api/Bootstrap.php:546`），P3 动作页必然遇到 */
     public const CODE_UNAUTHORIZED = 4003;
     public const CODE_NOT_FOUND = 4004;
+
     /** 未知指令 / 动作未开放该通道（HTTP 下即「动作未开放 HTTP 通道」） */
     public const CODE_UNKNOWN_CMD = 4006;
     public const CODE_RATE_LIMIT = 4029;
     public const CODE_SERVER_ERROR = 5000;
+
     /** 传输层失败（连不上 / 超时），对应 client 的 CLIENT_TRANSPORT */
     public const CODE_TRANSPORT = 10002;
 
+    /** @var string 主项目 API 基址（无尾斜杠） */
     private string $apiUrl;
 
+    /** @var string 签名密钥（空 = 服务端回退 AUTH_SECRET） */
     private string $secret;
 
+    /** @var float 请求超时秒 */
     private float $timeout;
 
+    /** @var Client HTTP 客户端 */
     private Client $http;
 
     /**
-     * @param string $apiUrl 主项目 API 基址，如 http://127.0.0.1:8290
-     * @param string $secret API_SECRET；留空表示由服务端回退 AUTH_SECRET
+     * @param string $apiUrl  主项目 API 基址，如 http://127.0.0.1:8290
+     * @param string $secret  API_SECRET；留空表示由服务端回退 AUTH_SECRET
      * @param float  $timeout 请求超时(秒)
      */
     public function __construct(string $apiUrl, string $secret, float $timeout = 8.0)
@@ -198,11 +210,11 @@ final class GatewayPushClient
      *      超限只记 `push_fail` + warn 日志 ⇒ 必须先过 `Pusher::payloadBytes()` 同源预估。
      *
      * @param array{target_type: string, target: string, payload: array<mixed>, msg_id: string, offline_mode: string} $job
-     *        字段与顺序无关；`offline_mode` 传空串表示取服务端默认值
+     *                                                                                                                     字段与顺序无关；`offline_mode` 传空串表示取服务端默认值
      *
      * @return array{ok: bool, status: int, code: int, msg: string, data: array<string, mixed>}
-     *         `data` 为服务端回带：`{target_type, target, msg_id, offline_mode}`，
-     *         其中 **`offline_mode` 是实际生效值**（未传时回带服务端默认值），应原样落库
+     *                                                                                          `data` 为服务端回带：`{target_type, target, msg_id, offline_mode}`，
+     *                                                                                          其中 **`offline_mode` 是实际生效值**（未传时回带服务端默认值），应原样落库
      */
     public function push(array $job): array
     {
@@ -245,7 +257,7 @@ final class GatewayPushClient
     /**
      * 发起一次 HTTP 请求并归一化结果。
      *
-     * @param array<string, mixed>|null $job   请求体；null 表示无体（GET）
+     * @param null|array<string, mixed> $job   请求体；null 表示无体（GET）
      * @param array<string, mixed>      $query query string
      *
      * @return array{ok: bool, status: int, code: int, msg: string, data: array<string, mixed>}

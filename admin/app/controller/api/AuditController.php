@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 页面 / API 控制器 —— AuditController。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -25,6 +30,9 @@ use Throwable;
  */
 final class AuditController
 {
+    /**
+     * 行为审计日志列表（只读检索）。
+     */
     public function index(Request $request): Response
     {
         $query = $request->get();
@@ -68,7 +76,8 @@ final class AuditController
                 ->offset(($page - 1) * $size)
                 ->limit($size)
                 ->get()
-                ->toArray();
+                ->toArray()
+            ;
 
             return ApiReply::ok([
                 'rows' => $rows,
@@ -101,6 +110,7 @@ final class AuditController
         if ($ts === false) {
             return null;
         }
+
         return date('Y-m-d H:i:s', $ts);
     }
 }

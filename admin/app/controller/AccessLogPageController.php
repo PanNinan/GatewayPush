@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 页面 / API 控制器 —— AccessLogPageController。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -24,6 +29,11 @@ use support\Response;
  */
 final class AccessLogPageController
 {
+    /**
+     * 渲染访问日志页骨架。
+     *
+     * 数据经 `GET /api/access-logs` 异步取回。
+     */
     public function index(Request $request): Response
     {
         return view('accesslog/index', [

@@ -1,5 +1,4 @@
 <?php
-
 /**
  * P0 验收冒烟脚本（手工执行，**不在** PHPUnit 套件内）。
  *
@@ -21,6 +20,7 @@ use app\service\RedisReader;
 use GatewayPush\Common\RedisKeys;
 
 require __DIR__ . '/../../vendor/autoload.php';
+
 require __DIR__ . '/../../support/bootstrap.php';
 
 $pass = 0;
@@ -150,7 +150,7 @@ if ($ping['ok']) {
         echo PHP_EOL . '      —— 预期键存在性自检（防 DB/PREFIX 配错导致的静默空数据）——' . PHP_EOL;
         foreach ($selfCheck['checks'] as $c) {
             echo sprintf(
-                "      %-22s exists=%-5s type=%-5s ttl=%-4s expect=%-5s %s",
+                '      %-22s exists=%-5s type=%-5s ttl=%-4s expect=%-5s %s',
                 $c['key'],
                 $c['exists'] ? 'yes' : 'no',
                 $c['type'],
@@ -161,7 +161,7 @@ if ($ping['ok']) {
         }
         check('预期键自检（骨架键至少命中一个）', $selfCheck['ok'], $selfCheck['hint']);
     } catch (Throwable $e) {
-        check('Redis 读操作', false, get_class($e) . ': ' . $e->getMessage());
+        check('Redis 读操作', false, $e::class . ': ' . $e->getMessage());
     }
 } else {
     note('Redis 后续检查', 'ping 失败，跳过');

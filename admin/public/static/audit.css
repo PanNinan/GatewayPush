@@ -88,6 +88,12 @@ select.layui-input[lay-ignore] {
     background: #fff;
 }
 
+/* 原生 datetime-local 选择器：补足宽度，避免日历图标挤出可视区 */
+.top-search-from input.layui-input[type="datetime-local"] {
+    min-width: 220px;
+    padding-right: 6px;
+}
+
 /* 页面说明与 noscript */
 .note {
     border: 1px solid #dbe1ea;

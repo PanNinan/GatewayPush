@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin · 服务层 —— SessionInspector。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -124,8 +129,23 @@ final class SessionInspector
     public const REVOKE_NOTE = '撤销名单以 Token 指纹（sha256 前 32 位）为键，服务端不存 Token 原文，'
         . '因此无法由会话反推是否已撤销；请到「Token 撤销名单」核对指纹。';
 
+    /* =====================================================================
+     | 纯静态函数（单测覆盖，无 IO）
+     ===================================================================== */
+
+    /** 状态说明文案（详情页用；与 `stateOf()` 的取值一一对应） */
+    public const STATE_NOTES = [
+        self::STATE_ONLINE => '在 online:clients 内，连接当前有效。',
+        self::STATE_RETAINED => '不在 online:clients 内但会话键仍存在：连接已断开，会话按 SESSION_TTL 保留供重连。',
+        self::STATE_GONE => '会话键已不存在：连接断开后已被回收（unbind），或该 clientId 从未建连。',
+    ];
+
+    /** @var RedisReader */
     private RedisReader $reader;
 
+    /**
+     * @param null|RedisReader $reader 缺省自建；测试可注入
+     */
     public function __construct(?RedisReader $reader = null)
     {
         $this->reader = $reader ?? new RedisReader();
@@ -369,25 +389,14 @@ final class SessionInspector
         }
     }
 
-    /* =====================================================================
-     | 纯静态函数（单测覆盖，无 IO）
-     ===================================================================== */
-
-    /** 状态说明文案（详情页用；与 `stateOf()` 的取值一一对应） */
-    public const STATE_NOTES = [
-        self::STATE_ONLINE => '在 online:clients 内，连接当前有效。',
-        self::STATE_RETAINED => '不在 online:clients 内但会话键仍存在：连接已断开，会话按 SESSION_TTL 保留供重连。',
-        self::STATE_GONE => '会话键已不存在：连接断开后已被回收（unbind），或该 clientId 从未建连。',
-    ];
-
     /**
      * 会话状态判定（纯函数）。
      *
      * **判定顺序即语义**：在线以集合成员资格为准，不以 `offline_at` 是否为空为准 ——
      * 后者是粘性字段（见类注释 ①），拿它判会把活跃 UDP 连接误判为离线。
      *
-     * @param bool $inOnlineSet    clientId 是否在 `online:clients` 内
-     * @param bool $sessionExists  `session:{clientId}` 是否存在
+     * @param bool $inOnlineSet   clientId 是否在 `online:clients` 内
+     * @param bool $sessionExists `session:{clientId}` 是否存在
      *
      * @return string 见 `STATE_*` 常量
      */
@@ -649,7 +658,7 @@ final class SessionInspector
     /**
      * 批量读会话并组装行（**一次往返**，见 `RedisReader::sessions()`）。
      *
-     * @param list<string>       $clientIds
+     * @param list<string>        $clientIds
      * @param array<string, true> $onlineSet 以 clientId 为键的在线集合（`array_fill_keys` 产物，
      *                                       故用 `isset()` 判定 O(1)，比 `in_array` 的 O(n) 更适合大列表）
      *
@@ -691,23 +700,32 @@ final class SessionInspector
         return isset($row[$field]) && is_numeric($row[$field]) ? (int)$row[$field] : 0;
     }
 
-    /* 配置读取：集中在此，便于单测与后续换源（admin_settings） */
+    // 配置读取：集中在此，便于单测与后续换源（admin_settings）
 
     private function pageSize(): int
     {
         return max(self::SIZE_MIN, min(self::SIZE_MAX, Settings::int('session.page_size', 20)));
     }
 
+    /**
+     * SCAN 每轮 COUNT 提示值（配置可调）。
+     */
     private static function scanCount(): int
     {
         return max(10, Settings::int('session.scan_count', 200));
     }
 
+    /**
+     * SCAN 最大轮次上限（配置可调）。
+     */
     private static function scanRounds(): int
     {
         return max(1, Settings::int('session.scan_max_rounds', 50));
     }
 
+    /**
+     * SCAN 累计键数上限（配置可调）。
+     */
     private static function scanMaxKeys(): int
     {
         return max(100, Settings::int('session.scan_max_keys', 2000));

@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin 单测 —— MetricServiceTest。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -20,7 +25,7 @@ use PHPUnit\Framework\TestCase;
  */
 final class MetricServiceTest extends TestCase
 {
-    /* ================= 降采样 ================= */
+    // ================= 降采样 =================
 
     public function testDownsampleKeepsRowsWhenUnderLimit(): void
     {
@@ -62,7 +67,7 @@ final class MetricServiceTest extends TestCase
         self::assertCount(2, MetricService::downsample($this->rows(2), 10));
     }
 
-    /* ================= 差分速率 ================= */
+    // ================= 差分速率 =================
 
     public function testFirstRowHasEmptyRates(): void
     {
@@ -77,8 +82,11 @@ final class MetricServiceTest extends TestCase
     {
         // 2.0 §3.3：送达率趋势依赖 push_* 差分 —— 漏键 = 图上恒 0 / 断线
         foreach (['push_in', 'push_out', 'push_fail', 'push_offline', 'push_dedup'] as $key) {
-            self::assertContains($key, MetricService::RATE_KEYS,
-                'RATE_KEYS 缺 ' . $key . ' —— 推送送达图会静默不出线');
+            self::assertContains(
+                $key,
+                MetricService::RATE_KEYS,
+                'RATE_KEYS 缺 ' . $key . ' —— 推送送达图会静默不出线'
+            );
         }
     }
 
@@ -136,7 +144,7 @@ final class MetricServiceTest extends TestCase
         self::assertSame([], $out[1]['rates'], 'dt<=0 时不输出速率');
     }
 
-    /* ================= 集成（DB 可用才跑） ================= */
+    // ================= 集成（DB 可用才跑） =================
 
     public function testSampleInsertsRowAndRangeReturnsIt(): void
     {
@@ -169,7 +177,7 @@ final class MetricServiceTest extends TestCase
         self::assertNotFalse($n >= 0 || $n === -1);
     }
 
-    /* ================= 夹具 ================= */
+    // ================= 夹具 =================
 
     /** @return list<array<string, mixed>> */
     private function rows(int $n): array
@@ -196,6 +204,7 @@ final class MetricServiceTest extends TestCase
 
     /**
      * @param array<string, int> $counters
+     *
      * @return array{sampled_at: int, conn_ws: int, conn_udp: int, conn_total: int, queues: list<mixed>, counters: array<string, int>}
      */
     private function row(int $ts, array $counters): array

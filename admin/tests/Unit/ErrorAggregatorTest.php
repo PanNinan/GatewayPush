@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin 单测 —— ErrorAggregatorTest。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -25,27 +30,6 @@ final class ErrorAggregatorTest extends TestCase
 {
     private const DATE = '2026-09-24';
 
-    private function svc(): ErrorAggregator
-    {
-        return new ErrorAggregator(new LogTailService(__DIR__ . '/fixtures/logs'));
-    }
-
-    /**
-     * @param array{roles: list<array<string, mixed>>} $result
-     *
-     * @return array<string, mixed>
-     */
-    private function byRole(array $result, string $role): array
-    {
-        foreach ($result['roles'] as $row) {
-            if ($row['role'] === $role) {
-                return $row;
-            }
-        }
-
-        $this->fail('结果里没有角色 ' . $role);
-    }
-
     public function testAggregateReturnsSevenRowsSixRolesPlusDigest(): void
     {
         $res = $this->svc()->aggregate(self::DATE);
@@ -69,10 +53,13 @@ final class ErrorAggregatorTest extends TestCase
         $this->assertFalse($business['not_found']);
         // fixtures/business_2026-09-24.log 里 2 行 [ERROR]、其余行不过滤
         $this->assertSame(2, $business['count'], '只数 [ERROR] 行');
-        $this->assertNotSame(0, count($business['lines']));
+        $this->assertNotCount(0, $business['lines']);
         foreach ($business['lines'] as $line) {
-            $this->assertStringContainsString(ErrorAggregator::ERROR_KEYWORD, $line,
-                '展示行也必须是过滤后的命中行');
+            $this->assertStringContainsString(
+                ErrorAggregator::ERROR_KEYWORD,
+                $line,
+                '展示行也必须是过滤后的命中行'
+            );
         }
     }
 
@@ -94,8 +81,11 @@ final class ErrorAggregatorTest extends TestCase
                 $roleSum += $row['count'];
             }
         }
-        $this->assertSame($roleSum, $res['total'],
-            '★ total 必须只含业务角色 —— 汇总文件是同一批行的副本，计入会翻倍');
+        $this->assertSame(
+            $roleSum,
+            $res['total'],
+            '★ total 必须只含业务角色 —— 汇总文件是同一批行的副本，计入会翻倍'
+        );
     }
 
     public function testMissingFileIsNotFoundNotError(): void
@@ -129,5 +119,26 @@ final class ErrorAggregatorTest extends TestCase
         $this->assertTrue($api['ok']);
         $this->assertSame(0, $api['count'], 'api fixture 全是 INFO/WARN，[ERROR] 过滤后应为 0');
         $this->assertFalse($api['not_found'], '文件在，只是没有 error —— 不是 not_found');
+    }
+
+    private function svc(): ErrorAggregator
+    {
+        return new ErrorAggregator(new LogTailService(__DIR__ . '/fixtures/logs'));
+    }
+
+    /**
+     * @param array{roles: list<array<string, mixed>>} $result
+     *
+     * @return array<string, mixed>
+     */
+    private function byRole(array $result, string $role): array
+    {
+        foreach ($result['roles'] as $row) {
+            if ($row['role'] === $role) {
+                return $row;
+            }
+        }
+
+        $this->fail('结果里没有角色 ' . $role);
     }
 }

@@ -1,8 +1,5 @@
 #!/usr/bin/env php
 <?php
-
-declare(strict_types=1);
-
 /**
  * GatewayPush 管理后台 —— 安装 / 初始化脚本（幂等，可重复执行）
  *
@@ -29,17 +26,34 @@ declare(strict_types=1);
  *   php admin/scripts/install.php
  */
 
+declare(strict_types=1);
+
 $root = dirname(__DIR__);
 $sep = str_repeat('-', 78);
 
+/**
+ * 打印一行到 STDOUT。
+ *
+ * @param string $msg 要打印的消息（默认空行）
+ *
+ * @return void
+ */
 function out(string $msg = ''): void
 {
     fwrite(STDOUT, $msg . PHP_EOL);
 }
 
+/**
+ * 打印失败并 exit(1)。
+ *
+ * @param string $msg 失败原因
+ *
+ * @return never
+ */
 function fail(string $msg): void
 {
     fwrite(STDERR, '[FAIL] ' . $msg . PHP_EOL);
+
     exit(1);
 }
 
@@ -47,15 +61,16 @@ function fail(string $msg): void
 // 引导：autoload + .env
 // ---------------------------------------------------------------------------
 if (!is_file($root . '/vendor/autoload.php')) {
-    fail("未找到 vendor/autoload.php，请先在 admin/ 下执行 composer install");
+    fail('未找到 vendor/autoload.php，请先在 admin/ 下执行 composer install');
 }
+
 require $root . '/vendor/autoload.php';
 
 if (!is_file($root . '/.env')) {
-    fail("未找到 admin/.env，请先复制 .env.example 为 .env 并填写 ADMIN_DB_*");
+    fail('未找到 admin/.env，请先复制 .env.example 为 .env 并填写 ADMIN_DB_*');
 }
 if (!class_exists(\Dotenv\Dotenv::class)) {
-    fail("缺少 vlucas/phpdotenv：composer require vlucas/phpdotenv");
+    fail('缺少 vlucas/phpdotenv：composer require vlucas/phpdotenv');
 }
 // createUnsafeMutable + safeLoad：与框架 support/bootstrap.php:45-49 的行为保持一致
 \Dotenv\Dotenv::createUnsafeMutable($root)->safeLoad();
@@ -72,20 +87,20 @@ $markerFile = $root . '/plugin/admin/config/database.php';
 //   ⚠ 写 PHP 块注释时切勿出现形如 `plugin/*/config/` 的路径 —— 其中的 `*/`
 //     会提前闭合注释，后半句变成代码，报 `unexpected identifier "config"`。
 $marker = <<<'PHP'
-<?php
-/**
- * webman-admin 的「已安装标记」+ 插件侧数据库配置。
- *
- * 由 admin/scripts/install.php 生成，**请勿手工修改**（脚本每次运行都会覆写）。
- * 内容只做转发，真正的连接参数只存在于版本库内的 config/database.php（读 .env）。
- *
- * 为什么必须存在：plugin/admin/app/controller/IndexController.php 用它的存在性
- * 判定「是否已安装」，缺失时后台根路径会渲染安装页。
- */
+    <?php
+    /**
+     * webman-admin 的「已安装标记」+ 插件侧数据库配置。
+     *
+     * 由 admin/scripts/install.php 生成，**请勿手工修改**（脚本每次运行都会覆写）。
+     * 内容只做转发，真正的连接参数只存在于版本库内的 config/database.php（读 .env）。
+     *
+     * 为什么必须存在：plugin/admin/app/controller/IndexController.php 用它的存在性
+     * 判定「是否已安装」，缺失时后台根路径会渲染安装页。
+     */
 
-return require config_path() . '/database.php';
+    return require config_path() . '/database.php';
 
-PHP;
+    PHP;
 $markerExisted = is_file($markerFile);
 if ($markerExisted && file_get_contents($markerFile) === $marker) {
     out('  已存在且内容一致，跳过');
@@ -129,12 +144,12 @@ try {
 
 $version = (string)$pdo->query('select version()')->fetchColumn();
 $collation = (string)$pdo->query(
-    "select default_collation_name from information_schema.schemata where schema_name = database()"
+    'select default_collation_name from information_schema.schemata where schema_name = database()'
 )->fetchColumn();
-printf("  已连接 %s:%d/%s   MySQL %s   库排序规则 %s%s", $host, $port, $name, $version, $collation, PHP_EOL);
+printf('  已连接 %s:%d/%s   MySQL %s   库排序规则 %s%s', $host, $port, $name, $version, $collation, PHP_EOL);
 if ($collation !== 'utf8mb4_general_ci') {
-    out("  ⚠ 库排序规则不是 utf8mb4_general_ci —— 与 wa_* 表（install.sql 写死 general_ci）");
-    out("    混排会在跨表 JOIN / UNION 时抛 \"Illegal mix of collations\"，建议：");
+    out('  ⚠ 库排序规则不是 utf8mb4_general_ci —— 与 wa_* 表（install.sql 写死 general_ci）');
+    out('    混排会在跨表 JOIN / UNION 时抛 "Illegal mix of collations"，建议：');
     out("    ALTER DATABASE `{$name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;");
 }
 
@@ -196,6 +211,7 @@ function upsertRule(PDO $pdo, array $node, int $pid, string $now): int
         $set = implode(', ', array_map(static fn (string $c): string => "`{$c}` = :{$c}", array_keys($fields)));
         $stmt = $pdo->prepare("UPDATE wa_rules SET {$set}, `updated_at` = :updated_at WHERE `id` = :id");
         $stmt->execute($fields + ['updated_at' => $now, 'id' => $exists]);
+
         return (int)$exists;
     }
 
@@ -205,6 +221,7 @@ function upsertRule(PDO $pdo, array $node, int $pid, string $now): int
     $ph = implode(', ', array_map(static fn (string $c): string => ":{$c}", array_keys($fields)));
     $stmt = $pdo->prepare("INSERT INTO wa_rules ({$cols}) VALUES ({$ph})");
     $stmt->execute($fields);
+
     return (int)$pdo->lastInsertId();
 }
 
@@ -221,8 +238,10 @@ function importMenuTree(PDO $pdo, array $tree, int $pid, string $now): void
                 importMenuTree($pdo, $item, $pid, $now);
             }
         }
+
         return;
     }
+
     /** @var array<string, mixed> $tree */
     $id = upsertRule($pdo, $tree, $pid, $now);
     foreach (($tree['children'] ?? []) as $child) {
@@ -247,6 +266,7 @@ importMenuTree($pdo, $menus, 0, $now);
 // 与「真实可用后台」冲突。这是 demos 清理的**唯一版本库真源**。
 // ---------------------------------------------------------------------------
 out('步骤 3b    清理废弃菜单子树（demos 等）');
+
 /** @var list<string> $obsoleteMenuRoots */
 $obsoleteMenuRoots = ['demos'];
 
@@ -305,7 +325,7 @@ $obsoleteRemoved = 0;
 foreach ($obsoleteMenuRoots as $obsoleteKey) {
     $n = deleteRuleTreeByKey($pdo, $obsoleteKey, $now);
     if ($n > 0) {
-        printf("  已删除废弃菜单子树 key=%s（%d 个节点）%s", $obsoleteKey, $n, PHP_EOL);
+        printf('  已删除废弃菜单子树 key=%s（%d 个节点）%s', $obsoleteKey, $n, PHP_EOL);
     }
     $obsoleteRemoved += $n;
 }
@@ -314,7 +334,7 @@ if ($obsoleteRemoved === 0) {
 }
 
 $ruleTotal = (int)$pdo->query('select count(*) from wa_rules')->fetchColumn();
-printf("  菜单树导入完成，wa_rules 现有 %d 个节点%s", $ruleTotal, PHP_EOL);
+printf('  菜单树导入完成，wa_rules 现有 %d 个节点%s', $ruleTotal, PHP_EOL);
 
 // ---------------------------------------------------------------------------
 // 步骤 4：后台自有表
@@ -328,7 +348,7 @@ if (!is_file($gwSql)) {
 $pdo->exec((string)file_get_contents($gwSql));
 foreach (['push_task', 'push_template', 'admin_audit_log', 'wa_admin_log', 'admin_settings'] as $t) {
     $n = (int)$pdo->query("select count(*) from `{$t}`")->fetchColumn();
-    printf("  %-18s %d 行%s", $t, $n, PHP_EOL);
+    printf('  %-18s %d 行%s', $t, $n, PHP_EOL);
 }
 
 // ---------------------------------------------------------------------------
@@ -341,7 +361,7 @@ $bootstrapPass = (string)(getenv('ADMIN_BOOTSTRAP_PASS') ?: '');
 $adminCount = (int)$pdo->query('select count(*) from wa_admins')->fetchColumn();
 
 if ($adminCount > 0) {
-    printf("  wa_admins 已有 %d 个账号，跳过（如需重置见 admin/docs/deploy.md）%s", $adminCount, PHP_EOL);
+    printf('  wa_admins 已有 %d 个账号，跳过（如需重置见 admin/docs/deploy.md）%s', $adminCount, PHP_EOL);
 } else {
     if ($bootstrapPass === '') {
         fail('wa_admins 为空且 .env 未设置 ADMIN_BOOTSTRAP_PASS —— 请先设置初始超管密码');
@@ -362,7 +382,7 @@ if ($adminCount > 0) {
     $stmt = $pdo->prepare('insert into wa_admin_roles (role_id, admin_id) values (1, :admin_id)');
     $stmt->execute(['admin_id' => $adminId]);
 
-    printf("  已创建超管 %s（id=%d），并绑定角色 1（超级管理员）%s", $bootstrapUser, $adminId, PHP_EOL);
+    printf('  已创建超管 %s（id=%d），并绑定角色 1（超级管理员）%s', $bootstrapUser, $adminId, PHP_EOL);
     out('  ⚠ 密码来自 admin/.env 的 ADMIN_BOOTSTRAP_PASS，首次登录后请立即修改');
 }
 
@@ -386,45 +406,45 @@ $group = upsertRule($pdo, [
 
 // 菜单（type=1，出现在左侧菜单）与按钮级权限点（type=2，仅作权限）
 $nodeSpecs = [
-    'dashboard' => ['title' => '健康总览', 'key' => 'app\\controller\\DashboardController', 'href' => '/dashboard', 'type' => 1, 'weight' => 100],
+    'dashboard' => ['title' => '健康总览', 'key' => 'app\controller\DashboardController', 'href' => '/dashboard', 'type' => 1, 'weight' => 100],
     // 会话查询页（P2）。**key 必须是控制器全类名，不带 @action** ——
     // Auth::canAccess 对 action=index 的匹配规则是「任意以 {控制器}@ 开头的 key，或 key 恰等于 {控制器}」，
     // 故页面路由只需这一个节点即可放行；用 @index 亦可，但菜单节点（type=1）按惯例不带 action。
     // ⚠ 漏登记此节点的症状是「登录后点菜单 403」，而不是白屏 —— 极易被误判成路由写错。
-    'sessions' => ['title' => '会话查询', 'key' => 'app\\controller\\SessionController', 'href' => '/sessions', 'type' => 1, 'weight' => 92],
-    'mon.live' => ['title' => '实时快照（API）', 'key' => 'app\\controller\\api\\MonitorController@live', 'href' => '', 'type' => 2, 'weight' => 95],
-    'mon.summary' => ['title' => '指标聚合（API）', 'key' => 'app\\controller\\api\\MonitorController@summary', 'href' => '', 'type' => 2, 'weight' => 90],
-    'mon.health' => ['title' => '健康探测（API）', 'key' => 'app\\controller\\api\\MonitorController@health', 'href' => '', 'type' => 2, 'weight' => 80],
-    'ops.scan' => ['title' => 'Redis 键巡检（API）', 'key' => 'app\\controller\\api\\OpsController@redisScan', 'href' => '', 'type' => 2, 'weight' => 70],
+    'sessions' => ['title' => '会话查询', 'key' => 'app\controller\SessionController', 'href' => '/sessions', 'type' => 1, 'weight' => 92],
+    'mon.live' => ['title' => '实时快照（API）', 'key' => 'app\controller\api\MonitorController@live', 'href' => '', 'type' => 2, 'weight' => 95],
+    'mon.summary' => ['title' => '指标聚合（API）', 'key' => 'app\controller\api\MonitorController@summary', 'href' => '', 'type' => 2, 'weight' => 90],
+    'mon.health' => ['title' => '健康探测（API）', 'key' => 'app\controller\api\MonitorController@health', 'href' => '', 'type' => 2, 'weight' => 80],
+    'ops.scan' => ['title' => 'Redis 键巡检（API）', 'key' => 'app\controller\api\OpsController@redisScan', 'href' => '', 'type' => 2, 'weight' => 70],
     // 密钥状态属敏感展示（设计文档 §3.4 的 admin.config.secret.view「默认关，需单独授」），
     // 故只进运维角色，不进只读角色。
-    'ops.probe' => ['title' => 'API 与密钥状态（API）', 'key' => 'app\\controller\\api\\OpsController@apiProbe', 'href' => '', 'type' => 2, 'weight' => 60],
+    'ops.probe' => ['title' => 'API 与密钥状态（API）', 'key' => 'app\controller\api\OpsController@apiProbe', 'href' => '', 'type' => 2, 'weight' => 60],
     // ---- P5 运维只读三件套：日志尾读 / 角色状态 / 密钥轮换引导 ----
     // 日志内容可能含敏感行（密钥轮换引导含密钥指纹），与 ops.probe 同级 —— 只进运维角色。
-    'ops.logs' => ['title' => '日志尾读（API）', 'key' => 'app\\controller\\api\\OpsController@logs', 'href' => '', 'type' => 2, 'weight' => 59],
-    'ops.roles' => ['title' => '角色状态三源探测（API）', 'key' => 'app\\controller\\api\\OpsController@roles', 'href' => '', 'type' => 2, 'weight' => 58],
-    'ops.rotation' => ['title' => '密钥轮换引导（API）', 'key' => 'app\\controller\\api\\OpsController@rotation', 'href' => '', 'type' => 2, 'weight' => 57],
+    'ops.logs' => ['title' => '日志尾读（API）', 'key' => 'app\controller\api\OpsController@logs', 'href' => '', 'type' => 2, 'weight' => 59],
+    'ops.roles' => ['title' => '角色状态三源探测（API）', 'key' => 'app\controller\api\OpsController@roles', 'href' => '', 'type' => 2, 'weight' => 58],
+    'ops.rotation' => ['title' => '密钥轮换引导（API）', 'key' => 'app\controller\api\OpsController@rotation', 'href' => '', 'type' => 2, 'weight' => 57],
     // ---- 2.0 序4/序5：队列深度 / 错误聚合 / 配置查看 ----
     // 与 ops.logs / ops.rotation 同级（只进运维角色）：错误原文、队列水位、
     // 配置快照（含密钥指纹）都不是只读角色该看到的排查细节。
-    'ops.queues' => ['title' => '队列深度巡检（API）', 'key' => 'app\\controller\\api\\OpsController@queues', 'href' => '', 'type' => 2, 'weight' => 56],
-    'ops.errors' => ['title' => '错误日志聚合（API）', 'key' => 'app\\controller\\api\\OpsController@errors', 'href' => '', 'type' => 2, 'weight' => 55],
-    'ops.config' => ['title' => '主项目配置查看（API）', 'key' => 'app\\controller\\api\\OpsController@config', 'href' => '', 'type' => 2, 'weight' => 54],
+    'ops.queues' => ['title' => '队列深度巡检（API）', 'key' => 'app\controller\api\OpsController@queues', 'href' => '', 'type' => 2, 'weight' => 56],
+    'ops.errors' => ['title' => '错误日志聚合（API）', 'key' => 'app\controller\api\OpsController@errors', 'href' => '', 'type' => 2, 'weight' => 55],
+    'ops.config' => ['title' => '主项目配置查看（API）', 'key' => 'app\controller\api\OpsController@config', 'href' => '', 'type' => 2, 'weight' => 54],
     // ---- 2.0 序7：限流命中巡检 ----
     // 与 ops.config 同级（只进运维）：暴露「谁被限了」的指纹与水位，属排查面而非看板。
-    'ops.rate' => ['title' => '限流命中巡检（API）', 'key' => 'app\\controller\\api\\OpsController@rate', 'href' => '', 'type' => 2, 'weight' => 53],
+    'ops.rate' => ['title' => '限流命中巡检（API）', 'key' => 'app\controller\api\OpsController@rate', 'href' => '', 'type' => 2, 'weight' => 53],
     // ---- M2 会话只读（P2）----
     // 全部是只读端点，按 §6「只读角色仅 *.view 类」的口径同时授予「只读」与「运维」。
     // 其中 revoked 只是**不可逆的 Token 指纹**（sha256 前 32 位，服务端不存 Token 原文），
     // 与 §6 里刻意只给超管的 `admin.config.secret.view`（密钥状态）不同级别，
     // 故不按敏感项处理；若日后判定要收紧，只需把下面一行从 $viewerRules 里摘掉。
-    'sess.list' => ['title' => '会话列表（API）', 'key' => 'app\\controller\\api\\SessionController@index', 'href' => '', 'type' => 2, 'weight' => 55],
-    'sess.detail' => ['title' => '会话详情（API）', 'key' => 'app\\controller\\api\\SessionController@detail', 'href' => '', 'type' => 2, 'weight' => 54],
-    'sess.byUid' => ['title' => '按 uid 反查（API）', 'key' => 'app\\controller\\api\\SessionController@byUid', 'href' => '', 'type' => 2, 'weight' => 53],
-    'sess.byDevice' => ['title' => '按设备反查（API）', 'key' => 'app\\controller\\api\\SessionController@byDevice', 'href' => '', 'type' => 2, 'weight' => 52],
-    'sess.offline' => ['title' => '离线队列只读（API）', 'key' => 'app\\controller\\api\\SessionController@offline', 'href' => '', 'type' => 2, 'weight' => 51],
-    'sess.subs' => ['title' => '订阅关系（API）', 'key' => 'app\\controller\\api\\SessionController@subscriptions', 'href' => '', 'type' => 2, 'weight' => 50],
-    'auth.revoked' => ['title' => 'Token 撤销名单（API）', 'key' => 'app\\controller\\api\\SessionController@revoked', 'href' => '', 'type' => 2, 'weight' => 49],
+    'sess.list' => ['title' => '会话列表（API）', 'key' => 'app\controller\api\SessionController@index', 'href' => '', 'type' => 2, 'weight' => 55],
+    'sess.detail' => ['title' => '会话详情（API）', 'key' => 'app\controller\api\SessionController@detail', 'href' => '', 'type' => 2, 'weight' => 54],
+    'sess.byUid' => ['title' => '按 uid 反查（API）', 'key' => 'app\controller\api\SessionController@byUid', 'href' => '', 'type' => 2, 'weight' => 53],
+    'sess.byDevice' => ['title' => '按设备反查（API）', 'key' => 'app\controller\api\SessionController@byDevice', 'href' => '', 'type' => 2, 'weight' => 52],
+    'sess.offline' => ['title' => '离线队列只读（API）', 'key' => 'app\controller\api\SessionController@offline', 'href' => '', 'type' => 2, 'weight' => 51],
+    'sess.subs' => ['title' => '订阅关系（API）', 'key' => 'app\controller\api\SessionController@subscriptions', 'href' => '', 'type' => 2, 'weight' => 50],
+    'auth.revoked' => ['title' => 'Token 撤销名单（API）', 'key' => 'app\controller\api\SessionController@revoked', 'href' => '', 'type' => 2, 'weight' => 49],
     // ---- M3 推送管理 / 动作调试（P3）----
     // ⚠ 本段与 M2 的**根本差别**：M2 全只读，可以整批授予只读角色；
     //   本段含**写**（发起推送 / 模板增删改 / 动作调用），故逐节点区分。
@@ -433,51 +453,51 @@ $nodeSpecs = [
     // ⚠ 页面节点的 key **必须与页面控制器的全类名逐字一致**，且不能写成 `api\...` 那个 ——
     //   两个同名控制器在 wa_rules.key 里是不同字符串（`app\controller\PushController`
     //   vs `app\controller\api\PushController@create`），不是同一个权限。
-    'push' => ['title' => '推送管理', 'key' => 'app\\controller\\PushController', 'href' => '/push', 'type' => 1, 'weight' => 91],
+    'push' => ['title' => '推送管理', 'key' => 'app\controller\PushController', 'href' => '/push', 'type' => 1, 'weight' => 91],
     // 动作调试页只给运维：它能在**任意客户端**上执行动作（echo/notify/report…），
     // 属「主动对生产连接施加行为」，与只读查询不是一个风险级别。
-    'actions' => ['title' => '动作调试', 'key' => 'app\\controller\\ActionController', 'href' => '/actions', 'type' => 1, 'weight' => 90],
-    'opsPage' => ['title' => '运维', 'key' => 'app\\controller\\OpsPageController', 'href' => '/ops', 'type' => 1, 'weight' => 89],
+    'actions' => ['title' => '动作调试', 'key' => 'app\controller\ActionController', 'href' => '/actions', 'type' => 1, 'weight' => 90],
+    'opsPage' => ['title' => '运维', 'key' => 'app\controller\OpsPageController', 'href' => '/ops', 'type' => 1, 'weight' => 89],
     // ---- 2.0 指标趋势 + uid 一站式排查 ----
     // 监测/排查均属只读能力：页面菜单与 2 个 metric API 节点都进 $viewerRules（只读+运维同授）。
     // trace 页无新 API 节点 —— 页内复用 sess.* 既有端点，权限边界就是那些端点自身。
-    'metricsPage' => ['title' => '指标趋势', 'key' => 'app\\controller\\MetricsPageController', 'href' => '/metrics', 'type' => 1, 'weight' => 99],
-    'metric.range' => ['title' => '指标趋势查询（API）', 'key' => 'app\\controller\\api\\MetricController@range', 'href' => '', 'type' => 2, 'weight' => 98],
-    'metric.latest' => ['title' => '指标最新采样（API）', 'key' => 'app\\controller\\api\\MetricController@latest', 'href' => '', 'type' => 2, 'weight' => 97],
-    'tracePage' => ['title' => 'uid 排查', 'key' => 'app\\controller\\TracePageController', 'href' => '/trace', 'type' => 1, 'weight' => 96],
+    'metricsPage' => ['title' => '指标趋势', 'key' => 'app\controller\MetricsPageController', 'href' => '/metrics', 'type' => 1, 'weight' => 99],
+    'metric.range' => ['title' => '指标趋势查询（API）', 'key' => 'app\controller\api\MetricController@range', 'href' => '', 'type' => 2, 'weight' => 98],
+    'metric.latest' => ['title' => '指标最新采样（API）', 'key' => 'app\controller\api\MetricController@latest', 'href' => '', 'type' => 2, 'weight' => 97],
+    'tracePage' => ['title' => 'uid 排查', 'key' => 'app\controller\TracePageController', 'href' => '/trace', 'type' => 1, 'weight' => 96],
     // ---- 行为日志（读 admin_audit_log，替代已删除的示例 demo 页）----
     // 纯只读：谁对推送系统做了什么。与 dashboard / 会话查询同级，只读 + 运维同授。
-    'auditPage' => ['title' => '行为日志', 'key' => 'app\\controller\\AuditPageController', 'href' => '/audit', 'type' => 1, 'weight' => 88],
-    'audit.list' => ['title' => '行为日志查询（API）', 'key' => 'app\\controller\\api\\AuditController@index', 'href' => '', 'type' => 2, 'weight' => 87],
+    'auditPage' => ['title' => '行为日志', 'key' => 'app\controller\AuditPageController', 'href' => '/audit', 'type' => 1, 'weight' => 88],
+    'audit.list' => ['title' => '行为日志查询（API）', 'key' => 'app\controller\api\AuditController@index', 'href' => '', 'type' => 2, 'weight' => 87],
     // ---- 访问日志（读 wa_admin_log：登录/登出/页面与接口访问，与 /audit 并列）----
     // 纯只读：谁打开了什么。与 dashboard / 行为日志同级，只读 + 运维同授。
-    'accessPage' => ['title' => '访问日志', 'key' => 'app\\controller\\AccessLogPageController', 'href' => '/access-log', 'type' => 1, 'weight' => 86],
-    'access.list' => ['title' => '访问日志查询（API）', 'key' => 'app\\controller\\api\\AccessLogController@index', 'href' => '', 'type' => 2, 'weight' => 85],
-    'push.create' => ['title' => '发起推送（API）', 'key' => 'app\\controller\\api\\PushController@create', 'href' => '', 'type' => 2, 'weight' => 48],
-    'push.history' => ['title' => '推送历史（API）', 'key' => 'app\\controller\\api\\PushController@history', 'href' => '', 'type' => 2, 'weight' => 47],
-    'push.tplList' => ['title' => '模板列表（API）', 'key' => 'app\\controller\\api\\PushController@templateList', 'href' => '', 'type' => 2, 'weight' => 46],
-    'push.tplSave' => ['title' => '模板保存（API）', 'key' => 'app\\controller\\api\\PushController@templateSave', 'href' => '', 'type' => 2, 'weight' => 45],
-    'push.tplDelete' => ['title' => '模板删除（API）', 'key' => 'app\\controller\\api\\PushController@templateDelete', 'href' => '', 'type' => 2, 'weight' => 44],
-    'action.invoke' => ['title' => '动作调用（API）', 'key' => 'app\\controller\\api\\ActionController@invoke', 'href' => '', 'type' => 2, 'weight' => 43],
+    'accessPage' => ['title' => '访问日志', 'key' => 'app\controller\AccessLogPageController', 'href' => '/access-log', 'type' => 1, 'weight' => 86],
+    'access.list' => ['title' => '访问日志查询（API）', 'key' => 'app\controller\api\AccessLogController@index', 'href' => '', 'type' => 2, 'weight' => 85],
+    'push.create' => ['title' => '发起推送（API）', 'key' => 'app\controller\api\PushController@create', 'href' => '', 'type' => 2, 'weight' => 48],
+    'push.history' => ['title' => '推送历史（API）', 'key' => 'app\controller\api\PushController@history', 'href' => '', 'type' => 2, 'weight' => 47],
+    'push.tplList' => ['title' => '模板列表（API）', 'key' => 'app\controller\api\PushController@templateList', 'href' => '', 'type' => 2, 'weight' => 46],
+    'push.tplSave' => ['title' => '模板保存（API）', 'key' => 'app\controller\api\PushController@templateSave', 'href' => '', 'type' => 2, 'weight' => 45],
+    'push.tplDelete' => ['title' => '模板删除（API）', 'key' => 'app\controller\api\PushController@templateDelete', 'href' => '', 'type' => 2, 'weight' => 44],
+    'action.invoke' => ['title' => '动作调用（API）', 'key' => 'app\controller\api\ActionController@invoke', 'href' => '', 'type' => 2, 'weight' => 43],
     // `action.result` 是**纯读补查**，但若不给运维角色，超窗转 pending 的动作就无任何补救手段
     // （只能翻主项目日志）。故与 invoke 同批授予，不单独收紧。
-    'action.result' => ['title' => '动作回执补查（API）', 'key' => 'app\\controller\\api\\ActionController@result', 'href' => '', 'type' => 2, 'weight' => 42],
+    'action.result' => ['title' => '动作回执补查（API）', 'key' => 'app\controller\api\ActionController@result', 'href' => '', 'type' => 2, 'weight' => 42],
 
     // ---- P4 运维动作转签 ----
     //
     // ⚠ 这四个**一律不给只读角色**：它们会改变别人的连接状态，且**不可撤销**。
     //   与 P3 的 push.create 分属不同风险面 —— 推送是「多发一条消息」，
     //   踢线是「让别人掉线」，后者对在线用户是即时可见的服务中断。
-    'ops.kick' => ['title' => '踢线（断开连接，API）', 'key' => 'app\\controller\\api\\OpsActionController@kick', 'href' => '', 'type' => 2, 'weight' => 41],
-    'ops.revoke' => ['title' => '撤销 Token（API）', 'key' => 'app\\controller\\api\\OpsActionController@revoke', 'href' => '', 'type' => 2, 'weight' => 40],
-    'ops.unbind' => ['title' => '解绑设备（API）', 'key' => 'app\\controller\\api\\OpsActionController@unbind', 'href' => '', 'type' => 2, 'weight' => 39],
-    'ops.forceOffline' => ['title' => '强制下线（revoke→kick 组合，API）', 'key' => 'app\\controller\\api\\OpsActionController@forceOffline', 'href' => '', 'type' => 2, 'weight' => 38],
-    'ops.purgeOffline' => ['title' => '清空离线队列（不可恢复，API）', 'key' => 'app\\controller\\api\\OpsActionController@purgeOffline', 'href' => '', 'type' => 2, 'weight' => 37],
+    'ops.kick' => ['title' => '踢线（断开连接，API）', 'key' => 'app\controller\api\OpsActionController@kick', 'href' => '', 'type' => 2, 'weight' => 41],
+    'ops.revoke' => ['title' => '撤销 Token（API）', 'key' => 'app\controller\api\OpsActionController@revoke', 'href' => '', 'type' => 2, 'weight' => 40],
+    'ops.unbind' => ['title' => '解绑设备（API）', 'key' => 'app\controller\api\OpsActionController@unbind', 'href' => '', 'type' => 2, 'weight' => 39],
+    'ops.forceOffline' => ['title' => '强制下线（revoke→kick 组合，API）', 'key' => 'app\controller\api\OpsActionController@forceOffline', 'href' => '', 'type' => 2, 'weight' => 38],
+    'ops.purgeOffline' => ['title' => '清空离线队列（不可恢复，API）', 'key' => 'app\controller\api\OpsActionController@purgeOffline', 'href' => '', 'type' => 2, 'weight' => 37],
 ];
 $nodeIds = [];
 foreach ($nodeSpecs as $alias => $spec) {
     $nodeIds[$alias] = upsertRule($pdo, $spec, $group, $now);
-    printf("  %-12s id=%-4d %s%s", $alias, $nodeIds[$alias], $spec['key'], PHP_EOL);
+    printf('  %-12s id=%-4d %s%s', $alias, $nodeIds[$alias], $spec['key'], PHP_EOL);
 }
 
 /**
@@ -494,6 +514,7 @@ function upsertRole(PDO $pdo, string $name, array $ruleIds, string $now): int
     if ($id !== false) {
         $stmt = $pdo->prepare('UPDATE wa_roles SET `rules` = :rules, `updated_at` = :now WHERE `id` = :id');
         $stmt->execute(['rules' => $rules, 'now' => $now, 'id' => $id]);
+
         return (int)$id;
     }
     // ⚠ EMULATE_PREPARES=false 时，原生预处理不支持**同名占位符出现多次**，
@@ -503,6 +524,7 @@ function upsertRole(PDO $pdo, string $name, array $ruleIds, string $now): int
         . 'VALUES (:name, :rules, :created_at, :updated_at, NULL)'
     );
     $stmt->execute(['name' => $name, 'rules' => $rules, 'created_at' => $now, 'updated_at' => $now]);
+
     return (int)$pdo->lastInsertId();
 }
 
@@ -578,8 +600,8 @@ $operatorRules = array_merge($viewerRules, [
 
 $viewerId = upsertRole($pdo, '只读', $viewerRules, $now);
 $operatorId = upsertRole($pdo, '运维', $operatorRules, $now);
-printf("  角色「只读」 id=%d  rules=%s%s", $viewerId, implode(',', $viewerRules), PHP_EOL);
-printf("  角色「运维」 id=%d  rules=%s%s", $operatorId, implode(',', $operatorRules), PHP_EOL);
+printf('  角色「只读」 id=%d  rules=%s%s', $viewerId, implode(',', $viewerRules), PHP_EOL);
+printf('  角色「运维」 id=%d  rules=%s%s', $operatorId, implode(',', $operatorRules), PHP_EOL);
 out('  角色「超级管理员」 id=1  rules=* （install.sql 自带）');
 
 // ---------------------------------------------------------------------------
@@ -642,10 +664,10 @@ if ($viewerUser !== '' && $viewerPass !== '') {
 out($sep);
 out('步骤 7 / 7  结果汇总');
 $tables = $pdo->query('show tables')->fetchAll(PDO::FETCH_COLUMN);
-printf("  库 %s  共 %d 张表：%s%s", $name, count($tables), implode(' ', $tables), PHP_EOL);
+printf('  库 %s  共 %d 张表：%s%s', $name, count($tables), implode(' ', $tables), PHP_EOL);
 $roleRows = $pdo->query('select id, name, rules from wa_roles order by id')->fetchAll(PDO::FETCH_ASSOC);
 foreach ($roleRows as $r) {
-    printf("  role #%-2s %-8s rules=%s%s", $r['id'], $r['name'], $r['rules'], PHP_EOL);
+    printf('  role #%-2s %-8s rules=%s%s', $r['id'], $r['name'], $r['rules'], PHP_EOL);
 }
 out('');
 out('完成。启动后台：');

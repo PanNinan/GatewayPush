@@ -1,4 +1,9 @@
 <?php
+/**
+ * admin 单测 —— RouteGuardTest。
+ *
+ * GatewayPush 管理后台（webman + webman/admin）自有源码。
+ */
 
 declare(strict_types=1);
 
@@ -107,7 +112,7 @@ final class RouteGuardTest extends TestCase
         // 反向：禁用的目标必须只落在本项目自己的控制器上
         $foreign = array_values(array_filter(
             $disabled,
-            static fn (string $fqcn): bool => !str_starts_with($fqcn, 'app\\controller\\')
+            static fn (string $fqcn): bool => !str_starts_with($fqcn, 'app\controller\\')
         ));
         $this->assertSame(
             [],
@@ -145,12 +150,12 @@ final class RouteGuardTest extends TestCase
         $routeFile = $this->read(self::ROUTES);
 
         $this->assertDoesNotMatchRegularExpression(
-            '/^use\s+app\\\\controller\\\\IndexController;/m',
+            '/^use\s+app\\\controller\\\IndexController;/m',
             $routeFile,
             'config/route.php 不得再导入已删除的 IndexController'
         );
         $this->assertDoesNotMatchRegularExpression(
-            '/Route::disableDefaultRoute\(\s*(?:IndexController|app\\\\controller\\\\IndexController)::class\s*\)/',
+            '/Route::disableDefaultRoute\(\s*(?:IndexController|app\\\controller\\\IndexController)::class\s*\)/',
             $routeFile,
             'IndexController 文件已删除，route.php 里的 disableDefaultRoute(IndexController) '
             . '引用一个不存在的类 —— 请删除该行（见 route.php 顶部注释）'
@@ -175,7 +180,7 @@ final class RouteGuardTest extends TestCase
             '不得全局禁用默认路由：webman-admin 的 /app/admin/* 靠默认路由解析，全禁会让整个后台 UI 失效'
         );
         $this->assertDoesNotMatchRegularExpression(
-            "/Route::disableDefaultRoute\(\s*''\s*\)\s*;/",
+            "/Route::disableDefaultRoute\\(\\s*''\\s*\\)\\s*;/",
             $routeFile,
             "不得 `disableDefaultRoute('')`：语义等同全局禁用默认路由"
         );
@@ -197,9 +202,9 @@ final class RouteGuardTest extends TestCase
         $routeFile = $this->read(self::ROUTES);
 
         $this->assertMatchesRegularExpression(
-            "#Route::get\(\s*'/',\s*[^;]*redirect\(\s*'/app/admin'\s*\)#s",
+            "#Route::get\\(\\s*'/',\\s*[^;]*redirect\\(\\s*'/app/admin'\\s*\\)#s",
             $routeFile,
-            "根路径 `/` 必须由显式路由重定向到 /app/admin —— 否则禁用脚手架控制器后 `/` 会变成 404"
+            '根路径 `/` 必须由显式路由重定向到 /app/admin —— 否则禁用脚手架控制器后 `/` 会变成 404'
         );
     }
 
@@ -241,6 +246,7 @@ final class RouteGuardTest extends TestCase
             $inGroup = $offset > $groupStart && $offset < $groupEnd;
             if ($inGroup) {
                 $groupRoutes++;
+
                 continue;
             }
 
@@ -249,7 +255,7 @@ final class RouteGuardTest extends TestCase
             }
 
             // 未被中间件覆盖：只允许白名单里的根路径（且它已被上一条用例断言为纯重定向）
-            preg_match("/Route::\w+\(\s*'([^']+)'/", $statement, $pathMatch);
+            preg_match("/Route::\\w+\\(\\s*'([^']+)'/", $statement, $pathMatch);
             $path = $pathMatch[1] ?? '(解析失败)';
             if (in_array($path, self::UNGUARDED_PATH_ALLOWLIST, true)) {
                 continue;
@@ -276,7 +282,7 @@ final class RouteGuardTest extends TestCase
     public function testApiGroupCarriesAdminAuthMiddleware(): void
     {
         $this->assertMatchesRegularExpression(
-            "#\}\)->middleware\(\[AdminAuth::class\]\)\s*;#",
+            '#\}\)->middleware\(\[AdminAuth::class\]\)\s*;#',
             $this->read(self::ROUTES),
             '/api 分组必须挂 AdminAuth —— 组内所有 API 的鉴权都依赖它'
         );
@@ -304,6 +310,7 @@ final class RouteGuardTest extends TestCase
         );
 
         $classes = [];
+
         /** @var SplFileInfo $file */
         foreach ($iterator as $file) {
             if ($file->getExtension() !== 'php') {
@@ -349,7 +356,7 @@ final class RouteGuardTest extends TestCase
 
         // 1) 收集 `use` 映射：别名（或短名） → FQCN
         preg_match_all(
-            '/^use\s+([A-Za-z0-9_\\\\]+)(?:\s+as\s+([A-Za-z0-9_]+))?\s*;/m',
+            '/^use\s+([A-Za-z0-9_\\\]+)(?:\s+as\s+([A-Za-z0-9_]+))?\s*;/m',
             $routeFile,
             $uses,
             PREG_SET_ORDER
@@ -366,7 +373,7 @@ final class RouteGuardTest extends TestCase
 
         // 2) 收集 `disableDefaultRoute(X::class)` 里的 X
         preg_match_all(
-            '/Route::disableDefaultRoute\(\s*([A-Za-z0-9_\\\\]+)::class\s*\)/',
+            '/Route::disableDefaultRoute\(\s*([A-Za-z0-9_\\\]+)::class\s*\)/',
             $routeFile,
             $calls
         );
