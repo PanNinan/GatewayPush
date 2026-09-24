@@ -73,6 +73,27 @@ final class MetricServiceTest extends TestCase
         self::assertArrayHasKey('msg_in', $out[1]['rates']);
     }
 
+    public function testRateKeysIncludePushDeliveryCounters(): void
+    {
+        // 2.0 §3.3：送达率趋势依赖 push_* 差分 —— 漏键 = 图上恒 0 / 断线
+        foreach (['push_in', 'push_out', 'push_fail', 'push_offline', 'push_dedup'] as $key) {
+            self::assertContains($key, MetricService::RATE_KEYS,
+                'RATE_KEYS 缺 ' . $key . ' —— 推送送达图会静默不出线');
+        }
+    }
+
+    public function testPushRateIsDeltaOverSeconds(): void
+    {
+        $rows = [
+            $this->row(0, ['push_in' => 10, 'push_out' => 8]),
+            $this->row(60, ['push_in' => 70, 'push_out' => 68]),
+        ];
+        $out = MetricService::withRates($rows);
+
+        self::assertSame(round(60 / 60, 4), $out[1]['rates']['push_in']);
+        self::assertSame(round(60 / 60, 4), $out[1]['rates']['push_out']);
+    }
+
     public function testRateIsDeltaOverSeconds(): void
     {
         $rows = $this->rowsWithCounters(2, 60);  // 间隔 60s，msg_in 每行 +100

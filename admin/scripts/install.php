@@ -19,6 +19,7 @@ declare(strict_types=1);
  *   1. 连通性与版本自检
  *   2. 建/校验 wa_* 七张表（复刻 plugin/admin/install.sql）
  *   3. 把 plugin/admin/config/menu.php 导入 wa_rules（插件的菜单与权限节点树）
+ *   3b. 删除已从 menu.php 摘除的废弃菜单子树（demos；import 只 upsert 不 delete）
  *   4. 建后台自有四表（database/001_gw_tables.sql）
  *   5. 建初始超管账号（.env 的 ADMIN_BOOTSTRAP_USER / ADMIN_BOOTSTRAP_PASS），绑定角色 id=1
  *   6. 建 GatewayPush 权限节点 + 「运维 / 只读」两角色
@@ -234,6 +235,84 @@ function importMenuTree(PDO $pdo, array $tree, int $pid, string $now): void
 /** @var array<int|string, mixed> $menus */
 $menus = include $root . '/plugin/admin/config/menu.php';
 importMenuTree($pdo, $menus, 0, $now);
+
+// ---------------------------------------------------------------------------
+// 步骤 3b：删除已从 menu.php 摘除的废弃菜单子树
+//
+// ⚠ plugin/admin/config/menu.php 是 composer 包 webman/admin 的**纯副本**
+//   （admin/.gitignore 排除、composer install 经 copy_dir 重建）——本地手改会在
+//   下次 composer install 被 vendor 原样冲掉并**带回 demos**。
+// import 只做 upsert、**不会**删除 menu.php 里已不存在的 key；
+// 已装环境必须在此按 key 清理，否则侧栏仍会显示静态 demo 页（读假 JSON），
+// 与「真实可用后台」冲突。这是 demos 清理的**唯一版本库真源**。
+// ---------------------------------------------------------------------------
+out('步骤 3b    清理废弃菜单子树（demos 等）');
+/** @var list<string> $obsoleteMenuRoots */
+$obsoleteMenuRoots = ['demos'];
+
+/**
+ * 按 key 递归删除 wa_rules 节点，并从各角色 rules 列表剔除对应 id。
+ *
+ * @return int 删除的节点数
+ */
+function deleteRuleTreeByKey(PDO $pdo, string $key, string $now): int
+{
+    $stmt = $pdo->prepare('SELECT id FROM wa_rules WHERE `key` = ? LIMIT 1');
+    $stmt->execute([$key]);
+    $rootId = $stmt->fetchColumn();
+    if ($rootId === false) {
+        return 0;
+    }
+
+    $deleteIds = [(int)$rootId];
+    $frontier = [(int)$rootId];
+    while ($frontier) {
+        $ph = implode(',', array_fill(0, count($frontier), '?'));
+        $q = $pdo->prepare("SELECT id FROM wa_rules WHERE pid IN ({$ph})");
+        $q->execute($frontier);
+        $frontier = array_map('intval', $q->fetchAll(PDO::FETCH_COLUMN));
+        $deleteIds = array_merge($deleteIds, $frontier);
+    }
+
+    // 非 * 角色的 rules 是逗号分隔 id 列表：删节点后必须剔除，
+    // 否则角色页会展示悬空 id，RBAC 判定虽无害但验收/运维会误读。
+    $roleRows = $pdo->query('SELECT id, rules FROM wa_roles')->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($roleRows as $role) {
+        if (trim((string)$role['rules']) === '*') {
+            continue;
+        }
+        $ids = array_values(array_filter(array_map('intval', explode(',', (string)$role['rules'])), static fn (int $n): bool => $n > 0));
+        $kept = array_values(array_diff($ids, $deleteIds));
+        if (count($kept) === count($ids)) {
+            continue;
+        }
+        $upd = $pdo->prepare('UPDATE wa_roles SET rules = :rules, updated_at = :now WHERE id = :id');
+        $upd->execute([
+            'rules' => implode(',', $kept),
+            'now' => $now,
+            'id' => (int)$role['id'],
+        ]);
+    }
+
+    $ph = implode(',', array_fill(0, count($deleteIds), '?'));
+    $del = $pdo->prepare("DELETE FROM wa_rules WHERE id IN ({$ph})");
+    $del->execute($deleteIds);
+
+    return count($deleteIds);
+}
+
+$obsoleteRemoved = 0;
+foreach ($obsoleteMenuRoots as $obsoleteKey) {
+    $n = deleteRuleTreeByKey($pdo, $obsoleteKey, $now);
+    if ($n > 0) {
+        printf("  已删除废弃菜单子树 key=%s（%d 个节点）%s", $obsoleteKey, $n, PHP_EOL);
+    }
+    $obsoleteRemoved += $n;
+}
+if ($obsoleteRemoved === 0) {
+    out('  废弃菜单子树不存在（新装或已清理过），跳过');
+}
+
 $ruleTotal = (int)$pdo->query('select count(*) from wa_rules')->fetchColumn();
 printf("  菜单树导入完成，wa_rules 现有 %d 个节点%s", $ruleTotal, PHP_EOL);
 
@@ -331,6 +410,9 @@ $nodeSpecs = [
     'ops.queues' => ['title' => '队列深度巡检（API）', 'key' => 'app\\controller\\api\\OpsController@queues', 'href' => '', 'type' => 2, 'weight' => 56],
     'ops.errors' => ['title' => '错误日志聚合（API）', 'key' => 'app\\controller\\api\\OpsController@errors', 'href' => '', 'type' => 2, 'weight' => 55],
     'ops.config' => ['title' => '主项目配置查看（API）', 'key' => 'app\\controller\\api\\OpsController@config', 'href' => '', 'type' => 2, 'weight' => 54],
+    // ---- 2.0 序7：限流命中巡检 ----
+    // 与 ops.config 同级（只进运维）：暴露「谁被限了」的指纹与水位，属排查面而非看板。
+    'ops.rate' => ['title' => '限流命中巡检（API）', 'key' => 'app\\controller\\api\\OpsController@rate', 'href' => '', 'type' => 2, 'weight' => 53],
     // ---- M2 会话只读（P2）----
     // 全部是只读端点，按 §6「只读角色仅 *.view 类」的口径同时授予「只读」与「运维」。
     // 其中 revoked 只是**不可逆的 Token 指纹**（sha256 前 32 位，服务端不存 Token 原文），
@@ -363,6 +445,10 @@ $nodeSpecs = [
     'metric.range' => ['title' => '指标趋势查询（API）', 'key' => 'app\\controller\\api\\MetricController@range', 'href' => '', 'type' => 2, 'weight' => 98],
     'metric.latest' => ['title' => '指标最新采样（API）', 'key' => 'app\\controller\\api\\MetricController@latest', 'href' => '', 'type' => 2, 'weight' => 97],
     'tracePage' => ['title' => 'uid 排查', 'key' => 'app\\controller\\TracePageController', 'href' => '/trace', 'type' => 1, 'weight' => 96],
+    // ---- 行为日志（读 admin_audit_log，替代已删除的示例 demo 页）----
+    // 纯只读：谁对推送系统做了什么。与 dashboard / 会话查询同级，只读 + 运维同授。
+    'auditPage' => ['title' => '行为日志', 'key' => 'app\\controller\\AuditPageController', 'href' => '/audit', 'type' => 1, 'weight' => 88],
+    'audit.list' => ['title' => '行为日志查询（API）', 'key' => 'app\\controller\\api\\AuditController@index', 'href' => '', 'type' => 2, 'weight' => 87],
     'push.create' => ['title' => '发起推送（API）', 'key' => 'app\\controller\\api\\PushController@create', 'href' => '', 'type' => 2, 'weight' => 48],
     'push.history' => ['title' => '推送历史（API）', 'key' => 'app\\controller\\api\\PushController@history', 'href' => '', 'type' => 2, 'weight' => 47],
     'push.tplList' => ['title' => '模板列表（API）', 'key' => 'app\\controller\\api\\PushController@templateList', 'href' => '', 'type' => 2, 'weight' => 46],
@@ -446,6 +532,9 @@ $viewerRules = [
     $nodeIds['metric.range'],
     $nodeIds['metric.latest'],
     $nodeIds['tracePage'],
+    // 行为日志：只读检索 admin_audit_log（params 写入时已由 Auditor 脱敏）
+    $nodeIds['auditPage'],
+    $nodeIds['audit.list'],
 ];
 // 运维角色在只读之上追加：运维自检 + 动作调试 + 推送写路径。
 $operatorRules = array_merge($viewerRules, [
@@ -459,6 +548,8 @@ $operatorRules = array_merge($viewerRules, [
     $nodeIds['ops.queues'],
     $nodeIds['ops.errors'],
     $nodeIds['ops.config'],
+    // 2.0 序7：限流命中巡检（与 ops.config 同级，不给只读角色）
+    $nodeIds['ops.rate'],
     // M3 写路径。这三项与 `push` / `push.history` / `push.tplList` **刻意分开**：
     // 合成一个节点会让「给某人看历史」连带给出「以他的名义向任意 uid 推任意载荷」的能力。
     $nodeIds['push.create'],

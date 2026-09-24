@@ -25,6 +25,7 @@ register / gateway / udp / business / api / dashboard 六个角色。
 | P0 | `/dashboard` 健康总览 | `/api/monitor/*`、`/api/ops/redis/scan`、`/api/ops/api/probe` |
 | P1 | （同上，改为分层轮询 + 自绘 SVG） | 新增 `/api/monitor/live`（5s 快 tick，**只碰 Redis**） |
 | P2 | `/sessions` 会话查询 | `/api/sessions`、`/api/session/{clientId}`、`/api/sessions/by-uid/{uid}`、`/api/sessions/by-device/{deviceId}`、`/api/sessions/subscriptions`、`/api/sessions/offline/{uid}`、`/api/auth/revoked`（**全部 GET，一期只读**） |
+| 2.0 | `/audit` 行为日志（读 `admin_audit_log`） | `GET /api/audit/logs`（只读检索；替代已废弃的示例 demo 树） |
 
 ---
 
@@ -34,7 +35,7 @@ register / gateway / udp / business / api / dashboard 六个角色。
 |---|---|---|
 | PHP | 8.2 ~ 8.5（**禁用 8.3+ 语法**） | `php -v` |
 | 扩展 | `gd` `fileinfo` `pdo_mysql` `curl` `mbstring` `openssl` `sockets` `xml` `zip` | `php -m` |
-| Redis 扩展 | **不需要** phpredis —— 走 `predis/predis` 纯 PHP 客户端 | — |
+| Redis 扩展 | 默认 **phpredis**（`ADMIN_REDIS_CLIENT`，需 `extension=redis`）；无扩展环境改回 `predis` 纯 PHP 客户端 | `php -m \| grep -i ^redis$` |
 | MySQL | 实测 **8.0.46**（DDL 兼容 5.7+）；库与表排序规则**必须** `utf8mb4_general_ci` | `select version()` |
 | Redis | 与主项目**同一实例、同一 DB、同一前缀** | 见 §4 第 2 条 |
 
@@ -94,9 +95,10 @@ php start.php stop           # Linux 停止
 | 1 | 连通性 + 库排序规则自检（非 `utf8mb4_general_ci` 时打印 `ALTER DATABASE` 建议） |
 | 2 | `wa_*` 七表（复刻 `plugin/admin/install.sql`；按「表是否齐全」决定是否执行，并把裸 `INSERT` 改写为 `INSERT IGNORE`） |
 | 3 | 把 `plugin/admin/config/menu.php` 导入 `wa_rules`（插件自带的菜单 / 权限树） |
+| 3b | 删除废弃菜单子树（`$obsoleteMenuRoots = ['demos']`；import 只 upsert 不 delete，**且 `menu.php` 是 vendor 副本、composer install 会带回 demos**，故清理真源在此步） |
 | 4 | 后台自有四表：`database/001_gw_tables.sql`（`push_task` / `push_template` / `admin_audit_log` / `admin_settings`） |
 | 5 | 首个超管（取 `.env` 的 `ADMIN_BOOTSTRAP_USER` / `ADMIN_BOOTSTRAP_PASS`；`wa_admins` 非空则跳过） |
-| 6 | GatewayPush 权限节点 **23 个**（P1 5 + P2 9 + P3 9）+ 「运维 / 只读」两角色（按 `wa_rules.key` 与 rule id 列表 upsert） |
+| 6 | GatewayPush 权限节点 **42 个**（含页面 + API；`$nodeSpecs` 全量）+ 「运维 / 只读」两角色（按 `wa_rules.key` 与 rule id 列表 upsert） |
 
 **为什么不走官方 Web 安装页**：①它的「已安装」标记写在插件目录内，`composer update webman/admin` 会冲掉；
 ②表已存在时它会要求「强制覆盖（`DROP TABLE`）」；③它会把明文连接参数写进插件目录。
@@ -107,12 +109,14 @@ php start.php stop           # Linux 停止
 | 角色 | `wa_roles.id` | `rules` | 能访问 |
 |---|---|---|---|
 | 超级管理员 | 1 | `*` | 全部（含 webman-admin 自带的管理面） |
-| 运维 | 3 | 23 个节点 | GatewayPush 全部页面与端点（含 `/push` 发起推送 · 模板增删改 · `/actions` 动作调试） |
-| 只读 | 2 | 15 个节点 | `/dashboard`、`/sessions`、`/push`（**仅**历史 + 模板查看）、`/api/monitor/*`（含 `mon.live`）、`/api/sessions/*`、`/api/session/*`、`/api/auth/revoked`、`/api/push/history`、`/api/push/templates`（GET）；`/api/ops/*`、`/api/push`（POST）、`/api/action/*` 与模板写操作返回 **403** |
+| 运维 | 3 | 39 个节点 | GatewayPush 全部页面与端点（含 `/push` 发起推送 · 模板增删改 · `/actions` 动作调试 · `/audit` 行为日志） |
+| 只读 | 2 | 21 个节点 | `/dashboard`、`/sessions`、`/push`（**仅**历史 + 模板查看）、`/metrics`、`/trace`、`/audit`、`/api/monitor/*`（含 `mon.live`）、`/api/sessions/*`、`/api/session/*`、`/api/auth/revoked`、`/api/push/history`、`/api/push/templates`（GET）、`/api/metric/*`、`/api/audit/logs`；`/api/ops/*`、`/api/push`（POST）、`/api/action/*` 与模板写操作返回 **403** |
 
-> P3 后「只读」= 15 节点、「运维」= 23 节点（计数可用
-> `SELECT id,name,rules FROM wa_roles` 复核）。节点清单的**唯一真源**是
+> 角色节点数以 `scripts/install.php` 的 `$viewerRules` / `$operatorRules` 为准
+> （当前只读 **21**、运维 **39**；p3/p4 验收脚本有硬断言，改节点必须同步）。
+> 计数可用 `SELECT id,name,rules FROM wa_roles` 复核。节点清单的**唯一真源**是
 > `scripts/install.php` 的 `$nodeSpecs`，重跑该脚本即幂等对齐（id 不变、只更新 title/key/weight）。
+> 只读 = 监测 / 查询 / 审计检索；运维 = 只读之上再加写路径与自检面（见 `$operatorRules`）。
 >
 > ⚠ **新增阶段后必须重跑 `php scripts/install.php`** —— 节点只存在于该脚本里，不进 DB 则
 > 非超管角色一律 403。反之 **P2/P3 的验收脚本只做静态核对**（读 `install.php` 源码），
@@ -248,7 +252,7 @@ mysql -h "$ADMIN_DB_HOST" -u "$ADMIN_DB_USER" -p gateway_push_admin < gwadmin-YY
 cd admin
 composer test           # PHPUnit：tests/Unit（P3 后 201 tests / 1053 assertions）
 composer analyse        # PHPStan L6，**刻意不引入 baseline**（新代码零容忍）
-composer test:frontend  # 运行期前端渲染校验（P1 144 + P2 122 + P3 push 122 + P3 action 103 = **491 项**；无需浏览器 / jsdom / 服务端）
+composer test:frontend  # 运行期前端渲染校验（dashboard 144 + session 162 + push 122 + action 103 + ops 42 + metrics 19 + trace 25 + audit 21 = **638 项**；无需浏览器 / jsdom / 服务端）
 ```
 
 `composer test` 与 `composer test:frontend` **不可互相替代**：
@@ -345,7 +349,7 @@ ADMIN_ROLES_CMD="php ../start.php roles"   # 正确
 | 页面所有数字为 **0** | `ADMIN_REDIS_DB` / `ADMIN_REDIS_PREFIX` 与主项目不一致（不报错，只是读不到）→ 查 `GET /api/ops/redis/scan` |
 | 「Redis 键总数」曾显示 **DB 0** | 早期版本误取主项目 `/health` 的 `db` 字段（该字段不存在）→ 已改为后台自读配置 |
 | 提示「请重启webman」 | `config('plugin.admin.database')` 为空 → 与「安装页」同一根因 |
-| `Class "Redis" not found` | `config/redis.php` 的 `client` 键没放**顶层**（放 `redis.default` 里会被静默忽略并回退 phpredis） |
+| `Class "Redis" not found` | `ADMIN_REDIS_CLIENT=phpredis`（默认）但未装 `extension=redis` → `php -m` 确认，或改回 `predis`；`client` 键必须在 `config/redis.php` **顶层**（放 `redis.default` 里会被静默忽略并回退 phpredis） |
 | 只读/运维账号访问新端点一律 403 | 新增端点后忘了往 `wa_rules` 加权限节点（`{控制器全类名}@{action}`）；超管因 `rules='*'` 察觉不到 |
 
 ### 7.7 后台在 Windows 下**会**热重载（与主项目相反，别搞混）
@@ -574,14 +578,28 @@ ADMIN_ROLES_CMD="php ../start.php roles"   # 正确
 ### 13.3 踩坑记录（新增）
 
 1. **Redis 池心跳 vs 低频进程**：原池配置 `min_connections=1 + heartbeat_interval=50`，
-   采样进程 60s 才用一次连接 ⇒ 空闲连接被对端关闭后心跳必败，且池清理走 CLOSE 命令 ——
-   predis 无此命令，每 50s 刷一轮异常堆栈。已改 `min_connections=0 + idle 55s`：
+   采样进程 60s 才用一次连接 ⇒ 空闲连接被对端关闭后心跳必败，且池清理走 close() ——
+   webman/redis 硬编码 `client()->close()`，predis 无此方法 ⇒ `__call` 当成 CLOSE 命令 ⇒
+   每 50s 刷一轮异常堆栈。已改 `min_connections=0 + idle 55s`：
    低 QPS 后台「取用时新建」远比「保活坏连接」可靠。
-2. **Windows 双实例恶化**：webman master 误判 worker 死亡重 spawn 时，旧 worker 在
+   **根因侧修复**（2026-09-24）：`app/support/PredisSafeRedisManager` 覆盖 `connection()`，
+   closer 按客户端类型分流（predis → `disconnect()`，有 `close()` 的走 `close()`）；
+   `app\bootstrap\RedisBootstrap` 在每个 worker 启动时把 `support\Redis::$instance`
+   换成本类（含 metric-sampler 等自定义进程）。改 vendor 的 `RedisManager.php`
+   会在 `composer update` 时被覆盖，故只在应用层子类化。
+2. **自定义进程连接钉死在 Context**：metric-sampler 无请求生命周期，首次取到的连接写入
+   non-fiber `Context` 后永不归还；池的 `idle_timeout` / `heartbeat_interval=3600` 都碰不到
+   它。对端断开后下一次采样固定 `Redis::ping(): … errno=10054`（predis 时代则是
+   `Error while writing bytes`）。HTTP worker 的 Context 随请求销毁，故只有后台采样进程中招。
+   **修复**：`PredisSafeRedisManager::connection()` 对 Context 缓存连接做**限频探活**
+   （`PROBE_TTL=30s`，每个 Context 键最多每 30s PING 一次）；探活失败立即
+   `Pool::closeConnection()` + 清 Context，本次取连接换新。首次从池取出时写入
+   `probed_at`，避免对刚创建的连接做无意义 PING。
+3. **Windows 双实例恶化**：webman master 误判 worker 死亡重 spawn 时，旧 worker 在
    Windows（不拒绝重复 bind）下仍活着收请求 ⇒ 一套 master 也能出双监听。
    处置：`netstat -ano` 找 8292 全部监听 PID 逐个杀，master 会重 spawn 自己的 worker，
    杀不死的才是真 master。
-3. **php-cs-fixer / phpcs**：admin 无独立 lint 脚本，新增文件保持 LF（`.gitattributes`）。
+4. **php-cs-fixer / phpcs**：admin 无独立 lint 脚本，新增文件保持 LF（`.gitattributes`）。
 
 ---
 
@@ -666,3 +684,99 @@ ADMIN_ROLES_CMD="php ../start.php roles"   # 正确
    `$present && $raw !== ''` 显式语义。
 3. **admin 无独立 php-cs-fixer**：排版门禁在主项目根目录
    （`composer cs:check` 扫 131 文件含 admin PHP）；admin 新增文件保持 LF 即可。
+
+## 15. 2.0 序7：限流统计 + 版本环境 + 推送送达率（2026-09-24）
+
+三项**全部纯 admin**，零主项目改动。
+
+### 15.1 限流命中巡检（§1.3）
+
+- **端点**：`GET /api/ops/rate` → `OpsController@rate`，节点 `ops.rate`（只进运维）。
+- **数据源**（`RateInspector`，只读有界 SCAN）：
+  - `rl:{dim}:{md5(id)}` Hash（tokens / ts）—— L2 令牌桶；`tokens <= 0` → bad、`< 1` → warn。
+  - `api:rate:{md5(ip)}:{slot}` String —— HTTP 分钟窗；只列最近 `API_WINDOWS=3` 内**有命中**的窗口。
+  - `metrics:counter:{Ymd}` 的 `rate_limit_hit` —— 当日累计（跨天归零属正常）。
+- **不可逆红线**：主体一律 **md5 前 12 位指纹**（`RedisKeys::rateBucket` / `rateApi` 的键设计）；
+  UI 必须原样展示后端下发的 notes，**不得暗示可定位到原始 IP / uid**。
+- **L1 进程内桶不在 Redis** —— notes 须说明「本页看不到 L1」，避免运维误以为「没限流」。
+- **truncated**：SCAN 超限如实上抛（与队列深度同一纪律）。
+
+### 15.2 版本 / 环境并入 roles（§2.2）
+
+- **无新端点 / 无新节点**：`OpsController@roles` 响应追加 `env` 块
+  （`EnvInfoService::view()`），与角色表同区块展示。
+- **三源**：PHP runtime（版本 / SAPI / OS）+ 主项目 `composer.lock` 白名单
+  （`EnvInfoService::PACKAGES`：workerman 三件 + predis）+ 主项目 `.env` 的 `APP_ENV`
+  （复用 `ConfigViewer` 路径三关）。
+- **任一源失败不拖垮整包**：该项 `configured=false`，UI 显示「—」，不编默认值。
+- **白名单而非全量 lock**：传递依赖全表是噪音，且会把「依赖升级」误读成「主动升级」。
+
+### 15.3 推送送达率（§3.3）
+
+- **无新端点**：`MetricService::RATE_KEYS` 追加
+  `push_in / push_out / push_fail / push_offline / push_dedup`。
+- **metrics 页第 4 张图** `chart-push`：五条差分速率曲线（条/秒）。
+- **当前值表**新增「推送累计」行（in / out / fail / offline / dedup）。
+- **口径备注由视图硬编码在图下**（非前端编词 —— 是静态说明）：
+  `push_in` = HTTP 受理（含离线缓存 / 去重前）；`push_out` = 实际下发到网关；
+  **差值不等于丢失**（离线与去重是设计内路径）；送达率仅作趋势参考，勿当精确 SLA。
+
+### 15.4 权限与路由
+
+| 端点 | 节点 | 只读角色 | 运维角色 |
+|---|---|---|---|
+| `GET /api/ops/rate` | `ops.rate` | ✗ | ✓ |
+| `GET /api/ops/roles`（+env） | `ops.roles`（既有） | ✗ | ✓ |
+
+- 运维角色节点数：**36 → 37**（p3/p4 验收断言已同步）。
+- 只读角色节点数：**19 不变**（env 随 roles，rate 不进只读）。
+- `OpsPageController` 下发 `rate_url` + `perms.rate`；视图 `sec-rate` 区块。
+
+### 15.5 校验
+
+- 单测：`Seq7ServiceTest`（键解析 / 维度标签 / notes / EnvInfo 形状与白名单）+
+  `OpsPageExtContractTest` 扩到含 `ops.rate` / `rate_url` / 视图 id +
+  `MetricServiceTest` 的 `RATE_KEYS` 含 push 系列。
+- 前端：`ops_render_check.js` 扩到 **42 项**（S1 版本环境 + S7 限流指纹 / 窗口 / 截断 /
+  不可逆 notes / XSS）；`metrics_render_check.js` 扩到 **19 项**（chart-push 出线 +
+  推送累计行）。
+- 门禁：admin `composer test`（**289 tests / 1592 assertions**，1 skip）+
+  `test:frontend` + `analyse` 全绿；主项目全量门禁复核。
+
+## 16. 行为日志页 + 废弃 demo 菜单清理（2026-09-24）
+
+> 非 2.0 序号项：按用户拍板落地的菜单/审计清理与真实页替换。
+
+### 16.1 背景与决策
+
+- 侧栏「示例页面」demo 树读假 JSON，与「真实可用后台」冲突；其中 demo605 假装是行为日志。
+- 用户拍板：① 新建真实审计页读 `admin_audit_log`；② demos 从 DB 删除（重跑 install 生效）。
+- **`plugin/admin/config/menu.php` 不可作为清理真源**：它是 composer 包 `webman/admin`
+  的纯副本（`admin/.gitignore` 排除、`composer install` 经 `copy_dir` 重建并带回 demos）。
+  本地手改只在下次 `composer install` 前有效；**版本库真源 = `scripts/install.php` 步骤 3b**
+  （`$obsoleteMenuRoots = ['demos']` + `deleteRuleTreeByKey`：递归删子树并从 `wa_roles.rules`
+  剔除悬空 id，`*` 角色跳过）。`AuditMenuContractTest` 因此**不**断言 menu.php 内容。
+
+### 16.2 交付物
+
+| 类 | 内容 |
+|---|---|
+| 页面 | `/audit` 行为日志（`AuditPageController` + `app/view/audit/index.html` + `public/static/audit.js` / `audit.css`） |
+| API | `GET /api/audit/logs`（`AuditController`，组内声明 `/audit/logs`）：action/result/admin_id/page/size/from/to；action 必须在 `Auditor::ACTIONS` 内否则 4007；DB 失败 503+5010；params 写入时已脱敏 |
+| 节点 | `auditPage`（type1, weight 88）+ `audit.list`（type2, weight 87），**只读与运维同授** |
+| 安装 | 步骤 3b 清理 demos；`$nodeSpecs` 登记两节点；`$viewerRules` 追加（运维经 `array_merge` 继承） |
+| 路由 | `Route::get('/audit', …)->middleware([AdminAuth])` + 组内 `GET /audit/logs`；两控制器 `disableDefaultRoute` |
+| 测试 | `AuditMenuContractTest`（install 清理 / 节点 / 路由 / 动作枚举不硬编码）+ `audit_render_check.js` **21 项** |
+| 验收断言 | 只读 **19 → 21**、运维 **37 → 39**（p3/p4_acceptance 已同步） |
+
+页面纪律与 metrics/trace 同款：视图只渲染骨架 + `#audit-page-config` JSON；数据经 API；
+`Perm::map` 注入 perms；JS 零定时器、textContent only、零 innerHTML；动作枚举从
+`Auditor::ACTIONS` 下发不硬编码。
+
+### 16.3 校验
+
+- admin `composer test`（**293 tests / 1614 assertions**，1 skip；较序7 净减 1 = 删掉不可靠的
+  menu.php demos 断言、保留 install/路由/节点断言）+ `composer test:frontend`
+  （含 `audit_render_check` 21 项）+ `composer analyse` 全绿。
+- 主项目 `composer test`（533 / 1555）+ `test:frontend` + `test:docs` 全绿。
+- **生效方式**：已装环境重跑 `php scripts/install.php`（步骤 3b 删 demos + 新节点进 DB + 角色 rules 覆写）。

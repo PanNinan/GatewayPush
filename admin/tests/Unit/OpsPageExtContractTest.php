@@ -7,31 +7,32 @@ namespace tests\Unit;
 use PHPUnit\Framework\TestCase;
 
 /**
- * 2.0 序4（§1.2 队列深度 + §1.4 错误聚合）与序5（§2.1 配置查看）的
- * **权限 / 路由 / 视图** 三面契约（纯静态，不引导框架）。
+ * 2.0 序4（§1.2 队列深度 + §1.4 错误聚合）、序5（§2.1 配置查看）与
+ * 序7（§1.3 限流巡检）的 **权限 / 路由 / 视图** 三面契约（纯静态，不引导框架）。
  *
  * 与 `OpsActionContractTest` 同一路数，钉的是三类静默失效：
  * 1. **节点漏登记或错进只读角色** —— 漏了 = 非超管 403 看不出问题；
- *    进了只读 = 普通账号能看到队列水位 / 错误原文 / 密钥指纹（静默越权）。
+ *    进了只读 = 普通账号能看到队列水位 / 错误原文 / 密钥指纹 / 限流指纹（静默越权）。
  * 2. **路由没挂 AdminAuth** —— `/api/ops/queues` 变成零鉴权只读口。
  * 3. **视图 id ↔ JS cfg 键漂移** —— 后端加了区块、前端没绑，页面永远空白。
  *
- * ⚠ 这三个端点**刻意只进运维角色**（与 ops.logs / ops.rotation 同级）：
- *   错误原文含业务细节、配置快照含密钥指纹、队列水位属运维排查面，
+ * ⚠ 这四个端点**刻意只进运维角色**（与 ops.logs / ops.rotation 同级）：
+ *   错误原文含业务细节、配置快照含密钥指纹、队列水位 / 限流指纹属运维排查面，
  *   都不该给「只读看板」账号。
  *
  * 兼容 PHP 8.2 ~ 8.5
  */
 final class OpsPageExtContractTest extends TestCase
 {
-    /** 序4/序5 新增节点别名（与 install.php 的 $nodeSpecs 键一致） */
-    private const NEW_NODES = ['ops.queues', 'ops.errors', 'ops.config'];
+    /** 序4/序5/序7 新增节点别名（与 install.php 的 $nodeSpecs 键一致） */
+    private const NEW_NODES = ['ops.queues', 'ops.errors', 'ops.config', 'ops.rate'];
 
     /** 路径 => 控制器动作 */
     private const ROUTES = [
         '/ops/queues' => 'queues',
         '/ops/errors' => 'errors',
         '/ops/config' => 'config',
+        '/ops/rate' => 'rate',
     ];
 
     /** 视图区块 / 按钮 / 表体 id（ops/index.html） */
@@ -39,6 +40,9 @@ final class OpsPageExtContractTest extends TestCase
         'sec-queues', 'queues-status', 'tb-queues', 'btn-queues-refresh', 'queues-truncated',
         'sec-errors', 'errors-status', 'tb-errors', 'btn-errors-load', 'err-date', 'err-lines',
         'sec-config', 'config-status', 'config-notes', 'tb-config', 'btn-config-load',
+        'sec-rate', 'rate-status', 'rate-notes', 'tb-rate-dims', 'tb-rate-buckets',
+        'tb-rate-api', 'rate-truncated', 'btn-rate-refresh',
+        'roles-env-status', 'tb-roles-env', 'roles-env-notes',
     ];
 
     /** ops.js 必须绑定的按钮 id */
@@ -46,6 +50,7 @@ final class OpsPageExtContractTest extends TestCase
         'btn-queues-refresh',
         'btn-errors-load',
         'btn-config-load',
+        'btn-rate-refresh',
     ];
 
     /** OpsPageController 必须下发的 cfg 键 */
@@ -53,6 +58,7 @@ final class OpsPageExtContractTest extends TestCase
         'queues_url',
         'errors_url',
         'config_url',
+        'rate_url',
         'error_default_lines',
     ];
 
@@ -223,7 +229,7 @@ final class OpsPageExtContractTest extends TestCase
             );
         }
 
-        foreach (['queues', 'errors', 'config'] as $perm) {
+        foreach (['queues', 'errors', 'config', 'rate'] as $perm) {
             $this->assertStringContainsString(
                 "'" . $perm . "' =>",
                 $ctl,
@@ -236,7 +242,7 @@ final class OpsPageExtContractTest extends TestCase
     {
         $js = $this->read('public/static/ops.js');
 
-        foreach (['queues_url', 'errors_url', 'config_url'] as $key) {
+        foreach (['queues_url', 'errors_url', 'config_url', 'rate_url'] as $key) {
             $this->assertStringContainsString(
                 'cfg.' . $key,
                 $js,
@@ -250,7 +256,7 @@ final class OpsPageExtContractTest extends TestCase
         $view = $this->read('app/view/ops/index.html');
 
         // 视图文件头的 @var 注解必须跟上真实 $config 形状（防文档漂移）
-        foreach (['queues_url', 'errors_url', 'config_url', 'error_default_lines'] as $key) {
+        foreach (['queues_url', 'errors_url', 'config_url', 'rate_url', 'error_default_lines'] as $key) {
             $this->assertStringContainsString($key, $view,
                 '视图 @var 注解缺 ' . $key);
         }

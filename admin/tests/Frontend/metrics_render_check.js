@@ -106,7 +106,7 @@ function boot(config) {
   const settle = function () { return new Promise(function (r) { setTimeout(r, 0); }); };
 
   const ids = ['metrics-page-config', 'btn-refresh', 'sel-range', 'metrics-status',
-    'tbl-latest', 'chart-conn', 'chart-msg', 'chart-fail', 'empty-hint',
+    'tbl-latest', 'chart-conn', 'chart-msg', 'chart-fail', 'chart-push', 'empty-hint',
     'sec-latest', 'sec-charts', 'latest-readonly', 'range-readonly'];
   ids.forEach(function (id) { byId[id] = makeNode('div'); });
 
@@ -181,7 +181,10 @@ function rowAt(ts, countersExtra) {
     sampled_at: ts,
     conn_ws: 3, conn_udp: 1, conn_total: 4,
     queues: { 'queue:udp:in': 0, 'queue:udp:out': 0 },
-    counters: Object.assign({ msg_in: 100, msg_out: 80, msg_fail: 1, action_ok: 10, action_fail: 0, rate_limit_hit: 2 }, countersExtra || {}),
+    counters: Object.assign({
+      msg_in: 100, msg_out: 80, msg_fail: 1, action_ok: 10, action_fail: 0, rate_limit_hit: 2,
+      push_in: 50, push_out: 45, push_fail: 1, push_offline: 3, push_dedup: 1,
+    }, countersExtra || {}),
     rates: {},
   };
 }
@@ -212,6 +215,9 @@ async function main() {
   check('S1 在线连接图有子节点（SVG + 图例）', env1.byId['chart-conn'].childNodes.length > 0, true);
   check('S1 消息速率图有子节点', env1.byId['chart-msg'].childNodes.length > 0, true);
   check('S1 异常限流图有子节点', env1.byId['chart-fail'].childNodes.length > 0, true);
+  check('S1 推送送达图有子节点（2.0 §3.3）', env1.byId['chart-push'].childNodes.length > 0, true);
+  checkHas('S1 当前值表含推送累计（in/out/fail/offline/dedup）',
+    env1.latestTbody.textContent, '推送累计');
 
   /* ---------------- S2 空 dataset：不画假图 ---------------- */
 

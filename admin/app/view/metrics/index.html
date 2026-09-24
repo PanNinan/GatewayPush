@@ -83,6 +83,12 @@ $json = json_encode(
         <h2>异常与限流（次/秒）</h2>
         <div id="chart-fail"></div>
 
+        <h2>推送送达（条/秒，按采样差分）</h2>
+        <div id="chart-push"></div>
+        <div class="note muted">口径：`push_in` = HTTP 受理（含离线缓存 / 去重前）；`push_out` = 实际下发到网关；
+            `push_offline` = 转入离线队列；`push_dedup` = 去重丢弃。**差值不等于「丢失」** ——
+            离线与去重是设计内路径，送达率仅作趋势参考，勿当精确 SLA。</div>
+
         <div class="note muted" id="empty-hint" hidden>暂无采样数据 —— 采样进程每
             <?= (int)$config['sample_interval'] ?> 秒落一个点，刚部署时图表为空属正常，稍后点「刷新」。</div>
     </div>

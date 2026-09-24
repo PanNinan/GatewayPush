@@ -21,10 +21,12 @@ use app\controller\api\ActionController as ActionApiController;
 use app\controller\api\PushController as PushApiController;
 use app\controller\api\SessionController as SessionApiController;
 use app\controller\ActionController;
+use app\controller\AuditPageController;
 use app\controller\DashboardController;
 use app\controller\OpsPageController;
 use app\controller\MetricsPageController;
 use app\controller\TracePageController;
+use app\controller\api\AuditController;
 use app\controller\api\MetricController;
 use app\controller\PushController;
 use app\controller\SessionController;
@@ -96,6 +98,9 @@ Route::disableDefaultRoute(OpsPageController::class);
 Route::disableDefaultRoute(MetricsPageController::class);
 Route::disableDefaultRoute(TracePageController::class);
 Route::disableDefaultRoute(MetricController::class);
+// 行为日志页 + API（读 admin_audit_log）
+Route::disableDefaultRoute(AuditPageController::class);
+Route::disableDefaultRoute(AuditController::class);
 // ---------------------------------------------------------------------------
 // webman **脚手架**自带的欢迎页控制器 —— **已彻底移除**（2026-09-24）
 //
@@ -129,6 +134,8 @@ Route::get('/ops', [OpsPageController::class, 'index'])->middleware([AdminAuth::
 Route::get('/metrics', [MetricsPageController::class, 'index'])->middleware([AdminAuth::class]);
 // 2.0 uid 一站式排查页（聚合既有 4 个只读端点，页内零写操作）—— 同级给只读 + 运维。
 Route::get('/trace', [TracePageController::class, 'index'])->middleware([AdminAuth::class]);
+// 行为日志页（读 admin_audit_log）—— 只读检索，与 dashboard / 会话查询同级
+Route::get('/audit', [AuditPageController::class, 'index'])->middleware([AdminAuth::class]);
 
 // ---- JSON API（全部只读；写操作永远走主项目 HTTP API，不在此暴露）----
 Route::group('/api', static function (): void {
@@ -150,10 +157,15 @@ Route::group('/api', static function (): void {
     Route::get('/ops/queues', [OpsController::class, 'queues']);
     Route::get('/ops/errors', [OpsController::class, 'errors']);
     Route::get('/ops/config', [OpsController::class, 'config']);
+    // 2.0 序7：限流命中巡检（GET + 只读，进运维页）
+    Route::get('/ops/rate', [OpsController::class, 'rate']);
 
     // 2.0 指标趋势（全部 GET + 只读，读 gw_metric_samples，不实时打 Redis）
     Route::get('/metrics/range', [MetricController::class, 'range']);
     Route::get('/metrics/latest', [MetricController::class, 'latest']);
+
+    // 行为日志检索（GET + 只读，读 admin_audit_log；params 写入时已脱敏）
+    Route::get('/audit/logs', [AuditController::class, 'index']);
 
     /* -----------------------------------------------------------------------
      | M2 会话只读（P2）

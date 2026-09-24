@@ -1,7 +1,7 @@
 <?php
 /**
  * GatewayPush 运维页（P5：角色状态 / 日志尾读 / 密钥轮换引导；
- * 2.0 序4/序5：队列深度 / 错误聚合 / 配置查看）。
+ * 2.0 序4/序5：队列深度 / 错误聚合 / 配置查看；序7：限流巡检）。
  *
  * ⚠ 本文件后缀是 .html 但内容是**原生 PHP**（webman Raw 引擎直接 include）。
  * ⚠ 本页**不含任何数据**，只输出骨架与一份 `#ops-page-config` JSON；
@@ -16,12 +16,13 @@
  *     queues_url: string,
  *     errors_url: string,
  *     config_url: string,
+ *     rate_url: string,
  *     log_roles: list<string>,
  *     tail_max: int,
  *     error_default_lines: int,
  *     perms: array{
  *         logs: bool, roles: bool, rotation: bool,
- *         queues: bool, errors: bool, config: bool
+ *         queues: bool, errors: bool, config: bool, rate: bool
  *     }
  * } $config
  */
@@ -51,7 +52,7 @@ $json = json_encode(
 <div class="wrap">
     <h1>运维</h1>
 
-    <!-- ============ 区块 1：角色状态（三源合一） ============ -->
+    <!-- ============ 区块 1：角色状态（三源合一 + 版本/环境） ============ -->
     <?php if (($config['perms']['roles'] ?? false) === true) { ?>
     <div id="sec-roles">
         <h2>角色状态 <button id="btn-roles-refresh" class="btn" type="button">重新探测</button></h2>
@@ -63,6 +64,13 @@ $json = json_encode(
             <tbody id="tb-roles"></tbody>
         </table>
         <ul id="roles-problems" class="note warn"></ul>
+        <h3>版本 / 环境</h3>
+        <div id="roles-env-status"></div>
+        <table>
+            <thead><tr><th>项</th><th>值</th><th>来源</th></tr></thead>
+            <tbody id="tb-roles-env"></tbody>
+        </table>
+        <div id="roles-env-notes"></div>
     </div>
     <?php } ?>
 
@@ -150,6 +158,37 @@ $json = json_encode(
             <thead><tr><th>分组</th><th>键</th><th>值</th></tr></thead>
             <tbody id="tb-config"></tbody>
         </table>
+    </div>
+    <?php } ?>
+
+    <!-- ============ 区块 7：限流命中巡检（2.0 序7 / §1.3，只读） ============ -->
+    <?php if (($config['perms']['rate'] ?? false) === true) { ?>
+    <div id="sec-rate">
+        <h2>限流命中 <button id="btn-rate-refresh" class="btn" type="button">重新探测</button></h2>
+        <p class="hint">L2 令牌桶（rl:*）+ HTTP 分钟窗（api:rate:*）+ 当日 hit 计数。主体指纹一律 md5 前12位 —— 键名设计即不可逆，本页无法还原原始 IP / uid。</p>
+        <div id="rate-status"></div>
+        <div id="rate-notes"></div>
+        <table>
+            <thead><tr>
+                <th>维度</th><th>桶数</th><th>低令牌</th><th>说明</th>
+            </tr></thead>
+            <tbody id="tb-rate-dims"></tbody>
+        </table>
+        <h3>低令牌桶（正在被限 / 刚被掐过）</h3>
+        <table>
+            <thead><tr>
+                <th>维度</th><th>指纹</th><th>剩余令牌</th><th>状态</th>
+            </tr></thead>
+            <tbody id="tb-rate-buckets"></tbody>
+        </table>
+        <h3>HTTP 分钟窗命中（最近有命中的窗口）</h3>
+        <table>
+            <thead><tr>
+                <th>分钟</th><th>指纹</th><th>命中次数</th>
+            </tr></thead>
+            <tbody id="tb-rate-api"></tbody>
+        </table>
+        <p id="rate-truncated" class="note warn"></p>
     </div>
     <?php } ?>
 </div>

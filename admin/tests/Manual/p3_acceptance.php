@@ -668,7 +668,7 @@ if (is_array($dbRules)) {
             $lack === [] ? '' : '缺 ' . implode('、', $lack));
         check('★ DB 里只读角色确实拿不到 P3 写权限与动作调试', $leak === [],
             $leak === [] ? '' : '越权拿到 ' . implode('、', $leak));
-        check('  只读角色节点数 = 19（2.0 追加 metricsPage/metric.range/metric.latest/tracePage，新增阶段须同步更新本断言）', count($viewerIds) === 19,
+        check('  只读角色节点数 = 21（行为日志页 + audit.list；新增阶段须同步更新本断言）', count($viewerIds) === 21,
             '实际 ' . count($viewerIds) . ' 个');
     } else {
         note('DB 只读角色', 'wa_roles 里找不到「只读」角色');
@@ -684,7 +684,7 @@ if (is_array($dbRules)) {
         check('★ DB 里运维角色拿到全部 9 个 P3 节点', $lackOp === [],
             $lackOp === [] ? '' : '缺 ' . implode('、', $lackOp));
         // P4 追加了 4 个运维动作节点（ops.kick / ops.revoke / ops.unbind / ops.forceOffline）
-        check('  运维角色节点数 = 36（2.0 同步 +4，新增阶段须同步更新本断言）', count($operatorIds) === 36,
+        check('  运维角色节点数 = 39（行为日志页 + audit.list；新增阶段须同步更新本断言）', count($operatorIds) === 39,
             '实际 ' . count($operatorIds) . ' 个');
 
         // 只读角色**一个运维节点都不能有** —— 它们会改变别人的连接状态且不可撤销

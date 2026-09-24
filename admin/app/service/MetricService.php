@@ -35,8 +35,12 @@ final class MetricService
     /** 单次查询最多取回的原始行数（防御性上限，超出由降采样收缩） */
     public const MAX_RAW_ROWS = 5000;
 
-    /** 差分速率参与计算的 counter 键（趋势页画的三组曲线的数据源） */
-    public const RATE_KEYS = ['msg_in', 'msg_out', 'msg_fail', 'action_ok', 'action_fail', 'rate_limit_hit'];
+    /** 差分速率参与计算的 counter 键（趋势页画的四组曲线的数据源） */
+    public const RATE_KEYS = [
+        'msg_in', 'msg_out', 'msg_fail', 'action_ok', 'action_fail', 'rate_limit_hit',
+        // 2.0 §3.3 推送送达率：受理 vs 实际下发（口径差异见 UI 备注）
+        'push_in', 'push_out', 'push_fail', 'push_offline', 'push_dedup',
+    ];
 
     /**
      * 采样一次。失败返回 ['ok' => false, 'error' => string]，成功返回 ['ok' => true, 'id' => int]。

@@ -6,10 +6,12 @@ namespace app\controller\api;
 
 use app\service\ApiReply;
 use app\service\ConfigViewer;
+use app\service\EnvInfoService;
 use app\service\ErrorAggregator;
 use app\service\GatewayPushClient;
 use app\service\LogTailService;
 use app\service\QueueInspector;
+use app\service\RateInspector;
 use app\service\RedisReader;
 use app\service\RoleProbeService;
 use app\service\RotationGuide;
@@ -118,10 +120,35 @@ final class OpsController
 
     /**
      * 角色状态三源合一（P5）：roles JSON + netstat 实测 + /health。
+     *
+     * 2.0 §2.2：附带 `env` 块（PHP / 包版本 / APP_ENV）—— 与 roles 合并展示，
+     * 不另开页面、不另开权限节点（同属 `ops.roles`）。
      */
     public function roles(Request $request): Response
     {
-        return json(['code' => 0, 'msg' => 'ok', 'data' => (new RoleProbeService())->probe()]);
+        $data = (new RoleProbeService())->probe();
+        $data['env'] = (new EnvInfoService())->view();
+
+        return json(['code' => 0, 'msg' => 'ok', 'data' => $data]);
+    }
+
+    /**
+     * 限流命中只读巡检（2.0 §1.3，只读）。
+     *
+     * L2 令牌桶（`rl:*`）+ HTTP 分钟窗（`api:rate:*`）+ 当日 `rate_limit_hit`。
+     * 主体一律 md5 指纹，**不反解 IP / uid** —— UI 须如实说明。
+     *
+     * 权限点：`app\controller\api\OpsController@rate`（只进运维角色）
+     */
+    public function rate(Request $request): Response
+    {
+        $view = (new RateInspector())->inspect();
+
+        return json([
+            'code' => $view['ok'] ? 0 : 1,
+            'msg' => $view['ok'] ? 'ok' : $view['hint'],
+            'data' => $view,
+        ]);
     }
 
     /**

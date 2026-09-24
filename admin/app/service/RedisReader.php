@@ -603,8 +603,8 @@ final class RedisReader
      * 在 predis 连接上写 `Redis::connection()->pipeline($cb)` 会落入基类 `__call()`，
      * 被当成一条名为 `PIPELINE` 的**原始命令**发给 Redis 而报错。
      * 两条客户端路径：
-     *   - predis（本项目当前配置，见 `config/redis.php`）→ `\Predis\Client::pipeline()`
-     *   - phpredis（部署 Linux 并装扩展后可切）        → `\Redis::pipeline()`
+     *   - predis（回退配置，见 `config/redis.php`）→ `\Predis\Client::pipeline()`
+     *   - phpredis（默认配置）                      → `\Redis::pipeline()`
      * 前缀**仍会由客户端自动施加**（`KeyPrefixProcessor` 会处理管道内的命令），
      * 故这里照旧只传 `RedisKeys` 产出的逻辑键名。
      *

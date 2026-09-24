@@ -1,6 +1,6 @@
 /**
- * GatewayPush 运维页（P5 + 2.0 序4/序5）—— 角色状态 / 日志尾读 / 密钥轮换 /
- * 队列深度 / 错误聚合 / 配置查看。
+ * GatewayPush 运维页（P5 + 2.0 序4/序5 + 序7）—— 角色状态 / 日志尾读 / 密钥轮换 /
+ * 队列深度 / 错误聚合 / 配置查看 / 限流命中。
  *
  * 三条纪律（与 session.js / push.js 同口径）：
  * 1. **零定时器** —— 「重新探测」是显式按钮，不是轮询；误用 setTimeout 会被
@@ -88,7 +88,49 @@
                 data.problems && data.problems.length
                     ? '发现 ' + data.problems.length + ' 个不一致，见下方清单'
                     : '三源一致，未发现异常');
+
+            renderEnv(data.env);
         });
+    }
+
+    /* ---------- 版本 / 环境（2.0 §2.2，随 roles 下发，无独立端点） ---------- */
+
+    function renderEnv(env) {
+        var status = $('roles-env-status');
+        var body = $('tb-roles-env');
+        var notes = $('roles-env-notes');
+        if (!body) { return; }
+
+        while (body.firstChild) { body.removeChild(body.firstChild); }
+        if (notes) { while (notes.firstChild) { notes.removeChild(notes.firstChild); } }
+
+        if (!env || !env.items) {
+            if (status) { status.textContent = ''; }
+            return;
+        }
+
+        env.items.forEach(function (item) {
+            var tr = document.createElement('tr');
+            tr.appendChild(el('th', null, item.key));
+            var td = el('td');
+            if (item.configured) {
+                td.appendChild(el('span', 'mono', item.value));
+            } else {
+                td.appendChild(el('span', 'muted', '—'));
+            }
+            tr.appendChild(td);
+            tr.appendChild(el('td', 'muted', item.source || ''));
+            body.appendChild(tr);
+        });
+
+        if (notes) {
+            (env.notes || []).forEach(function (n) {
+                notes.appendChild(el('div', 'hint', n));
+            });
+        }
+        if (status) {
+            setNote('roles-env-status', 'ok', '版本 / 环境已加载');
+        }
     }
 
     /* ---------- 区块 2：日志尾读 ---------- */
@@ -320,6 +362,86 @@
         });
     }
 
+    /* ---------- 区块 7：限流命中（2.0 序7） ---------- */
+
+    function loadRate() {
+        setNote('rate-status', 'info', '探测中…');
+        var trunc = $('rate-truncated');
+        if (trunc) { trunc.textContent = ''; }
+        getJson(cfg.rate_url, function (res) {
+            var data = res.data || {};
+            if (res.code !== 0) {
+                setNote('rate-status', 'bad', '探测失败：' + (res.msg || '未知错误'));
+                return;
+            }
+
+            var notes = $('rate-notes');
+            if (notes) {
+                while (notes.firstChild) { notes.removeChild(notes.firstChild); }
+                (data.notes || []).forEach(function (n) {
+                    notes.appendChild(el('div', 'hint', n));
+                });
+            }
+
+            var dims = $('tb-rate-dims');
+            if (dims) {
+                while (dims.firstChild) { dims.removeChild(dims.firstChild); }
+                (data.dims || []).forEach(function (d) {
+                    var tr = document.createElement('tr');
+                    tr.appendChild(el('th', null, d.label || d.dim));
+                    tr.appendChild(el('td', null, String(d.buckets)));
+                    tr.appendChild(el('td', d.low_tokens > 0 ? 'bad' : null, String(d.low_tokens)));
+                    tr.appendChild(el('td', 'muted', d.low_tokens > 0 ? '有桶令牌偏低' : '正常'));
+                    bodyAppend(dims, tr);
+                });
+            }
+
+            var buckets = $('tb-rate-buckets');
+            if (buckets) {
+                while (buckets.firstChild) { buckets.removeChild(buckets.firstChild); }
+                (data.buckets || []).forEach(function (b) {
+                    if (b.level === 'ok') { return; } // 只列被限过的（bad/warn）
+                    var tr = document.createElement('tr');
+                    tr.appendChild(el('th', null, b.dim));
+                    tr.appendChild(el('td', 'mono', b.fingerprint));
+                    tr.appendChild(el('td', b.level === 'bad' ? 'bad' : null, String(b.tokens)));
+                    tr.appendChild(el('td', b.level === 'bad' ? 'bad' : 'warn',
+                        b.level === 'bad' ? '令牌耗尽' : '令牌偏低'));
+                    bodyAppend(buckets, tr);
+                });
+            }
+
+            var api = $('tb-rate-api');
+            if (api) {
+                while (api.firstChild) { api.removeChild(api.firstChild); }
+                (data.api_windows || []).forEach(function (w) {
+                    var tr = document.createElement('tr');
+                    tr.appendChild(el('th', null, w.minute_text));
+                    tr.appendChild(el('td', 'mono', w.fingerprint));
+                    tr.appendChild(el('td', 'bad', String(w.hits)));
+                    bodyAppend(api, tr);
+                });
+            }
+
+            if (trunc) {
+                trunc.textContent = data.truncated
+                    ? '（⚠ SCAN 已达上限，桶 / 窗口数字不保证是全量）'
+                    : '';
+            }
+
+            var hit = data.hit_today || 0;
+            var low = (data.buckets || []).filter(function (b) { return b.level !== 'ok'; }).length;
+            setNote('rate-status', hit > 0 || low > 0 ? 'warn' : 'ok',
+                '当日 rate_limit_hit = ' + hit
+                + ' · 低令牌桶 ' + low + ' 个'
+                + ' · 当日 hit 计数跨天归零属正常');
+        });
+    }
+
+    function bodyAppend(tbody, tr) {
+        if (tbody) { tbody.appendChild(tr); }
+    }
+
     /* ---------- 绑定（零定时器） ---------- */
 
     bind('btn-roles-refresh', loadRoles);
@@ -328,9 +450,10 @@
     bind('btn-queues-refresh', loadQueues);
     bind('btn-errors-load', loadErrors);
     bind('btn-config-load', loadConfig);
+    bind('btn-rate-refresh', loadRate);
 
     // 首屏自动取数：只取角色状态与队列（轻量、是本页的核心问题）；
-    // 日志 / 轮换 / 错误 / 配置由用户显式触发
+    // 日志 / 轮换 / 错误 / 配置 / 限流由用户显式触发
     if (cfg.perms && cfg.perms.roles) {
         loadRoles();
     }

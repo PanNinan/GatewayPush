@@ -382,7 +382,7 @@ if (is_array($dbRules)) {
         }
         check('★ DB 里运维角色五个运维节点全有', $lack === [],
             $lack === [] ? '运维共 ' . count($operatorIds) . ' 个节点' : '缺 ' . implode('、', $lack));
-        check('  运维角色节点数 = 36（2.0 追加 4 只读节点，新增阶段须同步更新本断言）', count($operatorIds) === 36,
+        check('  运维角色节点数 = 39（行为日志页 + audit.list；新增阶段须同步更新本断言）', count($operatorIds) === 39,
             '实际 ' . count($operatorIds) . ' 个');
     } else {
         note('DB 运维角色', 'wa_roles 里找不到「运维」角色');

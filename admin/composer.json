@@ -30,7 +30,6 @@
       "": "./",
       "app\\": "./app",
       "App\\": "./app",
-      "app\\View\\Components\\": "./app/view/components",
       "GatewayPush\\": "../src/"
     }
   },
@@ -64,7 +63,8 @@
       "node tests/Frontend/action_render_check.js",
       "node tests/Frontend/ops_render_check.js",
       "node tests/Frontend/metrics_render_check.js",
-      "node tests/Frontend/trace_render_check.js"
+      "node tests/Frontend/trace_render_check.js",
+      "node tests/Frontend/audit_render_check.js"
     ],
     "test:acceptance": "php tests/Manual/p1_acceptance.php",
     "test:acceptance:p2": "php tests/Manual/p2_acceptance.php",

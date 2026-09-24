@@ -180,6 +180,14 @@
             rateSeries('action_fail', 'action_fail', SERIES_COLORS[3]),
             rateSeries('rate_limit_hit', '限流命中', SERIES_COLORS[4]),
         ], xFrom, xTo, '次/秒');
+
+        drawChart('chart-push', [
+            rateSeries('push_in', 'push_in（受理）', SERIES_COLORS[0]),
+            rateSeries('push_out', 'push_out（下发）', SERIES_COLORS[1]),
+            rateSeries('push_fail', 'push_fail', SERIES_COLORS[2]),
+            rateSeries('push_offline', 'push_offline', SERIES_COLORS[3]),
+            rateSeries('push_dedup', 'push_dedup', SERIES_COLORS[4]),
+        ], xFrom, xTo, '条/秒');
     }
 
     /* ---------------- 当前值表 ---------------- */
@@ -206,6 +214,10 @@
             ['消息累计', 'in ' + fmtNum(c.msg_in) + ' · out ' + fmtNum(c.msg_out) + ' · fail ' + fmtNum(c.msg_fail)],
             ['动作累计', 'ok ' + fmtNum(c.action_ok) + ' · fail ' + fmtNum(c.action_fail)],
             ['限流累计', 'hit ' + fmtNum(c.rate_limit_hit)],
+            ['推送累计', 'in ' + fmtNum(c.push_in) + ' · out ' + fmtNum(c.push_out)
+                + ' · fail ' + fmtNum(c.push_fail)
+                + ' · offline ' + fmtNum(c.push_offline)
+                + ' · dedup ' + fmtNum(c.push_dedup)],
             ['队列深度', Object.keys(q).map(function (k) { return k + ': ' + q[k]; }).join(' · ') || '—'],
         ];
         rows.forEach(function (pair) {
@@ -242,7 +254,7 @@
             var hint = $('empty-hint');
             if (hint) { hint.hidden = rows.length > 0; }
             if (rows.length === 0) {
-                ['chart-conn', 'chart-msg', 'chart-fail'].forEach(function (id) {
+                ['chart-conn', 'chart-msg', 'chart-fail', 'chart-push'].forEach(function (id) {
                     var host = $(id);
                     if (host) { host.textContent = ''; }
                 });

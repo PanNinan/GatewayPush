@@ -1,5 +1,5 @@
 /**
- * GatewayPush 运维页前端渲染校验（P5 + 2.0 序4/序5）。
+ * GatewayPush 运维页前端渲染校验（P5 + 2.0 序4/序5 + 序7）。
  *
  * 与 session_render_check.js 同一套机制：假 DOM + 假 window + 假 fetch，
  * 驱动 ops.js 走完全部交互路径。断言围绕四类「静默失效」：
@@ -8,6 +8,7 @@
  * 3. XSS —— 服务端下发的任何文本只走 textContent。
  * 4. 零定时器 —— 运维页没有轮询，「重新探测」必须是显式点击。
  * 5. 序4/序5：队列标红、错误聚合 not_found、配置脱敏摊开同样零 innerHTML。
+ * 6. 序7：限流指纹 / 低令牌桶 / HTTP 窗口摊开；版本环境随 roles 下发。
  *
  * 运行：node tests/Frontend/ops_render_check.js（无需浏览器 / 服务端）
  */
@@ -128,16 +129,19 @@ function createEnv(config) {
     }
 
     // 视图骨架的 DOM id（与 ops/index.html 对齐）
-    ['roles-status', 'tb-roles', 'roles-problems', 'log-status', 'log-output',
+    ['roles-status', 'tb-roles', 'roles-problems',
+        'roles-env-status', 'tb-roles-env', 'roles-env-notes',
+        'log-status', 'log-output',
         'rotation-status', 'tb-secrets', 'rotation-steps',
         'queues-status', 'tb-queues', 'queues-truncated',
         'errors-status', 'tb-errors', 'err-date', 'err-lines',
         'config-status', 'config-notes', 'tb-config',
+        'rate-status', 'rate-notes', 'tb-rate-dims', 'tb-rate-buckets', 'tb-rate-api', 'rate-truncated',
         'btn-roles-refresh', 'btn-log-load', 'btn-rotation-load',
-        'btn-queues-refresh', 'btn-errors-load', 'btn-config-load',
+        'btn-queues-refresh', 'btn-errors-load', 'btn-config-load', 'btn-rate-refresh',
         'log-role', 'log-date', 'log-lines', 'log-keyword', 'ops-page-config',
         'sec-roles', 'sec-logs', 'sec-rotation',
-        'sec-queues', 'sec-errors', 'sec-config'].forEach(container);
+        'sec-queues', 'sec-errors', 'sec-config', 'sec-rate'].forEach(container);
 
     byId['log-role'].value = 'api';
     byId['log-lines'].value = '200';
@@ -213,10 +217,11 @@ const CONFIG = {
     queues_url: '/api/ops/queues',
     errors_url: '/api/ops/errors',
     config_url: '/api/ops/config',
+    rate_url: '/api/ops/rate',
     log_roles: ['register', 'gateway', 'udp', 'business', 'api', 'dashboard', 'error'],
     tail_max: 500,
     error_default_lines: 20,
-    perms: { logs: true, roles: true, rotation: true, queues: true, errors: true, config: true },
+    perms: { logs: true, roles: true, rotation: true, queues: true, errors: true, config: true, rate: true },
 };
 
 async function main() {
@@ -232,6 +237,13 @@ async function main() {
             { role: 'business', enabled: true, listening: null, listen_count: 0, health_ok: null },
         ],
         problems: ['端口 8282（gateway）有 2 个监听 —— 疑似两套实例叠加（红线 ㊳：Windows 不拒绝重复 bind，表现为「e2e 随机失败」而非报错）'],
+        env: {
+            items: [
+                { key: 'PHP 版本', value: '8.2.12', configured: true, source: 'runtime' },
+                { key: 'APP_ENV', value: '', configured: false, source: '主项目 .env' },
+            ],
+            notes: ['配置无热重载：.env 改了 APP_ENV 只对新启动的主项目进程生效。'],
+        },
     }));
     await new Promise(function (r) { setTimeout(r, 0); });
 
@@ -241,11 +253,14 @@ async function main() {
     checkHas('S1 business 无端口 → 未知态用 —（不假装说没监听）', env.text('tb-roles'), '—');
     checkHas('S1 ★ problems 原样展示（红线 ㊳ 提示不删不改写）', env.text('roles-problems'), '疑似两套实例叠加');
     checkHas('S1 汇总条给出问题计数', env.text('roles-status'), '1 个不一致');
+    checkHas('S1 ★ 版本环境随 roles 摊开（2.0 §2.2）', env.text('tb-roles-env'), '8.2.12');
+    checkHas('S1 ★ APP_ENV 未配置如实显示 —（不编默认值）', env.text('tb-roles-env'), '—');
+    checkHas('S1 版本环境备注摊开', env.text('roles-env-notes'), '无热重载');
 
     /* ---------------- S2 权限显隐 + 零定时器 ---------------- */
 
     const env2 = createEnv(Object.assign({}, CONFIG, {
-        perms: { logs: false, roles: false, rotation: false, queues: false, errors: false, config: false },
+        perms: { logs: false, roles: false, rotation: false, queues: false, errors: false, config: false, rate: false },
     }));
     check('S2 无权限：全部区块都不再自动取数',
         env2.rec.fetchUrls.length, 0);
@@ -367,6 +382,41 @@ async function main() {
     checkHas('S6 未配置密钥如实说未配置', env.text('tb-config'), '未配置');
     checkHas('S6 备注（无热重载）摊开', env.text('config-notes'), '无热重载');
     checkHas('S6 汇总条带 mtime（改了未重启的线索）', env.text('config-status'), 'mtime 2026-09-24 08:00:00');
+
+    /* ---------------- S7 限流命中摊开（2.0 序7） ---------------- */
+
+    env.respond('/api/ops/rate', {
+        code: 0, msg: 'ok',
+        data: {
+            ok: true, hint: '',
+            hit_today: 12,
+            dims: [
+                { dim: 'conn', buckets: 3, low_tokens: 1, label: '每连接（clientId）' },
+                { dim: 'uid', buckets: 1, low_tokens: 0, label: '每用户（uid）' },
+            ],
+            buckets: [
+                { key: 'rl:conn:deadbeef', dim: 'conn', fingerprint: 'deadbeefcafe', tokens: 0, burst: null, level: 'bad' },
+                { key: 'rl:uid:abc', dim: 'uid', fingerprint: 'abc123def456', tokens: 0.5, burst: null, level: 'warn' },
+                { key: 'rl:ip:evil', dim: 'ip', fingerprint: EVIL, tokens: 0, burst: null, level: 'bad' },
+            ],
+            api_windows: [
+                { minute: 1790202000, minute_text: '12:34', hits: 42, fingerprint: 'aabbccddeeff' },
+            ],
+            truncated: true,
+            notes: ['主体指纹一律 md5 前 12 位 —— 键名设计即不可逆，本页无法还原原始 IP / uid。'],
+        },
+    });
+    env.click('btn-rate-refresh');
+    await new Promise(function (r) { setTimeout(r, 0); });
+
+    checkHas('S7 维度与低令牌计数摊开', env.text('tb-rate-dims'), '每连接（clientId）');
+    checkHas('S7 低令牌桶标红文案', env.text('tb-rate-buckets'), '令牌耗尽');
+    checkHas('S7 指纹只展示前12位', env.text('tb-rate-buckets'), 'deadbeefcafe');
+    checkHas('S7 HTTP 分钟窗命中摊开', env.text('tb-rate-api'), '12:34');
+    checkHas('S7 汇总条给出当日 hit', env.text('rate-status'), 'rate_limit_hit = 12');
+    checkHas('S7 SCAN 截断如实上抛', env.text('rate-truncated'), '不保证是全量');
+    checkHas('S7 ★ 不可逆说明由后端下发', env.text('rate-notes'), '无法还原原始 IP');
+    check('S7 ★ 指纹恶意串不产生元素', env.text('tb-rate-buckets').indexOf('<img') >= 0, true);
 }
 
 main().then(function () {

@@ -37,6 +37,7 @@ final class OpsPageController
                 'queues_url' => '/api/ops/queues',
                 'errors_url' => '/api/ops/errors',
                 'config_url' => '/api/ops/config',
+                'rate_url' => '/api/ops/rate',
 
                 // 日志尾读的选项面：role 白名单与行数上限都由后端下发，前端不硬编码
                 'log_roles' => LogTailService::ROLES,
@@ -51,6 +52,7 @@ final class OpsPageController
                     'queues' => [OpsApiController::class, 'queues'],
                     'errors' => [OpsApiController::class, 'errors'],
                     'config' => [OpsApiController::class, 'config'],
+                    'rate' => [OpsApiController::class, 'rate'],
                 ]),
             ],
         ]);
