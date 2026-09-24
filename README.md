@@ -2122,7 +2122,7 @@ class OrderQueryAction implements ActionInterface
 
 ```bash
 composer analyse        # PHPStan（level 6；生产 baseline 已清空，测试 baseline 301 条目/311 条 = 273 missingType + 38 语义）
-composer test           # PHPUnit（519 tests / 1465 assertions；含 client/tests/Unit）
+composer test           # PHPUnit（533 tests / 1555 assertions；含 client/tests/Unit）
 composer lint           # phpcs 审计：注释 / 命名 / 业务红线（只读，不写文件）
 composer lint:self      # phpcs 自定义嗅探器自检（RedisKeys 漂移 + 作用域/豁免矩阵）
 composer cs:check       # php-cs-fixer 排版体检（只报不改；落地用 composer cs）
@@ -2253,7 +2253,7 @@ php tests/e2e_check.php <uid> [device_id] [timeout]
 
 ```bash
 composer test
-# OK (519 tests, 1465 assertions)
+# OK (533 tests, 1555 assertions)
 ```
 
 **只测「纯函数 / 零 IO」组件**：

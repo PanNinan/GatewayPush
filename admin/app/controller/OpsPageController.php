@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace app\controller;
 
 use app\controller\api\OpsController as OpsApiController;
+use app\service\ErrorAggregator;
 use app\service\LogTailService;
 use app\service\Perm;
 use support\Request;
@@ -33,16 +34,23 @@ final class OpsPageController
                 'logs_url' => '/api/ops/logs',
                 'roles_url' => '/api/ops/roles',
                 'rotation_url' => '/api/ops/rotation',
+                'queues_url' => '/api/ops/queues',
+                'errors_url' => '/api/ops/errors',
+                'config_url' => '/api/ops/config',
 
                 // 日志尾读的选项面：role 白名单与行数上限都由后端下发，前端不硬编码
                 'log_roles' => LogTailService::ROLES,
                 'tail_max' => LogTailService::TAIL_MAX,
+                'error_default_lines' => ErrorAggregator::DEFAULT_LINES,
 
                 // 渲染期权限：只影响显隐，边界在 AdminAuth + wa_rules
                 'perms' => Perm::map([
                     'logs' => [OpsApiController::class, 'logs'],
                     'roles' => [OpsApiController::class, 'roles'],
                     'rotation' => [OpsApiController::class, 'rotation'],
+                    'queues' => [OpsApiController::class, 'queues'],
+                    'errors' => [OpsApiController::class, 'errors'],
+                    'config' => [OpsApiController::class, 'config'],
                 ]),
             ],
         ]);

@@ -94,7 +94,10 @@ final class LogTailService
             return '';
         }
 
-        $file = $this->logDir . '/' . ($role === 'error' ? 'error' : $role . '_' . $date) . '.log';
+        // 统一 `{role}_{date}.log`：error 汇总通道同样是按日文件（Logger 的
+        // CHANNEL_ERROR_DIGEST 双写 `error_{date}.log`），**不得**剥掉日期去猜
+        // 一个不存在的 `error.log`（P5 实测踩过：error 角色恒 not_found）。
+        $file = $this->logDir . '/' . $role . '_' . $date . '.log';
 
         $real = realpath($file);
         // 文件不存在不是错误 —— 返回一个可读的提示，让 UI 显式说「今天还没有日志」

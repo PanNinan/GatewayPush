@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace app\controller\api;
 
 use app\service\ApiReply;
+use app\service\ConfigViewer;
+use app\service\ErrorAggregator;
 use app\service\GatewayPushClient;
 use app\service\LogTailService;
+use app\service\QueueInspector;
 use app\service\RedisReader;
 use app\service\RoleProbeService;
 use app\service\RotationGuide;
@@ -129,5 +132,94 @@ final class OpsController
     public function rotation(Request $request): Response
     {
         return json(['code' => 0, 'msg' => 'ok', 'data' => RotationGuide::build()]);
+    }
+
+    /**
+     * 队列深度巡检（2.0 §1.2，只读）。
+     *
+     * 四条 LLEN 队列 + 离线消息总量 + 动作回执积压，按两档阈值标 level。
+     * SCAN 超限时 `truncated` 如实带回 —— 不允许把「扫到的一半」当全量。
+     *
+     * 权限点：`app\controller\api\OpsController@queues`
+     */
+    public function queues(Request $request): Response
+    {
+        $reader = new RedisReader();
+        $ping = $reader->ping();
+        if (!$ping['ok']) {
+            return json([
+                'code' => 1,
+                'msg' => 'Redis 不可用：' . $ping['msg'],
+                'data' => [
+                    'ok' => false,
+                    'rows' => [],
+                    'thresholds' => QueueInspector::thresholdsFromSettings(),
+                    'truncated' => false,
+                ],
+            ]);
+        }
+
+        $depths = $reader->queueDepths();
+        $offline = $reader->pushOfflineStats();
+        $backlog = $reader->actionResultBacklog();
+
+        $depths['push_offline'] = $offline['messages'];
+        $depths['action_result'] = $backlog['count'];
+
+        return json([
+            'code' => 0,
+            'msg' => 'ok',
+            'data' => [
+                'ok' => true,
+                'rows' => QueueInspector::rows($depths, QueueInspector::thresholdsFromSettings()),
+                'thresholds' => QueueInspector::thresholdsFromSettings(),
+                'truncated' => $offline['truncated'] || $backlog['truncated'],
+                'offline_uids' => $offline['uids'],
+            ],
+        ]);
+    }
+
+    /**
+     * 错误日志聚合（2.0 §1.4，只读）。
+     *
+     * 参数：`date`（Y-m-d，默认今天）、`lines`（1~TAIL_MAX，默认 20）。
+     * 与日志尾读同权限口径：**只进运维角色**。
+     *
+     * 权限点：`app\controller\api\OpsController@errors`
+     */
+    public function errors(Request $request): Response
+    {
+        $date = trim((string)$request->get('date', ''));
+        if ($date === '') {
+            $date = date('Y-m-d');
+        }
+        $lines = (int)$request->get('lines', (string)ErrorAggregator::DEFAULT_LINES);
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+            return ApiReply::fail(400, ApiReply::CODE_INVALID_ARG, 'date 必须是 Y-m-d 形态');
+        }
+
+        $res = (new ErrorAggregator())->aggregate($date, $lines);
+
+        return json(['code' => 0, 'msg' => 'ok', 'data' => $res]);
+    }
+
+    /**
+     * 主项目关键配置只读快照（2.0 §2.1，脱敏）。
+     *
+     * 只读 `.env` 白名单键；密钥类走 SecretMasker。与密钥轮换引导同权限口径：
+     * **只进运维角色**。
+     *
+     * 权限点：`app\controller\api\OpsController@config`
+     */
+    public function config(Request $request): Response
+    {
+        $view = (new ConfigViewer())->view();
+
+        return json([
+            'code' => $view['ok'] ? 0 : 1,
+            'msg' => $view['ok'] ? 'ok' : $view['hint'],
+            'data' => $view,
+        ]);
     }
 }

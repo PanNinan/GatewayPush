@@ -325,6 +325,12 @@ $nodeSpecs = [
     'ops.logs' => ['title' => '日志尾读（API）', 'key' => 'app\\controller\\api\\OpsController@logs', 'href' => '', 'type' => 2, 'weight' => 59],
     'ops.roles' => ['title' => '角色状态三源探测（API）', 'key' => 'app\\controller\\api\\OpsController@roles', 'href' => '', 'type' => 2, 'weight' => 58],
     'ops.rotation' => ['title' => '密钥轮换引导（API）', 'key' => 'app\\controller\\api\\OpsController@rotation', 'href' => '', 'type' => 2, 'weight' => 57],
+    // ---- 2.0 序4/序5：队列深度 / 错误聚合 / 配置查看 ----
+    // 与 ops.logs / ops.rotation 同级（只进运维角色）：错误原文、队列水位、
+    // 配置快照（含密钥指纹）都不是只读角色该看到的排查细节。
+    'ops.queues' => ['title' => '队列深度巡检（API）', 'key' => 'app\\controller\\api\\OpsController@queues', 'href' => '', 'type' => 2, 'weight' => 56],
+    'ops.errors' => ['title' => '错误日志聚合（API）', 'key' => 'app\\controller\\api\\OpsController@errors', 'href' => '', 'type' => 2, 'weight' => 55],
+    'ops.config' => ['title' => '主项目配置查看（API）', 'key' => 'app\\controller\\api\\OpsController@config', 'href' => '', 'type' => 2, 'weight' => 54],
     // ---- M2 会话只读（P2）----
     // 全部是只读端点，按 §6「只读角色仅 *.view 类」的口径同时授予「只读」与「运维」。
     // 其中 revoked 只是**不可逆的 Token 指纹**（sha256 前 32 位，服务端不存 Token 原文），
@@ -449,6 +455,10 @@ $operatorRules = array_merge($viewerRules, [
     $nodeIds['ops.logs'],
     $nodeIds['ops.roles'],
     $nodeIds['ops.rotation'],
+    // 2.0 序4/序5（与上三件套同级，不给只读角色）
+    $nodeIds['ops.queues'],
+    $nodeIds['ops.errors'],
+    $nodeIds['ops.config'],
     // M3 写路径。这三项与 `push` / `push.history` / `push.tplList` **刻意分开**：
     // 合成一个节点会让「给某人看历史」连带给出「以他的名义向任意 uid 推任意载荷」的能力。
     $nodeIds['push.create'],

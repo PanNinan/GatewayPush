@@ -146,6 +146,10 @@ Route::group('/api', static function (): void {
     Route::get('/ops/logs', [OpsController::class, 'logs']);
     Route::get('/ops/roles', [OpsController::class, 'roles']);
     Route::get('/ops/rotation', [OpsController::class, 'rotation']);
+    // 2.0 序4/序5：队列深度 / 错误聚合 / 配置查看（全部 GET + 只读，进运维页）
+    Route::get('/ops/queues', [OpsController::class, 'queues']);
+    Route::get('/ops/errors', [OpsController::class, 'errors']);
+    Route::get('/ops/config', [OpsController::class, 'config']);
 
     // 2.0 指标趋势（全部 GET + 只读，读 gw_metric_samples，不实时打 Redis）
     Route::get('/metrics/range', [MetricController::class, 'range']);

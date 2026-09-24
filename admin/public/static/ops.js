@@ -1,5 +1,6 @@
 /**
- * GatewayPush 运维页（P5）—— 角色状态 / 日志尾读 / 密钥轮换引导。
+ * GatewayPush 运维页（P5 + 2.0 序4/序5）—— 角色状态 / 日志尾读 / 密钥轮换 /
+ * 队列深度 / 错误聚合 / 配置查看。
  *
  * 三条纪律（与 session.js / push.js 同口径）：
  * 1. **零定时器** —— 「重新探测」是显式按钮，不是轮询；误用 setTimeout 会被
@@ -178,14 +179,162 @@
         });
     }
 
+    /* ---------- 区块 4：队列深度（2.0 序4） ---------- */
+
+    function loadQueues() {
+        setNote('queues-status', 'info', '探测中…');
+        var trunc = $('queues-truncated');
+        if (trunc) { trunc.textContent = ''; }
+        getJson(cfg.queues_url, function (res) {
+            var data = res.data || {};
+            if (res.code !== 0) {
+                setNote('queues-status', 'bad', '探测失败：' + (res.msg || '未知错误'));
+                return;
+            }
+
+            var body = $('tb-queues');
+            if (body) {
+                while (body.firstChild) { body.removeChild(body.firstChild); }
+                (data.rows || []).forEach(function (r) {
+                    var tr = document.createElement('tr');
+                    tr.appendChild(el('th', null, r.name));
+                    tr.appendChild(el('td', null, r.label));
+                    tr.appendChild(el('td', r.level === 'bad' ? 'bad' : null, String(r.depth)));
+                    tr.appendChild(el('td', 'muted', String(r.threshold)));
+                    tr.appendChild(el('td', r.level === 'bad' ? 'bad' : 'ok',
+                        r.level === 'bad' ? '超阈值' : '正常'));
+                    body.appendChild(tr);
+                });
+            }
+
+            if (trunc) {
+                trunc.textContent = data.truncated
+                    ? '（⚠ SCAN 已达上限，离线/回执数字不保证是全量）'
+                    : '';
+            }
+
+            var bad = (data.rows || []).filter(function (r) { return r.level === 'bad'; }).length;
+            setNote('queues-status', bad > 0 ? 'warn' : 'ok',
+                bad > 0
+                    ? bad + ' 条队列超阈值，见下方标红行'
+                    : '全部队列在阈值内');
+        });
+    }
+
+    /* ---------- 区块 5：错误聚合（2.0 序4） ---------- */
+
+    function loadErrors() {
+        var date = $('err-date') ? $('err-date').value.trim() : '';
+        var lines = parseInt($('err-lines') ? $('err-lines').value : '20', 10) || 20;
+        if (!date) {
+            date = new Date().toISOString().slice(0, 10); // 仅默认值；形态校验在服务端
+        }
+
+        var qs = '?date=' + encodeURIComponent(date)
+            + '&lines=' + encodeURIComponent(String(lines));
+
+        setNote('errors-status', 'info', '读取中…');
+        getJson(cfg.errors_url + qs, function (res) {
+            var data = res.data || {};
+            if (res.code !== 0) {
+                setNote('errors-status', 'bad', '读取失败：' + (res.msg || '未知错误'));
+                return;
+            }
+
+            var body = $('tb-errors');
+            if (body) {
+                while (body.firstChild) { body.removeChild(body.firstChild); }
+                (data.roles || []).forEach(function (r) {
+                    var tr = document.createElement('tr');
+                    tr.appendChild(el('th', null, r.role));
+                    if (r.not_found) {
+                        tr.appendChild(el('td', 'muted', '—'));
+                        tr.appendChild(el('td', 'muted', '该文件今天还没有日志'));
+                    } else if (!r.ok) {
+                        tr.appendChild(el('td', 'bad', '0'));
+                        tr.appendChild(el('td', 'bad', r.hint || '读取失败'));
+                    } else {
+                        tr.appendChild(el('td', r.count > 0 ? 'bad' : null, String(r.count)));
+                        var td = el('td');
+                        var pre = el('pre', 'mono', (r.lines || []).join('\n'));
+                        td.appendChild(pre);
+                        if (r.truncated) {
+                            td.appendChild(el('div', 'hint', '（扫描已达上限，非精确总量）'));
+                        }
+                        tr.appendChild(td);
+                    }
+                    body.appendChild(tr);
+                });
+            }
+
+            setNote('errors-status', data.total > 0 ? 'warn' : 'ok',
+                '业务角色 error 合计 ' + (data.total || 0) + ' 条（窗口内，'
+                + (data.date || date) + '）');
+        });
+    }
+
+    /* ---------- 区块 6：配置查看（2.0 序5，脱敏） ---------- */
+
+    function loadConfig() {
+        setNote('config-status', 'info', '读取中…');
+        getJson(cfg.config_url, function (res) {
+            var data = res.data || {};
+            if (res.code !== 0) {
+                setNote('config-status', 'bad', '读取失败：' + (res.msg || '未知错误'));
+                return;
+            }
+
+            var notes = $('config-notes');
+            if (notes) {
+                while (notes.firstChild) { notes.removeChild(notes.firstChild); }
+                (data.notes || []).forEach(function (n) {
+                    notes.appendChild(el('div', 'hint', n));
+                });
+            }
+
+            var body = $('tb-config');
+            if (body) {
+                while (body.firstChild) { body.removeChild(body.firstChild); }
+                (data.groups || []).forEach(function (g) {
+                    (g.items || []).forEach(function (item, idx) {
+                        var tr = document.createElement('tr');
+                        tr.appendChild(el('th', null, idx === 0 ? g.name : ''));
+                        tr.appendChild(el('td', 'mono', item.key));
+                        var td = el('td');
+                        if (item.secret && !item.configured) {
+                            td.appendChild(el('span', 'muted', '未配置'));
+                        } else if (item.masked) {
+                            td.appendChild(el('span', 'mono', item.value || '—'));
+                        } else {
+                            td.appendChild(el('span', item.configured ? null : 'muted',
+                                item.configured ? item.value : '（未设置，走代码默认）'));
+                        }
+                        tr.appendChild(td);
+                        body.appendChild(tr);
+                    });
+                });
+            }
+
+            var when = data.mtime_text ? ('（.env mtime ' + data.mtime_text + '）') : '';
+            setNote('config-status', 'ok', '白名单键已加载' + when);
+        });
+    }
+
     /* ---------- 绑定（零定时器） ---------- */
 
     bind('btn-roles-refresh', loadRoles);
     bind('btn-log-load', loadLog);
     bind('btn-rotation-load', loadRotation);
+    bind('btn-queues-refresh', loadQueues);
+    bind('btn-errors-load', loadErrors);
+    bind('btn-config-load', loadConfig);
 
-    // 首屏自动取数：只取角色状态（轻量、是本页的核心问题）；日志与轮换由用户显式触发
+    // 首屏自动取数：只取角色状态与队列（轻量、是本页的核心问题）；
+    // 日志 / 轮换 / 错误 / 配置由用户显式触发
     if (cfg.perms && cfg.perms.roles) {
         loadRoles();
+    }
+    if (cfg.perms && cfg.perms.queues) {
+        loadQueues();
     }
 })();

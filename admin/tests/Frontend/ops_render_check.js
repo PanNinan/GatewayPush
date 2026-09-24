@@ -1,12 +1,13 @@
 /**
- * GatewayPush 运维页前端渲染校验（P5）。
+ * GatewayPush 运维页前端渲染校验（P5 + 2.0 序4/序5）。
  *
  * 与 session_render_check.js 同一套机制：假 DOM + 假 window + 假 fetch，
- * 驱动 ops.js 走完全部交互路径。断言围绕三类「静默失效」：
+ * 驱动 ops.js 走完全部交互路径。断言围绕四类「静默失效」：
  * 1. 取数挂了留白 / 不摊开 —— 三源探测的每个字段必须可见（含「—」的未知态）；
  * 2. 权限显隐 —— 无权限区块整体隐藏而不是渲染一片残骸；
  * 3. XSS —— 服务端下发的任何文本只走 textContent。
  * 4. 零定时器 —— 运维页没有轮询，「重新探测」必须是显式点击。
+ * 5. 序4/序5：队列标红、错误聚合 not_found、配置脱敏摊开同样零 innerHTML。
  *
  * 运行：node tests/Frontend/ops_render_check.js（无需浏览器 / 服务端）
  */
@@ -129,14 +130,21 @@ function createEnv(config) {
     // 视图骨架的 DOM id（与 ops/index.html 对齐）
     ['roles-status', 'tb-roles', 'roles-problems', 'log-status', 'log-output',
         'rotation-status', 'tb-secrets', 'rotation-steps',
+        'queues-status', 'tb-queues', 'queues-truncated',
+        'errors-status', 'tb-errors', 'err-date', 'err-lines',
+        'config-status', 'config-notes', 'tb-config',
         'btn-roles-refresh', 'btn-log-load', 'btn-rotation-load',
+        'btn-queues-refresh', 'btn-errors-load', 'btn-config-load',
         'log-role', 'log-date', 'log-lines', 'log-keyword', 'ops-page-config',
-        'sec-roles', 'sec-logs', 'sec-rotation'].forEach(container);
+        'sec-roles', 'sec-logs', 'sec-rotation',
+        'sec-queues', 'sec-errors', 'sec-config'].forEach(container);
 
     byId['log-role'].value = 'api';
     byId['log-lines'].value = '200';
     byId['log-keyword'].value = '';
     byId['log-date'].value = '';
+    byId['err-date'].value = '';
+    byId['err-lines'].value = '20';
 
     const documentStub = {
         getElementById(id) { return byId[id] || null; },
@@ -202,9 +210,13 @@ const CONFIG = {
     logs_url: '/api/ops/logs',
     roles_url: '/api/ops/roles',
     rotation_url: '/api/ops/rotation',
+    queues_url: '/api/ops/queues',
+    errors_url: '/api/ops/errors',
+    config_url: '/api/ops/config',
     log_roles: ['register', 'gateway', 'udp', 'business', 'api', 'dashboard', 'error'],
     tail_max: 500,
-    perms: { logs: true, roles: true, rotation: true },
+    error_default_lines: 20,
+    perms: { logs: true, roles: true, rotation: true, queues: true, errors: true, config: true },
 };
 
 async function main() {
@@ -233,9 +245,9 @@ async function main() {
     /* ---------------- S2 权限显隐 + 零定时器 ---------------- */
 
     const env2 = createEnv(Object.assign({}, CONFIG, {
-        perms: { logs: false, roles: false, rotation: false },
+        perms: { logs: false, roles: false, rotation: false, queues: false, errors: false, config: false },
     }));
-    check('S2 无权限：三个区块都不再自动取数',
+    check('S2 无权限：全部区块都不再自动取数',
         env2.rec.fetchUrls.length, 0);
 
     check('S2 ★ 全程未使用任何定时器', env.rec.timerCalls.length, 0);
@@ -260,6 +272,101 @@ async function main() {
     checkHas('S3 步骤清单渲染', env.text('rotation-steps'), '1. 评估影响面');
     check('S3 ★ detail 里的恶意串不产生任何元素（textContent 路径）',
         env.text('rotation-steps').indexOf('<img') >= 0, true);
+
+    /* ---------------- S4 队列深度摊开（2.0 序4） ---------------- */
+
+    env.respond('/api/ops/queues', {
+        code: 0, msg: 'ok',
+        data: {
+            ok: true,
+            truncated: true,
+            offline_uids: 3,
+            thresholds: { queue: 1000, action: 100 },
+            rows: [
+                { name: 'queue:udp:in', label: 'UDP 入站', kind: 'udp', depth: 1500, threshold: 1000, level: 'bad' },
+                { name: 'queue:action:in', label: 'HTTP 动作入站', kind: 'action', depth: 10, threshold: 100, level: 'ok' },
+                { name: 'push_offline', label: EVIL, kind: 'offline', depth: 0, threshold: 1000, level: 'ok' },
+            ],
+        },
+    });
+    // 首屏已自动打过 queues；再点一次刷新验证按钮路径
+    env.click('btn-queues-refresh');
+    await new Promise(function (r) { setTimeout(r, 0); });
+
+    checkHas('S4 队列名与深度摊开', env.text('tb-queues'), 'queue:udp:in');
+    checkHas('S4 超阈值行标红文案', env.text('tb-queues'), '超阈值');
+    checkHas('S4 正常行文案', env.text('tb-queues'), '正常');
+    checkHas('S4 汇总条提示超阈值计数', env.text('queues-status'), '超阈值');
+    checkHas('S4 SCAN 截断如实上抛（不装全量）', env.text('queues-truncated'), '不保证是全量');
+    check('S4 ★ label 恶意串不产生元素', env.text('tb-queues').indexOf('<img') >= 0, true);
+
+    /* ---------------- S5 错误聚合摊开（2.0 序4） ---------------- */
+
+    env.respond('/api/ops/errors', {
+        code: 0, msg: 'ok',
+        data: {
+            date: '2026-09-24',
+            keyword: '[ERROR]',
+            lines: 20,
+            total: 2,
+            roles: [
+                {
+                    role: 'business', ok: true, not_found: false, count: 2, truncated: false,
+                    lines: ['[ERROR] push backlog ' + EVIL], hint: '',
+                },
+                {
+                    role: 'dashboard', ok: false, not_found: true, count: 0, truncated: false,
+                    lines: [], hint: '日志文件不存在',
+                },
+                {
+                    role: 'gateway', ok: false, not_found: false, count: 0, truncated: false,
+                    lines: [], hint: '权限不足',
+                },
+            ],
+        },
+    });
+    env.click('btn-errors-load');
+    await new Promise(function (r) { setTimeout(r, 0); });
+
+    checkHas('S5 error 计数摊开', env.text('tb-errors'), '2');
+    checkHas('S5 ★ not_found 如实说「还没有日志」（不渲染成 0 条红字）',
+        env.text('tb-errors'), '该文件今天还没有日志');
+    checkHas('S5 读失败行带 hint', env.text('tb-errors'), '权限不足');
+    checkHas('S5 汇总条给出业务角色合计', env.text('errors-status'), '合计 2');
+    check('S5 ★ 原文恶意串不产生元素', env.text('tb-errors').indexOf('<img') >= 0, true);
+
+    /* ---------------- S6 配置查看摊开（2.0 序5，脱敏） ---------------- */
+
+    env.respond('/api/ops/config', {
+        code: 0, msg: 'ok',
+        data: {
+            ok: true, hint: '', file: '/x/.env', mtime: 0, mtime_text: '2026-09-24 08:00:00',
+            notes: ['配置无热重载：.env 改动只对新启动的进程生效'],
+            groups: [
+                {
+                    name: 'Redis',
+                    items: [
+                        { key: 'REDIS_HOST', value: '127.0.0.1', configured: true, secret: false, masked: false },
+                        { key: 'REDIS_PASSWORD', value: 'ab12****wxyz', configured: true, secret: true, masked: true },
+                    ],
+                },
+                {
+                    name: '密钥（脱敏）',
+                    items: [
+                        { key: 'API_SECRET', value: '', configured: false, secret: true, masked: true },
+                    ],
+                },
+            ],
+        },
+    });
+    env.click('btn-config-load');
+    await new Promise(function (r) { setTimeout(r, 0); });
+
+    checkHas('S6 非密钥键原样展示', env.text('tb-config'), '127.0.0.1');
+    checkHas('S6 密钥前4后4', env.text('tb-config'), 'ab12****wxyz');
+    checkHas('S6 未配置密钥如实说未配置', env.text('tb-config'), '未配置');
+    checkHas('S6 备注（无热重载）摊开', env.text('config-notes'), '无热重载');
+    checkHas('S6 汇总条带 mtime（改了未重启的线索）', env.text('config-status'), 'mtime 2026-09-24 08:00:00');
 }
 
 main().then(function () {

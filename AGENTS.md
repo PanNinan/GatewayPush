@@ -63,7 +63,7 @@ runtime/                  运行时产物：logs/ pid/ phpstan/（已 gitignore�
 
 ```bash
 composer analyse      # PHPStan L6，119 文件（含 tests）；生产 baseline 已清空、测试 baseline 301 条目/311 条 → 必须 0 errors
-composer test         # PHPUnit：519 tests / 1465 assertions
+composer test         # PHPUnit：533 tests / 1555 assertions
 composer lint         # phpcs 审计（注释/命名/业务红线）；只读，仅 error 影响退出码
 composer lint:self    # 两个自定义 phpcs 嗅探器自检（漂移检测 + 作用域/豁免矩阵）
 composer cs:check     # php-cs-fixer 排版体检（dry-run，只报不改；落地用 composer cs）

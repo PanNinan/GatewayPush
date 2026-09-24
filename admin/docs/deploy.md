@@ -542,7 +542,7 @@ ADMIN_ROLES_CMD="php ../start.php roles"   # 正确
 后台 `.env` 的 `ADMIN_API_SECRET`（漏掉 = 后台转签全部 401）、其他 HTTP 调用方。
 
 前端：`public/static/ops.js` —— 零定时器（重新探测是显式按钮）、零 innerHTML、前端不编词；
-`tests/Frontend/ops_render_check.js`（15 项）已并入 `composer test:frontend`。
+`tests/Frontend/ops_render_check.js`（P5 段 15 项；序4/序5 扩到 31 项）已并入 `composer test:frontend`。
 单测：`tests/Unit/P5OpsServiceTest.php`（13 tests / 44 assertions）。
 
 ---
@@ -582,3 +582,87 @@ ADMIN_ROLES_CMD="php ../start.php roles"   # 正确
    处置：`netstat -ano` 找 8292 全部监听 PID 逐个杀，master 会重 spawn 自己的 worker，
    杀不死的才是真 master。
 3. **php-cs-fixer / phpcs**：admin 无独立 lint 脚本，新增文件保持 LF（`.gitattributes`）。
+
+---
+
+## 14. 2.0 序4/序5：队列深度 + 错误聚合 + 配置查看（2026-09-24）
+
+运维页 `/ops` 在 P5 三区块之上追加三块，全部是 **GET + 只读 + 只进运维角色**
+（与 `ops.logs` / `ops.rotation` 同级，**不进只读角色**）。
+
+### 14.1 队列深度巡检（§1.2）
+
+- **端点**：`GET /api/ops/queues` → `OpsController@queues`，节点 `ops.queues`。
+- **数据**：四条 LLEN 队列（`RedisKeys::QUEUE_*`）+ 离线消息总量
+  （`RedisReader::pushOfflineStats`，SCAN `push:offline:*` + 逐键 LLEN）+
+  动作回执积压（`actionResultBacklog`，SCAN `action:result:*`）。**有界三件套**
+  （轮次/键数上限 + `truncated` 如实上抛），禁 KEYS。
+- **阈值**：两档独立设置键，**不复用** `monitor.queue_warn_depth`
+  （后者是面板告警，动一处不该牵两处 UI）：
+  - `ops.queue_warn_depth`（种子 1000）— UDP / 推送 / 离线总量
+  - `ops.action_warn_depth`（种子 100）— action 入站 / 回执积压
+  比较用 `>=`（与 `MetricsDeriver::levelOf`「到点即算」同向）。
+- **判定**：`QueueInspector::rows()` 纯函数；键名一律 `RedisKeys` 常量
+  （聚合展示键用 `push_offline` / `action_result` 下划线形态，避免 phpcs
+  键字面量嗅探误伤）。
+- **种子**：`database/001_gw_tables.sql` 的 `ops.queue_warn_depth` /
+  `ops.action_warn_depth` / `ops.error_lines`（INSERT IGNORE 幂等）。
+
+### 14.2 错误日志聚合（§1.4）
+
+- **端点**：`GET /api/ops/errors?date=&lines=` → `OpsController@errors`，节点 `ops.errors`。
+- **口径**：六角色按 `[ERROR]` 关键字过滤计数 + 最新行；`error_{date}.log`
+  汇总通道**不过滤关键字、且不计入 `total`**（双写副本，计入会翻倍）。
+  `count` 来自尾读窗口 `matched`（≤20000 行），超限 `truncated=true`，
+  UI 如实标注「非精确总量」。
+- **失败语义**：`not_found`（今天还没日志）≠ 错误；单角色失败不拖垮整表。
+- **`LogTailService::resolve` 修正**：role=`error` 曾恒拼 `error.log`
+  （主项目实际是 `error_{date}.log`）→ P5 尾读 error 角色恒 not_found。
+  已统一为 `{role}_{date}.log`，并由 `ErrorAggregatorTest` fixture 钉死。
+
+### 14.3 配置查看（§2.1，脱敏）
+
+- **端点**：`GET /api/ops/config` → `OpsController@config`，节点 `ops.config`。
+- **只读主项目 `.env`**：不解析 `config/*.php` 多层叠加（后台进程加载不到
+  主项目 Env 语义，解析出来会是「代码默认值」冒充「生效值」）。
+- **白名单 + 脱敏**：`ConfigViewer::GROUPS` 七组；`SECRET_KEYS` 四键走
+  `SecretMasker::mask()`（前4后4；空值原样 = 未配置，不打码制造假象）。
+  非白名单键直接丢弃。
+- **路径三关**：`project_root` realpath → 固定 `.env` 文件名 → realpath 落界复核。
+- **mtime**：作「改了未重启」漂移线索（无热重载是本项目高频误判源）。
+- **UI 备注**：加载优先级 / 无热重载 / 与 roles 命令的分工，由后端下发。
+
+### 14.4 权限与路由
+
+| 端点 | 节点 | 只读角色 | 运维角色 |
+|---|---|---|---|
+| `GET /api/ops/queues` | `ops.queues` | ✗ | ✓ |
+| `GET /api/ops/errors` | `ops.errors` | ✗ | ✓ |
+| `GET /api/ops/config` | `ops.config` | ✗ | ✓ |
+
+三条路由都在 `Route::group('/api', …)->middleware([AdminAuth::class])` 内；
+`OpsController` 既有 `disableDefaultRoute` 覆盖新方法。
+
+### 14.5 校验
+
+- 单测：`QueueInspectorTest` / `ConfigViewerTest` / `ErrorAggregatorTest` /
+  `OpsPageExtContractTest`（节点登记 / 仅 operator / 路由 GET / SQL 种子 /
+  视图 id ↔ JS 绑定 ↔ cfg 键三方对齐）。
+- 前端：`tests/Frontend/ops_render_check.js` 扩到 **31 项**（S4 队列标红与
+  truncated、S5 not_found 与 XSS、S6 脱敏摊开与 mtime）。
+- 门禁：admin `composer test`（278 tests / 1493 assertions，1 skip）+
+  `test:frontend` 全绿；主项目 `analyse` / `lint` / `lint:self` / `cs:check` /
+  `test` / `test:frontend` / `test:docs` 全绿。
+- 主项目 `composer test` 计数同步为 **533 tests / 1555 assertions**
+  （README / AGENTS / 工具链说明 / `docs_numbers_check.php` 五处锚点已改）。
+
+### 14.6 踩坑记录（新增）
+
+1. **`str_contains` 没有 offset 形参**（PHP 8.2）：`.env` 解析想「从位置 1
+   起找收尾引号」必须用 `strpos($value, $q, 1)`；写成三参会
+   `ArgumentCountError` + PHPStan `arguments.count` 双红。
+2. **`configured` 的 `||` / `&&` 优先级**：`$configured || in_array(...) && $raw !== ''`
+   实际等价于 `$configured`（短路后半段恒被覆盖），属可读性陷阱；已改为
+   `$present && $raw !== ''` 显式语义。
+3. **admin 无独立 php-cs-fixer**：排版门禁在主项目根目录
+   （`composer cs:check` 扫 131 文件含 admin PHP）；admin 新增文件保持 LF 即可。

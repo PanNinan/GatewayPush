@@ -1,10 +1,11 @@
 <?php
 /**
- * GatewayPush 运维页（P5：角色状态 / 日志尾读 / 密钥轮换引导）。
+ * GatewayPush 运维页（P5：角色状态 / 日志尾读 / 密钥轮换引导；
+ * 2.0 序4/序5：队列深度 / 错误聚合 / 配置查看）。
  *
  * ⚠ 本文件后缀是 .html 但内容是**原生 PHP**（webman Raw 引擎直接 include）。
  * ⚠ 本页**不含任何数据**，只输出骨架与一份 `#ops-page-config` JSON；
- *   全部数据由 `/static/ops.js` 经 3 个只读端点按需取（**无定时器，不轮询** ——
+ *   全部数据由 `/static/ops.js` 经只读端点按需取（**无定时器，不轮询** ——
  *   「重新探测」是显式按钮，不是 5s 一轮）。
  *
  * @var string $title
@@ -12,9 +13,16 @@
  *     logs_url: string,
  *     roles_url: string,
  *     rotation_url: string,
+ *     queues_url: string,
+ *     errors_url: string,
+ *     config_url: string,
  *     log_roles: list<string>,
  *     tail_max: int,
- *     perms: array{logs: bool, roles: bool, rotation: bool}
+ *     error_default_lines: int,
+ *     perms: array{
+ *         logs: bool, roles: bool, rotation: bool,
+ *         queues: bool, errors: bool, config: bool
+ *     }
  * } $config
  */
 
@@ -92,6 +100,56 @@ $json = json_encode(
             <tbody id="tb-secrets"></tbody>
         </table>
         <ol id="rotation-steps"></ol>
+    </div>
+    <?php } ?>
+
+    <!-- ============ 区块 4：队列深度巡检（2.0 序4 / §1.2） ============ -->
+    <?php if (($config['perms']['queues'] ?? false) === true) { ?>
+    <div id="sec-queues">
+        <h2>队列深度 <button id="btn-queues-refresh" class="btn" type="button">重新探测</button></h2>
+        <p class="hint">四条 LLEN 队列 + 离线消息总量 + 动作回执积压；超阈值标红。阈值见「阈值」列（ops.queue_warn_depth / ops.action_warn_depth）。</p>
+        <div id="queues-status"></div>
+        <table>
+            <thead><tr>
+                <th>队列</th><th>标签</th><th>深度</th><th>阈值</th><th>状态</th>
+            </tr></thead>
+            <tbody id="tb-queues"></tbody>
+        </table>
+        <p id="queues-truncated" class="note warn"></p>
+    </div>
+    <?php } ?>
+
+    <!-- ============ 区块 5：错误日志聚合（2.0 序4 / §1.4） ============ -->
+    <?php if (($config['perms']['errors'] ?? false) === true) { ?>
+    <div id="sec-errors">
+        <h2>错误日志聚合</h2>
+        <p class="hint">按角色统计今日 error 条数（尾读窗口内命中数，见 truncated 标记）+ 最新若干行原文；error 列是双写汇总通道。</p>
+        <div class="form">
+            <label>日期 <input id="err-date" type="text" placeholder="Y-m-d（默认今天）" autocomplete="off"></label>
+            <label>行数 <input id="err-lines" type="text" value="<?= (int)$config['error_default_lines'] ?>" autocomplete="off"></label>
+            <button id="btn-errors-load" class="btn" type="button">读取</button>
+        </div>
+        <div id="errors-status"></div>
+        <table>
+            <thead><tr>
+                <th>角色</th><th>error 数</th><th>最新行</th>
+            </tr></thead>
+            <tbody id="tb-errors"></tbody>
+        </table>
+    </div>
+    <?php } ?>
+
+    <!-- ============ 区块 6：主项目配置查看（2.0 序5 / §2.1，脱敏） ============ -->
+    <?php if (($config['perms']['config'] ?? false) === true) { ?>
+    <div id="sec-config">
+        <h2>主项目配置查看 <button id="btn-config-load" class="btn" type="button">读取</button></h2>
+        <p class="hint">只读 .env 白名单键；密钥类前4后4脱敏，本页任何情况下不回显原文。</p>
+        <div id="config-status"></div>
+        <div id="config-notes"></div>
+        <table>
+            <thead><tr><th>分组</th><th>键</th><th>值</th></tr></thead>
+            <tbody id="tb-config"></tbody>
+        </table>
     </div>
     <?php } ?>
 </div>

@@ -136,6 +136,62 @@ final class RedisReader
     }
 
     /**
+     * 离线消息总量与覆盖的 uid 数（`SCAN push:offline:*` + 逐键 `LLEN`，有界）。
+     *
+     * 与 {@see scanKeys()} 同一套有界纪律：禁止 KEYS、轮次/键数双上限、
+     * 超限必须 `truncated=true` 交 UI 显式展示（不允许静默截断成「当前离线量」）。
+     *
+     * @return array{messages: int, uids: int, scanned: int, truncated: bool}
+     */
+    public function pushOfflineStats(int $count = 200, int $maxRounds = 50, int $maxKeys = 2000): array
+    {
+        $scan = $this->scanKeys(RedisKeys::PUSH_OFFLINE . '*', $count, $maxRounds, $maxKeys);
+        $keys = $scan['keys'];
+
+        $lengths = $this->batch(
+            static function ($pipe) use ($keys): void {
+                foreach ($keys as $key) {
+                    $pipe->llen($key);
+                }
+            },
+            $keys,
+            static fn (string $key) => Redis::lLen($key)
+        );
+
+        $messages = 0;
+        foreach ($lengths as $len) {
+            $messages += is_numeric($len) ? (int)$len : 0;
+        }
+
+        return [
+            'messages' => $messages,
+            'uids' => count($keys),
+            'scanned' => $scan['scanned'],
+            'truncated' => $scan['truncated'],
+        ];
+    }
+
+    /**
+     * 动作回执积压键数（`SCAN action:result:*`，有界）。
+     *
+     * 每个键对应一条尚在 `ACTION_RESULT_TTL`（默认 60s）窗口内、
+     * 可供 `GET /action/{id}` 补查的回执；数量持续偏高通常意味着
+     * 调用方在超窗后仍不停补查，或业务进程消费动作队列变慢。
+     *
+     * @return array{count: int, scanned: int, truncated: bool}
+     */
+    public function actionResultBacklog(int $count = 200, int $maxRounds = 50, int $maxKeys = 2000): array
+    {
+        $scan = $this->scanKeys(RedisKeys::ACTION_RESULT . '*', $count, $maxRounds, $maxKeys);
+
+        return [
+            'count' => count($scan['keys']),
+            'scanned' => $scan['scanned'],
+            'truncated' => $scan['truncated'],
+        ];
+    }
+
+    /**
      * 「预期键存在性」自检 —— **这是防静默错误的关键兜底**。
      *
      * 动因：`ADMIN_REDIS_DB` / `ADMIN_REDIS_PREFIX` 配错时 Redis 不会报错，

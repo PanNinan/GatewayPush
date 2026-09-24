@@ -119,7 +119,13 @@ INSERT IGNORE INTO `admin_settings` (`k`, `v`, `remark`) VALUES
   ('session.scan_count',       '200',  '会话/撤销名单 SCAN 每轮 COUNT 提示值（非上限）'),
   ('session.scan_max_rounds',  '50',   'SCAN 轮次上限（防御游标不收敛）'),
   ('session.scan_max_keys',    '2000', 'SCAN 累计键数上限（超限则 truncated=true）'),
-  ('ops.log_tail_lines',       '500',  '日志尾读默认行数');
+  ('ops.log_tail_lines',       '500',  '日志尾读默认行数'),
+  -- 2.0 序4：队列深度巡检阈值（与 monitor.queue_warn_depth 分开 ——
+  -- 后者是面板告警，这两个是运维页标红；合并会让动一处牵动两处 UI）
+  ('ops.queue_warn_depth',     '1000', '运维页 UDP/推送队列标红阈值'),
+  ('ops.action_warn_depth',    '100',  '运维页 action 队列与回执积压标红阈值'),
+  -- 2.0 序4：错误聚合每角色默认展示行数（仍受 LogTailService::TAIL_MAX 夹取）
+  ('ops.error_lines',          '20',   '错误聚合每角色默认展示行数');
 
 -- ---------------------------------------------------------------------------
 -- 2.0 指标趋势采样（MetricSampler 进程每 60s 落一行）

@@ -43,3 +43,10 @@ thead th { background: #eef2f7; }
 .hint { color: var(--muted); font-size: 12px; }
 #rotation-steps li { margin: 6px 0; }
 #rotation-steps:empty { display: none; }
+
+/* 2.0 序4/序5：队列行标红 / 错误行 / 配置备注 */
+#tb-queues tr td.bad { background: #fdecea; }
+#queues-truncated:empty { display: none; }
+#tb-errors pre { margin: 0; max-height: 160px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+#config-notes:empty { display: none; }
+#config-notes .hint { margin: 4px 0; }
