@@ -20,7 +20,7 @@ declare(strict_types=1);
  *   2. 建/校验 wa_* 七张表（复刻 plugin/admin/install.sql）
  *   3. 把 plugin/admin/config/menu.php 导入 wa_rules（插件的菜单与权限节点树）
  *   3b. 删除已从 menu.php 摘除的废弃菜单子树（demos；import 只 upsert 不 delete）
- *   4. 建后台自有四表（database/001_gw_tables.sql）
+ *   4. 建后台自有表（database/001_gw_tables.sql：push / 模板 / 审计 / 访问日志 / 设置）
  *   5. 建初始超管账号（.env 的 ADMIN_BOOTSTRAP_USER / ADMIN_BOOTSTRAP_PASS），绑定角色 id=1
  *   6. 建 GatewayPush 权限节点 + 「运维 / 只读」两角色
  *   6b. 可选 viewer 账号（.env 的 ADMIN_VIEWER_USER / ADMIN_VIEWER_PASS），绑定只读角色
@@ -317,16 +317,16 @@ $ruleTotal = (int)$pdo->query('select count(*) from wa_rules')->fetchColumn();
 printf("  菜单树导入完成，wa_rules 现有 %d 个节点%s", $ruleTotal, PHP_EOL);
 
 // ---------------------------------------------------------------------------
-// 步骤 4：后台自有四表
+// 步骤 4：后台自有表
 // ---------------------------------------------------------------------------
 out($sep);
-out('步骤 4 / 7  后台自有表（push_task / push_template / admin_audit_log / admin_settings）');
+out('步骤 4 / 7  后台自有表（push_task / push_template / admin_audit_log / wa_admin_log / admin_settings）');
 $gwSql = $root . '/database/001_gw_tables.sql';
 if (!is_file($gwSql)) {
     fail("缺少 {$gwSql}");
 }
 $pdo->exec((string)file_get_contents($gwSql));
-foreach (['push_task', 'push_template', 'admin_audit_log', 'admin_settings'] as $t) {
+foreach (['push_task', 'push_template', 'admin_audit_log', 'wa_admin_log', 'admin_settings'] as $t) {
     $n = (int)$pdo->query("select count(*) from `{$t}`")->fetchColumn();
     printf("  %-18s %d 行%s", $t, $n, PHP_EOL);
 }
@@ -449,6 +449,10 @@ $nodeSpecs = [
     // 纯只读：谁对推送系统做了什么。与 dashboard / 会话查询同级，只读 + 运维同授。
     'auditPage' => ['title' => '行为日志', 'key' => 'app\\controller\\AuditPageController', 'href' => '/audit', 'type' => 1, 'weight' => 88],
     'audit.list' => ['title' => '行为日志查询（API）', 'key' => 'app\\controller\\api\\AuditController@index', 'href' => '', 'type' => 2, 'weight' => 87],
+    // ---- 访问日志（读 wa_admin_log：登录/登出/页面与接口访问，与 /audit 并列）----
+    // 纯只读：谁打开了什么。与 dashboard / 行为日志同级，只读 + 运维同授。
+    'accessPage' => ['title' => '访问日志', 'key' => 'app\\controller\\AccessLogPageController', 'href' => '/access-log', 'type' => 1, 'weight' => 86],
+    'access.list' => ['title' => '访问日志查询（API）', 'key' => 'app\\controller\\api\\AccessLogController@index', 'href' => '', 'type' => 2, 'weight' => 85],
     'push.create' => ['title' => '发起推送（API）', 'key' => 'app\\controller\\api\\PushController@create', 'href' => '', 'type' => 2, 'weight' => 48],
     'push.history' => ['title' => '推送历史（API）', 'key' => 'app\\controller\\api\\PushController@history', 'href' => '', 'type' => 2, 'weight' => 47],
     'push.tplList' => ['title' => '模板列表（API）', 'key' => 'app\\controller\\api\\PushController@templateList', 'href' => '', 'type' => 2, 'weight' => 46],
@@ -535,6 +539,9 @@ $viewerRules = [
     // 行为日志：只读检索 admin_audit_log（params 写入时已由 Auditor 脱敏）
     $nodeIds['auditPage'],
     $nodeIds['audit.list'],
+    // 访问日志：只读检索 wa_admin_log（query/body 写入时已由 AccessLogger 脱敏）
+    $nodeIds['accessPage'],
+    $nodeIds['access.list'],
 ];
 // 运维角色在只读之上追加：运维自检 + 动作调试 + 推送写路径。
 $operatorRules = array_merge($viewerRules, [

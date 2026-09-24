@@ -18,9 +18,11 @@ use app\controller\api\OpsController;
 // 别名：API 控制器与页面控制器同名（分属 app\controller\api 与 app\controller），
 // 二者在 wa_rules.key 里是不同字符串（`...\api\SessionController@x` vs `...\SessionController`），不会互相顶掉。
 use app\controller\api\ActionController as ActionApiController;
+use app\controller\api\AccessLogController as AccessLogApiController;
 use app\controller\api\PushController as PushApiController;
 use app\controller\api\SessionController as SessionApiController;
 use app\controller\ActionController;
+use app\controller\AccessLogPageController;
 use app\controller\AuditPageController;
 use app\controller\DashboardController;
 use app\controller\OpsPageController;
@@ -101,6 +103,9 @@ Route::disableDefaultRoute(MetricController::class);
 // 行为日志页 + API（读 admin_audit_log）
 Route::disableDefaultRoute(AuditPageController::class);
 Route::disableDefaultRoute(AuditController::class);
+// 访问日志页 + API（读 wa_admin_log；登录/访问行为，与 /audit 业务审计并列）
+Route::disableDefaultRoute(AccessLogPageController::class);
+Route::disableDefaultRoute(AccessLogApiController::class);
 // ---------------------------------------------------------------------------
 // webman **脚手架**自带的欢迎页控制器 —— **已彻底移除**（2026-09-24）
 //
@@ -136,6 +141,8 @@ Route::get('/metrics', [MetricsPageController::class, 'index'])->middleware([Adm
 Route::get('/trace', [TracePageController::class, 'index'])->middleware([AdminAuth::class]);
 // 行为日志页（读 admin_audit_log）—— 只读检索，与 dashboard / 会话查询同级
 Route::get('/audit', [AuditPageController::class, 'index'])->middleware([AdminAuth::class]);
+// 访问日志页（读 wa_admin_log）—— 谁登录/访问了哪些页面与接口；与 /audit 并列
+Route::get('/access-log', [AccessLogPageController::class, 'index'])->middleware([AdminAuth::class]);
 
 // ---- JSON API（全部只读；写操作永远走主项目 HTTP API，不在此暴露）----
 Route::group('/api', static function (): void {
@@ -166,6 +173,9 @@ Route::group('/api', static function (): void {
 
     // 行为日志检索（GET + 只读，读 admin_audit_log；params 写入时已脱敏）
     Route::get('/audit/logs', [AuditController::class, 'index']);
+
+    // 访问日志检索（GET + 只读，读 wa_admin_log；query/body 写入时已脱敏）
+    Route::get('/access-logs', [AccessLogApiController::class, 'index']);
 
     /* -----------------------------------------------------------------------
      | M2 会话只读（P2）

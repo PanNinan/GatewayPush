@@ -695,15 +695,18 @@ curl -s -X POST http://127.0.0.1:8290/action \
 
 #### 5.3.1 webman-admin 自带表（**不重复设计**）
 
-由 webman-admin 的迁移脚本创建，按其规范使用：
+由 webman-admin 的安装 SQL（`plugin/admin/install.sql`）创建，按其规范使用：
 
 ```
-admin_user  admin_role  admin_permission  admin_user_role  admin_role_permission
-admin_log   （webman-admin 自带操作日志，与我们的 admin_audit_log 分工见下）
+wa_admins  wa_admin_roles  wa_roles  wa_rules  wa_options  wa_users  wa_uploads
 ```
 
-> **分工**：webman-admin 自带日志记「谁登录了、访问了哪些页面」；`admin_audit_log` 记
-> **「谁对推送系统做了哪个写操作」**（业务语义审计）。两者都要保留。
+> ⚠ **勘误（2026-09-24）**：插件**没有** `admin_log` / `wa_admin_log` 表（早期设计误写）。
+> 访问行为日志由本项目新建的 `wa_admin_log` 承载（见 §5.3.2 与 `admin/docs/deploy.md` §17），
+> 写入方为全局 `AccessLog` 中间件。
+>
+> **分工**：`wa_admin_log` 记「谁登录了、访问了哪些页面/接口」；
+> `admin_audit_log` 记「谁对推送系统做了哪个写操作」（业务语义审计）。两者都要保留。
 
 #### 5.3.2 后台自有表
 

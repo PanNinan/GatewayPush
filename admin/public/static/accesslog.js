@@ -1,7 +1,7 @@
 /**
- * GatewayPush 行为日志页 —— GET /api/audit/logs。
+ * GatewayPush 访问日志页 —— GET /api/access-logs。
  *
- * 渲染纪律（与 session.js / metrics.js / trace.js 同口径）：
+ * 渲染纪律（与 audit.js / session.js 同口径）：
  * - 前端不编词：403 / 空列表 / 请求失败都如实展示；
  * - textContent only（防 XSS）；零定时器；打开时拉一次，其余由筛选/翻页/重置触发。
  * - 视觉：layui/pear 卡片（视图层）；本文件不依赖 layui.js，只操作既有 DOM id。
@@ -9,7 +9,7 @@
 (function () {
     'use strict';
 
-    var cfgNode = document.getElementById('audit-page-config');
+    var cfgNode = document.getElementById('accesslog-page-config');
     var cfg = {};
     try {
         cfg = JSON.parse(cfgNode ? cfgNode.textContent : '{}') || {};
@@ -29,12 +29,12 @@
     }
 
     function setStatus(msg) {
-        var n = $('audit-status');
+        var n = $('accesslog-status');
         if (n) { n.textContent = msg || ''; }
     }
 
     function tbody() {
-        var host = $('tbl-audit');
+        var host = $('tbl-accesslog');
         if (!host) { return null; }
         if (!host.__tbody) {
             var t = host.querySelector('tbody');
@@ -53,15 +53,17 @@
     }
 
     function buildUrl() {
-        var base = cfg.list_url || '/api/audit/logs';
+        var base = cfg.list_url || '/api/access-logs';
         var qs = [];
         function add(k, v) {
             if (v !== '' && v !== null && v !== undefined) {
                 qs.push(encodeURIComponent(k) + '=' + encodeURIComponent(v));
             }
         }
-        add('action', $('sel-action') ? $('sel-action').value : '');
+        add('event', $('sel-event') ? $('sel-event').value : '');
         add('result', $('sel-result') ? $('sel-result').value : '');
+        add('method', $('sel-method') ? $('sel-method').value : '');
+        add('path', $('inp-path') ? $('inp-path').value.trim() : '');
         add('admin_id', $('inp-admin') && $('inp-admin').value !== '' ? $('inp-admin').value : '');
         add('from', $('inp-from') ? $('inp-from').value.trim() : '');
         add('to', $('inp-to') ? $('inp-to').value.trim() : '');
@@ -76,7 +78,7 @@
         if (!t) { return; }
         var tr = document.createElement('tr');
         var td = el('td', null, msg);
-        td.colSpan = 9;
+        td.colSpan = 11;
         tr.appendChild(td);
         t.appendChild(tr);
     }
@@ -85,7 +87,7 @@
         var t = tbody();
         if (!t) { return; }
         var head = document.createElement('tr');
-        ['ID', '时间', '管理员', '动作', '目标类型', '目标', '结果', '码', '参数'].forEach(function (title) {
+        ['ID', '时间', '管理员', '事件', '结果', '方法', '路径', '控制器@动作', '码', '耗时ms', '查询串'].forEach(function (title) {
             head.appendChild(el('th', null, title));
         });
         t.appendChild(head);
@@ -100,15 +102,19 @@
             var tr = document.createElement('tr');
             tr.appendChild(el('td', null, row.id));
             tr.appendChild(el('td', null, row.created_at));
-            tr.appendChild(el('td', null, row.admin_name + ' (#' + row.admin_id + ')'));
-            tr.appendChild(el('td', null, row.action));
-            tr.appendChild(el('td', null, row.target_type || '—'));
-            tr.appendChild(el('td', null, row.target || '—'));
+            tr.appendChild(el('td', null, (row.admin_name || '—') + ' (#' + row.admin_id + ')'));
+            tr.appendChild(el('td', null, row.event));
             var tdResult = document.createElement('td');
             tdResult.appendChild(el('span', 'tag ' + (row.result === 'ok' ? 'ok' : 'failed'), row.result));
             tr.appendChild(tdResult);
+            tr.appendChild(el('td', null, row.method || '—'));
+            tr.appendChild(el('td', 'params', row.path || '—'));
+            tr.appendChild(el('td', null, (row.controller && row.action_name)
+                ? (row.controller + '@' + row.action_name)
+                : (row.controller || '—')));
             tr.appendChild(el('td', null, row.code));
-            tr.appendChild(el('td', 'params', row.params || '—'));
+            tr.appendChild(el('td', null, row.cost_ms));
+            tr.appendChild(el('td', 'params', row.query || '—'));
             t.appendChild(tr);
         });
     }
@@ -173,7 +179,7 @@
     var btnReset = $('btn-reset');
     if (btnReset) {
         btnReset.addEventListener('click', function () {
-            ['sel-action', 'sel-result', 'inp-admin', 'inp-from', 'inp-to'].forEach(function (id) {
+            ['sel-event', 'sel-result', 'sel-method', 'inp-path', 'inp-admin', 'inp-from', 'inp-to'].forEach(function (id) {
                 var n = $(id);
                 if (n) { n.value = ''; }
             });

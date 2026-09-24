@@ -1,22 +1,24 @@
 <?php
 /**
- * GatewayPush 行为日志页 —— 读 admin_audit_log 的只读检索。
+ * GatewayPush 访问日志页 —— 读 wa_admin_log 的只读检索。
  *
  * ⚠ 本文件后缀是 .html 但内容是**原生 PHP**（webman Raw 引擎直接 include）。
- * ⚠ 本页**不含任何数据**，只输出骨架与一份 `#audit-page-config` JSON；
- *   数据由 `/static/audit.js` 经 `GET /api/audit/logs` 按需取。
+ * ⚠ 本页**不含任何数据**，只输出骨架与一份 `#accesslog-page-config` JSON；
+ *   数据由 `/static/accesslog.js` 经 `GET /api/access-logs` 按需取。
  *
  * 视觉基准：webman-admin「数据库 → 所有表」（layui-card + top-search-from + pear-btn）。
  * **不引入 layui.js** —— 只挂插件 CSS，取数 / 渲染仍走本页 JS（零定时器、textContent only）。
  *
- * 刷新语义：**打开时拉一次 + 筛选/翻页/重置手动触发**，零定时器
- * （审计是历史检索，不是实时看板；看实时去 dashboard）。
+ * 与 /audit（行为日志 · admin_audit_log）的分工见控制器注释：本页记访问，那页记业务写。
+ *
+ * 刷新语义：**打开时拉一次 + 筛选/翻页/重置手动触发**，零定时器。
  *
  * @var string $title
  * @var array{
  *     list_url: string,
- *     actions: list<string>,
+ *     events: list<string>,
  *     results: list<string>,
+ *     methods: list<string>,
  *     page_size_options: list<int>,
  *     page_size_default: int,
  *     perms: array{list: bool}
@@ -48,24 +50,25 @@ $json = json_encode(
     <div class="note bad"><strong>本页需要 JavaScript。</strong></div>
 </noscript>
 
-<div id="audit-page-config" hidden><?= $h($json) ?></div>
+<div id="accesslog-page-config" hidden><?= $h($json) ?></div>
 
 <!-- ============ 顶部查询表单（对标 数据库-所有表） ============ -->
 <div class="layui-card">
     <div class="layui-card-body">
-        <div class="note muted" id="audit-intro">
-            本页读 <code>admin_audit_log</code>：谁对推送系统做了什么（业务语义）。
-            参数在写入时已由 Auditor 脱敏；与「访问日志」不同，这里只记写操作与动作调用。
+        <div class="note muted" id="accesslog-intro">
+            本页读 <code>wa_admin_log</code>：谁登录 / 登出、打开了哪些页面与接口（含只读访问）。
+            与「行为日志 <code>/audit</code>」不同 —— 那边只记对推送系统的写操作；
+            查询串与写请求体在落库前已脱敏。
         </div>
 
         <form class="layui-form top-search-from" onsubmit="return false;">
             <div class="layui-form-item">
-                <label class="layui-form-label">动作</label>
+                <label class="layui-form-label">事件</label>
                 <div class="layui-input-block">
-                    <select id="sel-action" name="action" class="layui-input" lay-ignore>
+                    <select id="sel-event" name="event" class="layui-input" lay-ignore>
                         <option value="">全部</option>
-                        <?php foreach ($config['actions'] as $a) { ?>
-                            <option value="<?= $h($a) ?>"><?= $h($a) ?></option>
+                        <?php foreach ($config['events'] as $e) { ?>
+                            <option value="<?= $h($e) ?>"><?= $h($e) ?></option>
                         <?php } ?>
                     </select>
                 </div>
@@ -80,6 +83,25 @@ $json = json_encode(
                             <option value="<?= $h($r) ?>"><?= $h($r) ?></option>
                         <?php } ?>
                     </select>
+                </div>
+            </div>
+
+            <div class="layui-form-item">
+                <label class="layui-form-label">方法</label>
+                <div class="layui-input-block">
+                    <select id="sel-method" name="method" class="layui-input" lay-ignore>
+                        <option value="">全部</option>
+                        <?php foreach ($config['methods'] as $m) { ?>
+                            <option value="<?= $h($m) ?>"><?= $h($m) ?></option>
+                        <?php } ?>
+                    </select>
+                </div>
+            </div>
+
+            <div class="layui-form-item">
+                <label class="layui-form-label">路径</label>
+                <div class="layui-input-block">
+                    <input id="inp-path" name="path" type="text" autocomplete="off" class="layui-input" placeholder="/push 或 /app/admin">
                 </div>
             </div>
 
@@ -123,7 +145,7 @@ $json = json_encode(
                 <button id="btn-reset" class="pear-btn pear-btn-md" type="button">
                     <i class="layui-icon layui-icon-refresh"></i>重置
                 </button>
-                <span id="audit-status" class="muted gw-log-status"></span>
+                <span id="accesslog-status" class="muted gw-log-status"></span>
             </div>
         </form>
     </div>
@@ -133,7 +155,7 @@ $json = json_encode(
 <?php if (($config['perms']['list'] ?? false) === true) { ?>
 <div class="layui-card" id="sec-list">
     <div class="layui-card-body">
-        <table class="layui-table" id="tbl-audit"><tbody></tbody></table>
+        <table class="layui-table" id="tbl-accesslog"><tbody></tbody></table>
         <div class="layui-table-page gw-log-pager" id="pager">
             <button id="btn-prev" class="pear-btn pear-btn-md" type="button">
                 <i class="layui-icon layui-icon-left"></i>上一页
@@ -148,11 +170,11 @@ $json = json_encode(
 <?php } else { ?>
 <div class="layui-card">
     <div class="layui-card-body">
-        <div class="note" id="audit-readonly">无「行为日志查询」权限，列表不可见。</div>
+        <div class="note" id="accesslog-readonly">无「访问日志查询」权限，列表不可见。</div>
     </div>
 </div>
 <?php } ?>
 
-<script src="/static/audit.js"></script>
+<script src="/static/accesslog.js"></script>
 </body>
 </html>

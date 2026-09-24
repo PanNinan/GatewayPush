@@ -1,46 +1,122 @@
 /*
- * GatewayPush 行为日志页 —— 复用 ops/metrics 的设计变量与版式约定
+ * GatewayPush 行为/访问日志页 —— layui + pear 之上的轻覆盖。
+ * 基础样式来自：
+ *   /app/admin/component/layui/css/layui.css
+ *   /app/admin/component/pear/css/pear.css
+ *   /app/admin/admin/css/reset.css（top-search-from / pear-btn 微调）
+ * 本文件只补：状态栏、分页条、参数列、noscript 提示、结果标签。
+ * 视图：audit（/audit）与 accesslog（/access-log）共用。
  */
-:root {
-    --fg: #1c2430;
-    --muted: #68758a;
-    --line: #dbe1ea;
-    --accent: #2b6cb0;
-    --bg-warn: #fff7e6;
-    --fg-bad: #c0392b;
-    --fg-ok: #2f9e44;
+.gw-log-status {
+    display: inline-block;
+    margin-left: 8px;
+    vertical-align: middle;
+    font-size: 13px;
 }
 
-* { box-sizing: border-box; }
-body { margin: 0; padding: 20px; font: 14px/1.6 "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--fg); background: #f5f7fa; }
-.wrap { max-width: 1200px; margin: 0 auto; }
-h1 { font-size: 20px; margin: 0 0 16px; }
+.gw-log-pager {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
 
-.note { border: 1px solid var(--line); border-radius: 6px; background: #fff; padding: 8px 12px; margin: 8px 0; }
-.note.bad { border-color: var(--fg-bad); color: var(--fg-bad); }
-.muted { color: var(--muted); font-size: 13px; }
-code { font-family: Consolas, Menlo, monospace; font-size: 12px; background: #eef1f6; padding: 1px 4px; border-radius: 3px; }
+.gw-log-pager .pear-btn {
+    letter-spacing: 0;
+}
 
-.form { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 8px 0; }
-.form label { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
-input, select { padding: 5px 8px; border: 1px solid var(--line); border-radius: 5px; font: inherit; width: 140px; }
-select { width: auto; }
+.gw-log-pager .muted {
+    margin: 0 6px;
+}
 
-.btn { padding: 6px 14px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--fg); font: inherit; font-size: 13px; cursor: pointer; }
-.btn:hover { border-color: var(--accent); color: var(--accent); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.btn.primary:hover { opacity: 0.9; color: #fff; }
-.btn:disabled { opacity: 0.5; cursor: default; }
+/* 静态 thead（视图）+ JS 动态首行表头（tbody 内 tr>th）双路径都要可读 */
+#tbl-audit thead th,
+#tbl-accesslog thead th,
+#tbl-audit tbody tr:first-child th,
+#tbl-accesslog tbody tr:first-child th {
+    white-space: nowrap;
+    font-weight: 500;
+    background: #fafafa;
+}
 
-.tbl { border-collapse: collapse; background: #fff; border: 1px solid var(--line); border-radius: 6px; width: 100%; }
-.tbl th, .tbl td { border-bottom: 1px solid var(--line); padding: 6px 10px; text-align: left; font-size: 13px; vertical-align: top; }
-.tbl th { color: var(--muted); font-weight: 500; white-space: nowrap; }
-.tbl td { font-variant-numeric: tabular-nums; word-break: break-all; }
-.tbl tr:last-child th, .tbl tr:last-child td { border-bottom: none; }
+#tbl-audit td,
+#tbl-accesslog td {
+    font-variant-numeric: tabular-nums;
+    word-break: break-all;
+}
 
-.tag { display: inline-block; padding: 0 8px; border-radius: 10px; font-size: 12px; border: 1px solid var(--line); }
-.tag.ok { border-color: var(--fg-ok); color: var(--fg-ok); }
-.tag.failed { border-color: var(--fg-bad); color: var(--fg-bad); }
+/* 结果标签：兼容既有 .tag.ok / .tag.failed，色彩对齐 layui 主题 */
+.tag {
+    display: inline-block;
+    padding: 0 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    border: 1px solid #dcdfe6;
+    line-height: 18px;
+}
 
-.pager { margin-top: 10px; }
-.params { max-width: 320px; white-space: pre-wrap; word-break: break-all; font-family: Consolas, Menlo, monospace; font-size: 12px; color: var(--muted); }
+.tag.ok {
+    border-color: #36b368;
+    color: #36b368;
+}
+
+.tag.failed {
+    border-color: #f56c6c;
+    color: #f56c6c;
+}
+
+/* 参数 / 路径 / 查询串：等宽 + 可断行 */
+.params {
+    max-width: 320px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    font-family: Consolas, Menlo, monospace;
+    font-size: 12px;
+    color: #68758a;
+}
+
+/* layui-form 默认 display:none 掉原生 select（靠 layui.js 换皮）；
+ * 本页不引 layui.js，视图用 lay-ignore 放行；此处补原生下拉外观 */
+.top-search-from select.layui-input,
+select.layui-input[lay-ignore] {
+    display: block;
+    appearance: auto;
+    -webkit-appearance: auto;
+    cursor: pointer;
+    padding: 0 10px;
+    background: #fff;
+}
+
+/* 页面说明与 noscript */
+.note {
+    border: 1px solid #dbe1ea;
+    border-radius: 6px;
+    background: #fff;
+    padding: 8px 12px;
+    margin: 0 0 8px;
+}
+
+.note.bad {
+    border-color: #c0392b;
+    color: #c0392b;
+}
+
+.muted {
+    color: #68758a;
+    font-size: 13px;
+}
+
+code {
+    font-family: Consolas, Menlo, monospace;
+    font-size: 12px;
+    background: #eef1f6;
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
+/* 无权限占位卡 */
+#audit-readonly,
+#accesslog-readonly {
+    margin: 0;
+}

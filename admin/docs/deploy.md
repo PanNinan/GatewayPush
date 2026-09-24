@@ -26,6 +26,7 @@ register / gateway / udp / business / api / dashboard 六个角色。
 | P1 | （同上，改为分层轮询 + 自绘 SVG） | 新增 `/api/monitor/live`（5s 快 tick，**只碰 Redis**） |
 | P2 | `/sessions` 会话查询 | `/api/sessions`、`/api/session/{clientId}`、`/api/sessions/by-uid/{uid}`、`/api/sessions/by-device/{deviceId}`、`/api/sessions/subscriptions`、`/api/sessions/offline/{uid}`、`/api/auth/revoked`（**全部 GET，一期只读**） |
 | 2.0 | `/audit` 行为日志（读 `admin_audit_log`） | `GET /api/audit/logs`（只读检索；替代已废弃的示例 demo 树） |
+| 2.0 | `/access-log` 访问日志（读 `wa_admin_log`） | `GET /api/access-logs`（登录/登出/页面与接口访问；与 `/audit` 并列） |
 
 ---
 
@@ -96,9 +97,9 @@ php start.php stop           # Linux 停止
 | 2 | `wa_*` 七表（复刻 `plugin/admin/install.sql`；按「表是否齐全」决定是否执行，并把裸 `INSERT` 改写为 `INSERT IGNORE`） |
 | 3 | 把 `plugin/admin/config/menu.php` 导入 `wa_rules`（插件自带的菜单 / 权限树） |
 | 3b | 删除废弃菜单子树（`$obsoleteMenuRoots = ['demos']`；import 只 upsert 不 delete，**且 `menu.php` 是 vendor 副本、composer install 会带回 demos**，故清理真源在此步） |
-| 4 | 后台自有四表：`database/001_gw_tables.sql`（`push_task` / `push_template` / `admin_audit_log` / `admin_settings`） |
+| 4 | 后台自有表：`database/001_gw_tables.sql`（`push_task` / `push_template` / `admin_audit_log` / `wa_admin_log` / `admin_settings`） |
 | 5 | 首个超管（取 `.env` 的 `ADMIN_BOOTSTRAP_USER` / `ADMIN_BOOTSTRAP_PASS`；`wa_admins` 非空则跳过） |
-| 6 | GatewayPush 权限节点 **42 个**（含页面 + API；`$nodeSpecs` 全量）+ 「运维 / 只读」两角色（按 `wa_rules.key` 与 rule id 列表 upsert） |
+| 6 | GatewayPush 权限节点 **44 个**（含页面 + API；`$nodeSpecs` 全量）+ 「运维 / 只读」两角色（按 `wa_rules.key` 与 rule id 列表 upsert） |
 
 **为什么不走官方 Web 安装页**：①它的「已安装」标记写在插件目录内，`composer update webman/admin` 会冲掉；
 ②表已存在时它会要求「强制覆盖（`DROP TABLE`）」；③它会把明文连接参数写进插件目录。
@@ -109,11 +110,11 @@ php start.php stop           # Linux 停止
 | 角色 | `wa_roles.id` | `rules` | 能访问 |
 |---|---|---|---|
 | 超级管理员 | 1 | `*` | 全部（含 webman-admin 自带的管理面） |
-| 运维 | 3 | 39 个节点 | GatewayPush 全部页面与端点（含 `/push` 发起推送 · 模板增删改 · `/actions` 动作调试 · `/audit` 行为日志） |
-| 只读 | 2 | 21 个节点 | `/dashboard`、`/sessions`、`/push`（**仅**历史 + 模板查看）、`/metrics`、`/trace`、`/audit`、`/api/monitor/*`（含 `mon.live`）、`/api/sessions/*`、`/api/session/*`、`/api/auth/revoked`、`/api/push/history`、`/api/push/templates`（GET）、`/api/metric/*`、`/api/audit/logs`；`/api/ops/*`、`/api/push`（POST）、`/api/action/*` 与模板写操作返回 **403** |
+| 运维 | 3 | 41 个节点 | GatewayPush 全部页面与端点（含 `/push` 发起推送 · 模板增删改 · `/actions` 动作调试 · `/audit` 行为日志 · `/access-log` 访问日志） |
+| 只读 | 2 | 23 个节点 | `/dashboard`、`/sessions`、`/push`（**仅**历史 + 模板查看）、`/metrics`、`/trace`、`/audit`、`/access-log`、`/api/monitor/*`（含 `mon.live`）、`/api/sessions/*`、`/api/session/*`、`/api/auth/revoked`、`/api/push/history`、`/api/push/templates`（GET）、`/api/metric/*`、`/api/audit/logs`、`/api/access-logs`；`/api/ops/*`、`/api/push`（POST）、`/api/action/*` 与模板写操作返回 **403** |
 
 > 角色节点数以 `scripts/install.php` 的 `$viewerRules` / `$operatorRules` 为准
-> （当前只读 **21**、运维 **39**；p3/p4 验收脚本有硬断言，改节点必须同步）。
+> （当前只读 **23**、运维 **41**；p3/p4 验收脚本有硬断言，改节点必须同步）。
 > 计数可用 `SELECT id,name,rules FROM wa_roles` 复核。节点清单的**唯一真源**是
 > `scripts/install.php` 的 `$nodeSpecs`，重跑该脚本即幂等对齐（id 不变、只更新 title/key/weight）。
 > 只读 = 监测 / 查询 / 审计检索；运维 = 只读之上再加写路径与自检面（见 `$operatorRules`）。
@@ -252,7 +253,7 @@ mysql -h "$ADMIN_DB_HOST" -u "$ADMIN_DB_USER" -p gateway_push_admin < gwadmin-YY
 cd admin
 composer test           # PHPUnit：tests/Unit（P3 后 201 tests / 1053 assertions）
 composer analyse        # PHPStan L6，**刻意不引入 baseline**（新代码零容忍）
-composer test:frontend  # 运行期前端渲染校验（dashboard 144 + session 162 + push 122 + action 103 + ops 42 + metrics 19 + trace 25 + audit 21 = **638 项**；无需浏览器 / jsdom / 服务端）
+composer test:frontend  # 运行期前端渲染校验（dashboard 144 + session 162 + push 122 + action 103 + ops 42 + metrics 19 + trace 25 + audit 23 + accesslog 26 = **666 项**；无需浏览器 / jsdom / 服务端）
 ```
 
 `composer test` 与 `composer test:frontend` **不可互相替代**：
@@ -766,7 +767,7 @@ ADMIN_ROLES_CMD="php ../start.php roles"   # 正确
 | 节点 | `auditPage`（type1, weight 88）+ `audit.list`（type2, weight 87），**只读与运维同授** |
 | 安装 | 步骤 3b 清理 demos；`$nodeSpecs` 登记两节点；`$viewerRules` 追加（运维经 `array_merge` 继承） |
 | 路由 | `Route::get('/audit', …)->middleware([AdminAuth])` + 组内 `GET /audit/logs`；两控制器 `disableDefaultRoute` |
-| 测试 | `AuditMenuContractTest`（install 清理 / 节点 / 路由 / 动作枚举不硬编码）+ `audit_render_check.js` **21 项** |
+| 测试 | `AuditMenuContractTest`（install 清理 / 节点 / 路由 / 动作枚举不硬编码）+ `audit_render_check.js` **23 项** |
 | 验收断言 | 只读 **19 → 21**、运维 **37 → 39**（p3/p4_acceptance 已同步） |
 
 页面纪律与 metrics/trace 同款：视图只渲染骨架 + `#audit-page-config` JSON；数据经 API；
@@ -777,6 +778,44 @@ ADMIN_ROLES_CMD="php ../start.php roles"   # 正确
 
 - admin `composer test`（**293 tests / 1614 assertions**，1 skip；较序7 净减 1 = 删掉不可靠的
   menu.php demos 断言、保留 install/路由/节点断言）+ `composer test:frontend`
-  （含 `audit_render_check` 21 项）+ `composer analyse` 全绿。
+  （含 `audit_render_check` 23 项）+ `composer analyse` 全绿。
 - 主项目 `composer test`（533 / 1555）+ `test:frontend` + `test:docs` 全绿。
 - **生效方式**：已装环境重跑 `php scripts/install.php`（步骤 3b 删 demos + 新节点进 DB + 角色 rules 覆写）。
+
+---
+
+## 17. 访问日志（`wa_admin_log` · `/access-log`）
+
+### 17.1 背景与决策
+
+- webman-admin 插件**没有**自带操作日志表（`install.sql` 仅七张 `wa_*`，登录只 `UPDATE wa_admins.login_at`）。
+- 用户拍板：新建 `wa_admin_log` 记「谁登录/登出/打开了什么」，与已有 `admin_audit_log`（`/audit`，业务写操作审计）**并列、不合并**。
+- **全局中间件**（`config/middleware.php` 注册，**必须**是 `['@' => [AccessLog::class]]` 两层结构 ——
+  扁平列表会被 `Webman\Middleware::load()` 判成 `Bad middleware config` 直接抛异常）
+  覆盖根应用 + 插件路由，故登录/登出/vendor 账号操作都能留痕。
+- 过滤：静态资源 / 验证码 / OPTIONS / 高频轮询 GET（`/api/monitor/live` 等）不落行；全部非 GET + 页面 GET + 认证事件必记。
+- 脱敏：`query` / `body` 经 `Auditor::redact()`；登录 `username` 记、`password` 绝不记原文。
+
+### 17.2 交付物
+
+| 类 | 内容 |
+|---|---|
+| 表 | `database/001_gw_tables.sql` 的 `wa_admin_log`（`utf8mb4_general_ci`，幂等 `IF NOT EXISTS`） |
+| 服务 | `app/service/AccessLogger.php`：`record()` 唯一写入口（失败不阻断）+ `envelope()` / `redactQuery()` / `redactBody()` |
+| 中间件 | `app/middleware/AccessLog.php`（`config/middleware.php` 注册）：before 捕身份，after 捕 status/code/耗时 |
+| 页面 | `/access-log`（`AccessLogPageController` + `app/view/accesslog/index.html` + `public/static/accesslog.js`，复用 `audit.css`） |
+| API | `GET /api/access-logs`（`AccessLogController`，组内声明 `/access-logs`）：event/result/method/path/admin_id/page/size/from/to |
+| 节点 | `accessPage`（type1, weight 86）+ `access.list`（type2, weight 85），**只读与运维同授** |
+| 安装 | 步骤 4 表清单含 `wa_admin_log`；`$nodeSpecs` 登记两节点；`$viewerRules` 追加（运维经 `array_merge` 继承） |
+| 路由 | `Route::get('/access-log', …)->middleware([AdminAuth])` + 组内 `GET /access-logs`；两控制器 `disableDefaultRoute` |
+| 测试 | `AccessLogMenuContractTest`（节点 / 路由 / 中间件注册 / 表 / 枚举不硬编码）+ `accesslog_render_check.js` **26 项** |
+| 验收断言 | 只读 **21 → 23**、运维 **39 → 41**（p3/p4_acceptance 已同步） |
+
+页面纪律与 `/audit` 同款：视图只渲染骨架 + `#accesslog-page-config` JSON；数据经 API；
+`Perm::map` 注入 perms；JS 零定时器、textContent only、零 innerHTML；事件/结果枚举从
+`AccessLogger::EVENTS` / `RESULTS` 下发不硬编码。
+
+### 17.3 校验
+
+- admin `composer test`（含 `AccessLogMenuContractTest`）+ `composer test:frontend`（含 `accesslog_render_check` 26 项）+ `composer analyse` 全绿。
+- **生效方式**：已装环境重跑 `php scripts/install.php`（新表 + 新节点进 DB + 角色 rules 覆写）；改 `.env` / `config/middleware.php` 后需重启 admin 进程。

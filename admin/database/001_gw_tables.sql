@@ -2,8 +2,11 @@
 -- GatewayPush 管理后台 —— 后台自有业务表（P0）
 --
 -- 与 webman-admin 自带的 wa_* 七张表分工：
---   wa_*       → 管理员 / 角色 / 权限节点 / 菜单 / 上传（插件所有，见 plugin/admin/install.sql）
---   本文件表   → 后台自己的业务数据（推送受理记录 / 模板 / 审计 / 设置）
+--   wa_*（插件七表） → 管理员 / 角色 / 权限节点 / 菜单 / 上传（见 plugin/admin/install.sql）
+--   本文件表         → 后台自己的业务数据（推送 / 模板 / 业务审计 / 访问日志 / 设置）
+--
+-- ⚠ `wa_admin_log` 用 wa_ 前缀但**不在**插件 install.sql 里：
+--   插件本身没有访问日志表；本表填补该空位，由本项目 AccessLogger 写入。
 --
 -- 排序规则统一 utf8mb4_general_ci：与 plugin/admin/install.sql 完全同源。
 -- ⚠ 不要改成 utf8mb4_unicode_ci / utf8mb4_0900_ai_ci —— 与 wa_* 表混排会在
@@ -63,7 +66,8 @@ CREATE TABLE IF NOT EXISTS `push_template` (
 -- ---------------------------------------------------------------------------
 -- 写操作审计（M4/M5）
 -- 定位：所有「会改变推送系统状态」的后台操作必须落此行，且只允许经 Auditor 写入。
--- 与 webman-admin 自带日志的分工：本表记业务语义（对谁做了什么），自带日志记访问行为。
+-- 与 wa_admin_log 的分工：本表记业务语义（对推送系统做了什么），
+--                       wa_admin_log 记访问行为（登录/登出/打开了什么）。
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `admin_audit_log` (
   `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -85,6 +89,48 @@ CREATE TABLE IF NOT EXISTS `admin_audit_log` (
   KEY `idx_target` (`target_type`, `target`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
   COMMENT='后台对推送系统的写操作审计';
+
+-- ---------------------------------------------------------------------------
+-- 后台用户访问/操作日志（登录 · 登出 · 页面与 API 访问）
+--
+-- 定位：webman-admin 插件**没有**自带操作日志表（install.sql 仅七张 wa_* 表，
+--       登录只 UPDATE wa_admins.login_at）。本表填补该空位。
+--
+-- 与 admin_audit_log 的分工（两者都要保留，视角不同）：
+--   wa_admin_log  → 谁登录了、打开了哪些页面/接口（含只读 GET）
+--   admin_audit_log→ 谁对推送系统做了写操作（push/kick/…，业务语义）
+-- 同一次 kick：本表一条 access（POST /api/ops-action/kick），
+--              审计表一条 ops.kick —— 不是重复，是两层证据。
+--
+-- 写入：仅允许经 AccessLogger（全局 AccessLog 中间件）；失败不阻断请求。
+-- 过滤：静态资源 / 验证码 / 高频轮询 GET 不落行（见 AccessLog 中间件）。
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `wa_admin_log` (
+  `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `admin_id`    INT UNSIGNED    NOT NULL DEFAULT 0 COMMENT 'wa_admins.id；登录失败/未登录为 0',
+  `admin_name`  VARCHAR(64)     NOT NULL DEFAULT '',
+  `event`       VARCHAR(32)     NOT NULL COMMENT 'login|logout|access',
+  `result`      VARCHAR(16)     NOT NULL DEFAULT 'ok' COMMENT 'ok|failed（登录成败 / HTTP>=400）',
+  `method`      VARCHAR(8)      NOT NULL DEFAULT '',
+  `path`        VARCHAR(191)    NOT NULL DEFAULT '' COMMENT '请求路径（不含查询串）',
+  `controller`  VARCHAR(191)    NOT NULL DEFAULT '' COMMENT '控制器全类名；插件路由可为空',
+  `action_name` VARCHAR(64)     NOT NULL DEFAULT '' COMMENT 'action 方法名',
+  `query`       VARCHAR(500)    NOT NULL DEFAULT '' COMMENT '查询串（值已脱敏）',
+  `body`        TEXT            NULL COMMENT '写请求体 JSON（已脱敏）；GET 为 NULL',
+  `status`      SMALLINT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'HTTP 状态码',
+  `code`        INT             NOT NULL DEFAULT 0 COMMENT '响应体业务码（JSON 时；否则 0）',
+  `msg`         VARCHAR(255)    NOT NULL DEFAULT '',
+  `cost_ms`     INT UNSIGNED    NOT NULL DEFAULT 0,
+  `ip`          VARCHAR(45)     NOT NULL DEFAULT '',
+  `user_agent`  VARCHAR(255)    NOT NULL DEFAULT '',
+  `created_at`  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_admin_time` (`admin_id`, `created_at`),
+  KEY `idx_event_time` (`event`, `created_at`),
+  KEY `idx_path_time` (`path`, `created_at`),
+  KEY `idx_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+  COMMENT='后台用户行为日志（登录/登出/页面与接口访问）';
 
 -- ---------------------------------------------------------------------------
 -- 后台自身设置（轮询间隔 / 告警阈值 / 展示偏好）
